@@ -1,0 +1,116 @@
+.wrapper {
+    display: flex;
+    height: 100vh;
+    height: 100dvh;
+    width: 100%;
+    overflow: hidden;
+}
+
+.left {
+    width: 260px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border);
+    min-height: 0;
+}
+
+.center {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.right {
+    width: 420px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+/* Bottom tab bar — mobile only */
+.tabbar {
+    display: none;
+}
+
+@media (max-width: 1100px) {
+    .left { width: 220px; }
+    .right { width: 360px; }
+}
+
+/* ── iPhone / narrow: single pane at a time + bottom tab bar ── */
+@media (max-width: 760px) {
+    .wrapper {
+        position: relative;
+    }
+
+    .left,
+    .center,
+    .right {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: calc(58px + env(safe-area-inset-bottom));
+        width: auto;
+        border: none;
+        display: none;
+        flex-direction: column;
+        min-width: 0;
+    }
+
+    .wrapper[data-pane="tree"] .left { display: flex; }
+    .wrapper[data-pane="content"] .center { display: flex; }
+    .wrapper[data-pane="chat"] .right { display: flex; }
+
+    .tabbar {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: calc(58px + env(safe-area-inset-bottom));
+        padding-bottom: env(safe-area-inset-bottom);
+        display: flex;
+        background: color-mix(in srgb, var(--bg) 88%, transparent);
+        backdrop-filter: saturate(180%) blur(14px);
+        -webkit-backdrop-filter: saturate(180%) blur(14px);
+        border-top: 1px solid var(--border);
+        z-index: 30;
+    }
+
+    .tabbar button {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        border: none;
+        background: transparent;
+        color: var(--text-3);
+        font-family: inherit;
+        font-size: 10.5px;
+        font-weight: 500;
+        letter-spacing: 0.01em;
+        cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+        transition: color 0.15s ease;
+    }
+
+    .tabbar button :global(svg) {
+        transition: transform 0.15s ease;
+    }
+
+    .tabbar button[data-active="true"] {
+        color: var(--accent);
+    }
+
+    .tabbar button[data-active="true"] :global(svg) {
+        transform: translateY(-1px) scale(1.06);
+    }
+
+    .tabbar button:active {
+        opacity: 0.6;
+    }
+}

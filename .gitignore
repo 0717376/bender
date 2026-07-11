@@ -1,0 +1,28 @@
+# Personal data — NEVER commit (wiki pages, tasks/memory/cron DBs, sessions, logs)
+content/
+data/
+*.log
+
+# Secrets
+.env
+.env.*
+
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.venv
+.pytest_cache/
+
+# Node
+node_modules/
+frontend-*/dist/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+docs/PLAN.md

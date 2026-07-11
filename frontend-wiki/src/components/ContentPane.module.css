@@ -1,0 +1,194 @@
+.pane {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    /* Match the surface under the assistant (--bg). Only the assistant is a white
+       floating card; the note body sits on the page background like the Tasks layout. */
+    background: var(--bg);
+    isolation: isolate;
+}
+
+.empty {
+    position: relative;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-3);
+    font-size: 14.5px;
+    font-weight: 500;
+    isolation: isolate;
+}
+
+.empty::before {
+    content: "";
+    position: absolute;
+    width: 320px;
+    height: 320px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--aura), transparent 70%);
+    filter: blur(10px);
+    z-index: -1;
+    animation: auraDrift 16s ease-in-out infinite;
+}
+
+.bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 13px 24px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.path {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-3);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    letter-spacing: 0.01em;
+}
+
+.barActions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+}
+
+.status {
+    font-size: 11.5px;
+    color: var(--text-3);
+    font-family: var(--mono);
+    min-width: 86px;
+    text-align: right;
+}
+
+.toggle, .saveBtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 15px;
+    border: 1px solid var(--border-light);
+    border-radius: var(--r-pill);
+    background: var(--panel);
+    color: var(--text-2);
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.toggle:hover {
+    border-color: var(--accent-line);
+    color: var(--accent-ink);
+    background: var(--accent-soft);
+}
+
+.saveBtn {
+    background: var(--accent-grad);
+    color: #fff;
+    border-color: transparent;
+    box-shadow: var(--shadow-accent);
+}
+
+.saveBtn:hover:not(:disabled) {
+    filter: brightness(1.04);
+}
+
+.saveBtn:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.view, .editor {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+    max-width: var(--max-w);
+    margin: 0 auto;
+    padding: 40px 44px 80px;
+}
+
+/* ── Bear-style reading typography ── */
+.view {
+    font-size: 16px;
+    line-height: 1.75;
+    color: var(--text);
+    letter-spacing: 0.005em;
+}
+
+.view :global(h1) { font-size: 30px; font-weight: 800; letter-spacing: -0.025em; margin: 0 0 18px; line-height: 1.2; }
+.view :global(h2) { font-size: 21px; font-weight: 800; letter-spacing: -0.015em; margin: 34px 0 12px; }
+.view :global(h3) { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; margin: 24px 0 10px; }
+.view :global(h1 + p), .view :global(h2 + p), .view :global(h3 + p) { margin-top: 0; }
+.view :global(p) { margin: 0 0 15px; }
+.view :global(ul), .view :global(ol) { padding-left: 26px; margin: 13px 0; }
+.view :global(li) { margin: 6px 0; }
+.view :global(li::marker) { color: var(--accent); }
+.view :global(a) { color: var(--accent); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); }
+.view :global(a:hover) { border-bottom-color: var(--accent); }
+.view :global(strong) { font-weight: 700; }
+.view :global(blockquote) {
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    border-radius: 0 10px 10px 0;
+    padding: 10px 18px;
+    margin: 16px 0;
+    color: var(--text-2);
+}
+.view :global(code) {
+    font-family: var(--mono);
+    font-size: 13.5px;
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 5px;
+    color: var(--code-text);
+}
+.view :global(pre) {
+    position: relative;
+    background: var(--code-bg);
+    padding: 16px 18px;
+    border-radius: 12px;
+    margin: 18px 0;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+}
+.view :global(pre code) { background: none; padding: 0; font-size: 13px; }
+.view :global(table) { border-collapse: collapse; width: 100%; margin: 18px 0; font-size: 14.5px; }
+.view :global(th), .view :global(td) { border-bottom: 1px solid var(--border); padding: 9px 12px; text-align: left; }
+.view :global(th) { font-weight: 600; color: var(--text-2); }
+.view :global(hr) { border: none; border-top: 1px solid var(--border); margin: 28px 0; }
+.view :global(img) { max-width: 100%; border-radius: 8px; }
+
+.editor {
+    border: none;
+    outline: none;
+    resize: none;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 14px;
+    line-height: 1.75;
+}
+
+@media (max-width: 760px) {
+    .bar { padding: 11px 16px; }
+    .path { font-size: 11px; }
+    .view, .editor { padding: 22px 18px 48px; }
+    .view { font-size: 16.5px; line-height: 1.7; }
+    .view :global(h1) { font-size: 25px; }
+    .view :global(h2) { font-size: 20px; }
+    /* 16px keeps iOS Safari from auto-zooming the textarea on focus */
+    .editor { font-size: 16px; }
+    .toggle { padding: 7px 14px; font-size: 13px; }
+}

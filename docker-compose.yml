@@ -1,0 +1,41 @@
+services:
+  backend:
+    build: ./backend
+    expose:
+      - "8000"
+    volumes:
+      - ./content:/app/content        # md-страницы вики (видны на хосте)
+      - ./data:/app/data              # session, tasks.db, cron.db, memory, навыки
+      - ${CLAUDE_DIR:-~/.claude}:/root/.claude          # креды Claude CLI (рефреш токена сюда)
+      - ${CLAUDE_JSON:-~/.claude.json}:/seed/.claude.json:ro  # конфиг-seed (копируется в HOME при старте)
+    environment:
+      - WIKI_PASSWORD=${WIKI_PASSWORD}
+      - CLAUDE_MODEL=${CLAUDE_MODEL:-opus}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_ALLOWED_IDS=${TELEGRAM_ALLOWED_IDS:-}
+      - ASR_UPSTREAM=${ASR_UPSTREAM:-}
+      - ASR_MODEL=${ASR_MODEL:-gigaam-rnnt}
+      - TZ=${TZ:-Europe/Moscow}
+      - CURATOR_ENABLED=${CURATOR_ENABLED:-1}
+      - CURATOR_INTERVAL_HOURS=${CURATOR_INTERVAL_HOURS:-168}
+      - CURATOR_MIN_IDLE_HOURS=${CURATOR_MIN_IDLE_HOURS:-2}
+      - SESSION_FRESH_HOURS=${SESSION_FRESH_HOURS:-6}
+      - REVIEWER_ENABLED=${REVIEWER_ENABLED:-1}
+      - REVIEWER_MODEL=${REVIEWER_MODEL:-sonnet}
+    restart: unless-stopped
+
+  frontend-wiki:
+    build: ./frontend-wiki
+    ports:
+      - "${WIKI_PORT:-8842}:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  frontend-tasks:
+    build: ./frontend-tasks
+    ports:
+      - "${TASKS_PORT:-8851}:80"
+    depends_on:
+      - backend
+    restart: unless-stopped

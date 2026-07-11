@@ -1,0 +1,82 @@
+.footer {
+    padding: 10px 14px 16px;
+    flex-shrink: 0;
+}
+
+.inputRow {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    border: 1px solid var(--border-light);
+    border-radius: 18px;
+    padding: 4px 6px 4px 16px;
+    background: var(--panel);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    box-shadow: var(--shadow-soft);
+}
+
+.inputRow:focus-within {
+    border-color: var(--accent-line);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.textarea {
+    flex: 1;
+    border: none;
+    background: none;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.6;
+    padding: 10px 0;
+    resize: none;
+    outline: none;
+    min-height: 42px;
+    max-height: 200px;
+}
+
+.textarea::placeholder {
+    color: var(--text-3);
+    font-size: 13px;
+}
+
+.sendBtn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: var(--accent-grad);
+    box-shadow: var(--shadow-accent);
+    color: #fff;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-bottom: 3px;
+    transition: filter 0.15s ease, transform 0.15s ease;
+}
+
+.sendBtn:hover {
+    filter: brightness(1.06);
+}
+
+.sendBtn:active {
+    transform: scale(0.93);
+}
+
+.sendBtn:disabled {
+    opacity: 0.3;
+    box-shadow: none;
+    cursor: default;
+    transform: none;
+}
+
+@media (max-width: 760px) {
+    .footer { padding: 8px 12px 12px; }
+    /* 16px stops iOS Safari from zooming in when the field is focused */
+    .textarea { font-size: 16px; min-height: 40px; }
+    .sendBtn { width: 38px; height: 38px; }
+}

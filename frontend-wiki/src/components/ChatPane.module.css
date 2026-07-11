@@ -1,0 +1,168 @@
+.pane {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    margin: 16px 16px 16px 14px;
+    background: var(--panel);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+    overflow: hidden;
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 13px 14px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+}
+
+.logo {
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    background: var(--accent-grad);
+    box-shadow: var(--shadow-accent);
+    color: #fff;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+}
+
+.title {
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--text);
+}
+
+.online {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #3FA888;
+    box-shadow: 0 0 0 3px rgba(63, 168, 136, 0.18);
+}
+
+.headerActions {
+    display: flex;
+    gap: 6px;
+}
+
+.headerActions button {
+    padding: 5px 12px;
+    border: 1px solid var(--border-light);
+    border-radius: var(--r-pill);
+    background: transparent;
+    color: var(--text-2);
+    font-family: inherit;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.headerActions button:hover {
+    border-color: var(--accent-line);
+    color: var(--accent-ink);
+    background: var(--accent-soft);
+}
+
+.context {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 14px;
+    padding: 6px 12px;
+    border: 1px solid var(--accent-line);
+    border-radius: var(--r-pill);
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+    font-size: 11.5px;
+    font-weight: 500;
+    flex-shrink: 0;
+}
+
+.contextPath {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.detach {
+    border: none;
+    background: transparent;
+    color: var(--text-3);
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0 3px;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+
+.detach:hover {
+    color: var(--accent);
+    background: var(--bg-3);
+}
+
+.attachBtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border: none;
+    background: transparent;
+    color: var(--text-3);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11.5px;
+    padding: 0;
+}
+
+.attachBtn:hover {
+    color: var(--text);
+}
+
+.contextSel {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    padding: 1px 4px 1px 7px;
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
+    flex-shrink: 0;
+}
+
+.contextSel button {
+    border: none;
+    background: transparent;
+    color: var(--text-2);
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0 2px;
+    border-radius: 4px;
+}
+
+.contextSel button:hover {
+    color: var(--text);
+    background: var(--bg-3);
+}
+
+@media (max-width: 760px) {
+    .pane { margin: 0; border: 0; border-radius: 0; box-shadow: none; }
+    .header { padding: 13px 16px; }
+    .headerActions button { padding: 6px 12px; font-size: 12px; }
+    .context { margin: 0 12px; padding: 7px 11px; font-size: 12px; }
+}

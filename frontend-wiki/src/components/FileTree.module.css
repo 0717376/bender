@@ -1,0 +1,302 @@
+.tree {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: var(--sidebar-bg);
+    isolation: isolate;
+}
+
+/* Soft drifting aura behind the sidebar top */
+.tree::before {
+    content: "";
+    position: absolute;
+    top: -90px;
+    left: -40px;
+    width: 240px;
+    height: 240px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--aura), transparent 70%);
+    filter: blur(8px);
+    pointer-events: none;
+    z-index: -1;
+    animation: auraDrift 14s ease-in-out infinite;
+}
+
+.toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 12px 10px;
+    flex-shrink: 0;
+}
+
+.brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    padding-left: 4px;
+}
+
+.logo {
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    background: var(--accent-grad);
+    box-shadow: var(--shadow-accent);
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+}
+
+.logo > span {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #fff;
+}
+
+.heading {
+    font-size: 17px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--text);
+}
+
+.actions {
+    display: flex;
+    gap: 2px;
+}
+
+.actions button {
+    width: 26px;
+    height: 26px;
+    border: none;
+    background: transparent;
+    color: var(--text-3);
+    cursor: pointer;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.actions button:hover {
+    background: var(--bg-3);
+    color: var(--text);
+}
+
+.list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 2px 8px 16px;
+}
+
+.emptyHint {
+    color: var(--text-3);
+    font-size: 12px;
+    padding: 12px;
+    text-align: center;
+}
+
+.node {
+    position: relative;
+}
+
+/* Indent + vertical guide line for nested levels */
+.children {
+    margin-left: 16px;
+    padding-left: 2px;
+    border-left: 1px solid var(--border);
+}
+
+.row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 6px 7px;
+    border-radius: 9px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text);
+    user-select: none;
+    transition: background 0.14s ease;
+}
+
+.row:hover {
+    background: rgba(0, 0, 0, 0.04);
+}
+
+.selected,
+.selected:hover {
+    background: var(--accent-grad);
+    color: #fff;
+    font-weight: 700;
+    box-shadow: var(--shadow-accent);
+}
+
+.selected .fileIcon,
+.selected .chevron {
+    color: rgba(255, 255, 255, 0.92);
+}
+
+.dropTarget {
+    box-shadow: inset 0 0 0 1.5px var(--accent);
+    background: var(--accent-soft);
+}
+
+.rootDrop {
+    flex-shrink: 0;
+    margin: 0 10px 12px;
+    padding: 12px;
+    border: 1.5px dashed var(--border-light);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-3);
+    transition: all 0.12s ease;
+}
+
+.rootDropActive {
+    border-color: var(--accent);
+    border-style: solid;
+    color: var(--text);
+    background: var(--bg-3);
+}
+
+.chevron {
+    width: 16px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-3);
+}
+
+.chevronIcon {
+    transition: transform 0.15s ease;
+}
+
+.chevronOpen {
+    transform: rotate(90deg);
+}
+
+.fileIcon {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    color: var(--text-2);
+}
+
+.name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-left: 3px;
+}
+
+.inlineRow {
+    cursor: default;
+    background: var(--bg-3);
+}
+
+.inlineInput {
+    flex: 1;
+    min-width: 0;
+    margin-left: 3px;
+    border: 1px solid var(--accent);
+    border-radius: 5px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    padding: 2px 6px;
+    outline: none;
+}
+
+.inlineInput::placeholder {
+    color: var(--text-3);
+}
+
+.rowActions {
+    position: absolute;
+    right: 4px;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    padding-left: 20px;
+    opacity: 0;
+    pointer-events: none;
+    background: linear-gradient(to right, transparent, var(--sidebar-bg) 45%);
+    transition: opacity 0.12s ease;
+}
+
+.row:hover .rowActions {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.selected .rowActions {
+    background: none;
+}
+
+.rowActions button {
+    width: 22px;
+    height: 22px;
+    border: none;
+    background: transparent;
+    color: var(--text-3);
+    cursor: pointer;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.rowActions button:hover {
+    background: var(--border);
+    color: var(--text);
+}
+
+.selected .rowActions button {
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.selected .rowActions button:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: #fff;
+}
+
+@media (max-width: 760px) {
+    .toolbar { padding: 14px 14px 8px; }
+    .heading { font-size: 16px; }
+    .actions button { width: 34px; height: 34px; }
+    .list { padding: 2px 8px 20px; }
+
+    .row {
+        padding: 10px 8px;
+        font-size: 15px;
+        gap: 5px;
+    }
+
+    /* No hover on touch — keep rename/delete reachable inline on every row */
+    .rowActions {
+        position: static;
+        opacity: 1;
+        pointer-events: auto;
+        padding-left: 6px;
+        background: none;
+    }
+    .selected .rowActions { background: none; }
+    .rowActions button { width: 32px; height: 32px; }
+
+    .inlineInput { font-size: 16px; padding: 5px 8px; }
+    .rootDrop { display: none; }
+}
