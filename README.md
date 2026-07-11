@@ -1,5 +1,7 @@
 # Bender
 
+[English](README.en.md) | **Русский**
+
 Личный ИИ-агент на своём железе: вики-заметки, менеджер задач в духе Things и универсальный ассистент в Telegram — всё поверх одного агента на [Claude Agent SDK](https://docs.anthropic.com/en/api/agent-sdk/overview). Работает на подписке Claude (OAuth через Claude CLI), без API-ключей.
 
 ![Задачи — Сегодня](docs/screenshots/tasks-today.png)
