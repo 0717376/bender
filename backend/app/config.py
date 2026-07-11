@@ -16,7 +16,7 @@ AUTH_TOKEN = hashlib.sha256(("wiki:" + WIKI_PASSWORD).encode()).hexdigest()
 # Model alias passed straight to the Claude CLI (sonnet/opus/haiku or full id).
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "sonnet")
 
-# A shared session older than this starts fresh (Hermes' freshness window) — a
+# A shared session older than this starts fresh (freshness window) — a
 # zombie context dragged for days causes stale dates and bloat. 0 disables.
 SESSION_FRESH_HOURS = float(os.environ.get("SESSION_FRESH_HOURS", "6"))
 
@@ -103,7 +103,7 @@ LEARNED_SKILLS_DIR = os.path.join(LEARNED_PLUGIN_DIR, "skills")
 LEGACY_SKILLS_DIR = os.path.join(DATA_DIR, "skills")  # old flat layout, migrated once on init
 SKILL_BACKUPS_DIR = os.path.join(DATA_DIR, "skill_backups")
 
-# Curator (background consolidation). Idle-triggered, like Hermes.
+# Curator (background consolidation). Idle-triggered.
 CURATOR_ENABLED = os.environ.get("CURATOR_ENABLED", "1") not in ("0", "false", "")
 CURATOR_INTERVAL_HOURS = float(os.environ.get("CURATOR_INTERVAL_HOURS", "168"))   # weekly
 CURATOR_MIN_IDLE_HOURS = float(os.environ.get("CURATOR_MIN_IDLE_HOURS", "2"))     # quiet for 2h

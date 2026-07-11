@@ -1,4 +1,4 @@
-"""Post-turn background self-review (Hermes' background_review, simplified).
+"""Post-turn background self-review.
 
 After each interactive turn a separate small agent re-reads the exchange and
 decides whether anything deserves persisting: a stable fact/preference into

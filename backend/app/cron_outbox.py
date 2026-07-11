@@ -3,7 +3,7 @@
 Scheduled jobs run in an ISOLATED agent session and deliver straight to Telegram,
 so the main shared session never sees that a message went out. Without this, the
 interactive agent keeps promising "I'll send it at 08:33" even after it already
-fired. We mirror Hermes' delivery-mirroring: record each delivered message here,
+fired. Delivery mirroring: record each delivered message here,
 then inject the pending ones as context on the next interactive turn (and clear).
 """
 

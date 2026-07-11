@@ -14,7 +14,7 @@ TICK_SECONDS = 60
 
 # Prepended to every scheduled prompt. Keeps the run's final text clean: the
 # scheduler delivers it verbatim, so the agent must not narrate its own actions
-# or try to "send" anything. Mirrors Hermes' cron execution hint.
+# or try to "send" anything.
 CRON_HINT = (
     "[Ты запущен как запланированная задача (cron). Твой финальный ответ будет автоматически "
     "доставлен пользователю как есть.\n"
@@ -42,7 +42,7 @@ def _is_silent_line(line: str) -> bool:
 
 
 def _suppressed(output: str) -> bool:
-    """Tolerant [SILENT] matcher (Hermes-style): whole answer, first or last line,
+    """Tolerant [SILENT] matcher: whole answer, first or last line,
     with or without brackets — but never the token buried mid-sentence."""
     lines = [ln for ln in (output or "").splitlines() if ln.strip()]
     if not lines:

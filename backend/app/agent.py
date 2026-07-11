@@ -69,7 +69,7 @@ Emit = Callable[[dict], Awaitable[None]]
 
 def load_session_state() -> tuple[str | None, bool]:
     """(session_id, expired). A session idle beyond SESSION_FRESH_HOURS is
-    discarded (Hermes' freshness window): expired=True so the caller can tell
+    discarded (freshness window): expired=True so the caller can tell
     the fresh agent why the conversation restarted."""
     try:
         with open(config.SESSION_FILE) as f:
@@ -131,7 +131,7 @@ def clear_session() -> None:
 
 # --- Options ---
 
-# Frozen per session (Hermes pattern): memory is re-read only when the session
+# Frozen per session: memory is re-read only when the session
 # changes, so a mid-session remember() doesn't bust the prompt prefix cache.
 # Writes still hit disk immediately; the snapshot refreshes on the next session.
 _mem_snapshot = {"key": "", "text": ""}

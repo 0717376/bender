@@ -1,6 +1,6 @@
 """Curator: idle-triggered background consolidation of the procedural skill library.
 
-Mirrors Hermes: when the system has been idle for >= CURATOR_MIN_IDLE_HOURS and the
+Idle-triggered: when the system has been idle for >= CURATOR_MIN_IDLE_HOURS and the
 last curator run was > CURATOR_INTERVAL_HOURS ago, a forked agent reviews the learned
 skills + memory and consolidates them (merge near-duplicates, sharpen descriptions,
 drop redundancy). A snapshot is taken first so the pass is fully reversible.

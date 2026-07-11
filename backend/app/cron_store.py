@@ -3,7 +3,7 @@
 Each job: a natural-language prompt + a schedule. A background scheduler runs due
 jobs as isolated agent turns and delivers the result (usually to Telegram).
 
-Schedule formats (ported from Hermes — one field, parser picks the kind):
+Schedule formats (one field, parser picks the kind):
   '5m', '2h', '1d'        → one-shot, fires once N from now, then self-deletes
   '2026-06-28T07:50'      → one-shot at an absolute time (ISO)
   'every 30m', 'every 2h' → recurring interval
