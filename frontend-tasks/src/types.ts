@@ -1,7 +1,7 @@
 export interface RepeatRule {
   unit: "day" | "week" | "month" | "year";
   interval: number;
-  mode: "schedule" | "done"; // schedule: от даты задачи; done: от даты выполнения
+  mode: "schedule" | "done"; // schedule: from the task's date; done: from the completion date
 }
 
 export interface ChecklistItem {

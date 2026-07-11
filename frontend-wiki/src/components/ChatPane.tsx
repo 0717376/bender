@@ -9,6 +9,7 @@ import { MessageList, type MessageListHandle } from './MessageList'
 import { InputArea } from './InputArea'
 import { createToolHtml } from './Message'
 import styles from './ChatPane.module.css'
+import { t, selectedChars } from '../lib/i18n'
 
 interface ChatPaneProps {
   onAssistantDone: () => void
@@ -90,7 +91,7 @@ export function ChatPane({ onAssistantDone, onLogout, currentPath, getContext, p
     setWaiting(true)
     const ctx = getContext()
     send(text, { path: pageOff ? null : ctx.path, selection: ctx.selection }).catch(() => {
-      setMessages(m => [...m, { id: uid(), role: 'error', html: 'Не удалось отправить сообщение' }])
+      setMessages(m => [...m, { id: uid(), role: 'error', html: t('sendFailed') }])
       setBusy(false)
       setWaiting(false)
     })
@@ -102,10 +103,10 @@ export function ChatPane({ onAssistantDone, onLogout, currentPath, getContext, p
       <div className={styles.header}>
         <span className={styles.brand}>
           <span className={styles.logo}><Sparkles size={14} strokeWidth={2.4} /></span>
-          <span className={styles.title}>Ассистент</span>
+          <span className={styles.title}>{t('assistant')}</span>
         </span>
         <div className={styles.headerActions}>
-          <button title="Очистить контекст" onClick={() => handleSend('/clear')}>Очистить</button>
+          <button title={t('clearTitle')} onClick={() => handleSend('/clear')}>{t('clear')}</button>
         </div>
       </div>
       <MessageList
@@ -119,17 +120,17 @@ export function ChatPane({ onAssistantDone, onLogout, currentPath, getContext, p
         <div className={styles.context}>
           {pageOff ? (
             <button className={styles.attachBtn} onClick={() => setPageOff(false)}>
-              <Plus size={13} /> Прикрепить страницу
+              <Plus size={13} /> {t('attachPage')}
             </button>
           ) : (
             <>
               <FileText size={13} />
               <span className={styles.contextPath}>{baseOf(currentPath)}</span>
-              <button className={styles.detach} title="Убрать страницу из контекста" onClick={() => setPageOff(true)}>×</button>
+              <button className={styles.detach} title={t('detachPage')} onClick={() => setPageOff(true)}>×</button>
               {pinnedSel && (
                 <span className={styles.contextSel}>
-                  выделено {pinnedSel.length}
-                  <button title="Убрать выделение" onClick={onClearSelection}>×</button>
+                  {selectedChars(pinnedSel.length)}
+                  <button title={t('clearSelection')} onClick={onClearSelection}>×</button>
                 </span>
               )}
             </>

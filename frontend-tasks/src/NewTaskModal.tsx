@@ -5,6 +5,7 @@ import { parseTitle, stripMatch } from "./nlp";
 import { MenuPopover } from "./Popover";
 import { RepeatPopover, repeatLabel } from "./RepeatPopover";
 import { projectColor } from "./colors";
+import { t } from "./i18n";
 import type { Project, RepeatRule } from "./types";
 import type { Sel } from "./useTasks";
 
@@ -88,14 +89,14 @@ export default function NewTaskModal({ view, projects, onCreate, onClose }: {
   };
 
   const proj = projectId != null ? projects.find((p) => p.id === projectId) : null;
-  const whenLabel = when === "someday" ? "Потом" : when === "today" || when === isoToday() ? "Сегодня" : when ? fmt(when) : "Когда";
+  const whenLabel = when === "someday" ? t("someday_short") : when === "today" || when === isoToday() ? t("view_today") : when ? fmt(when) : t("when");
 
   return (
     <div className="modal-scrim" onMouseDown={onClose}>
       <div className="ntm" onMouseDown={(e) => e.stopPropagation()}>
         <input
           className="ntm-title"
-          placeholder="Новая задача"
+          placeholder={t("new_task")}
           value={title}
           autoFocus
           onChange={(e) => setTitle(e.target.value)}
@@ -105,13 +106,13 @@ export default function NewTaskModal({ view, projects, onCreate, onClose }: {
           <div className="nlp-hint">
             <WandSparkles size={12} strokeWidth={2.2} />
             <span>{hint.label}</span>
-            <button onClick={() => setDismissed(hint.matched)} aria-label="Не распознавать"><X size={12} strokeWidth={2.4} /></button>
+            <button onClick={() => setDismissed(hint.matched)} aria-label={t("ignore_hint")}><X size={12} strokeWidth={2.4} /></button>
           </div>
         )}
         <textarea
           ref={notesRef}
           className="ntm-notes"
-          placeholder="Заметки"
+          placeholder={t("notes")}
           rows={2}
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
@@ -140,11 +141,11 @@ export default function NewTaskModal({ view, projects, onCreate, onClose }: {
             {whenLabel}
           </button>
           <div className="d-tools">
-            <button className={"d-tool" + (deadline ? " on" : "")} onClick={open("deadline")} aria-label="Дедлайн"><Flag size={16} strokeWidth={2} /></button>
-            <button className={"d-tool" + (proj ? " on" : "")} onClick={open("project")} aria-label="Проект"><Folder size={16} strokeWidth={2} /></button>
-            <button className={"d-tool" + (repeat ? " on" : "")} onClick={open("repeat")} aria-label="Повтор"><Repeat size={16} strokeWidth={2} /></button>
+            <button className={"d-tool" + (deadline ? " on" : "")} onClick={open("deadline")} aria-label={t("deadline")}><Flag size={16} strokeWidth={2} /></button>
+            <button className={"d-tool" + (proj ? " on" : "")} onClick={open("project")} aria-label={t("project")}><Folder size={16} strokeWidth={2} /></button>
+            <button className={"d-tool" + (repeat ? " on" : "")} onClick={open("repeat")} aria-label={t("repeat")}><Repeat size={16} strokeWidth={2} /></button>
           </div>
-          <button className="ntm-create" disabled={!title.trim()} onClick={create}>Создать</button>
+          <button className="ntm-create" disabled={!title.trim()} onClick={create}>{t("create")}</button>
         </div>
 
         {pop?.kind === "when" && (
@@ -152,9 +153,9 @@ export default function NewTaskModal({ view, projects, onCreate, onClose }: {
             anchor={pop.anchor}
             value={when === "today" ? isoToday() : when === "someday" ? null : when}
             quick={[
-              { key: "today", label: "Сегодня", icon: <Star size={13} strokeWidth={2} />, onClick: () => { setWhen("today"); setManualWhen(true); setPop(null); } },
-              { key: "someday", label: "Потом", icon: <Moon size={13} strokeWidth={2} />, onClick: () => { setWhen("someday"); setManualWhen(true); setPop(null); } },
-              ...(when ? [{ key: "clear", label: "Убрать", danger: true, onClick: () => { setWhen(null); setManualWhen(true); setPop(null); } }] : []),
+              { key: "today", label: t("view_today"), icon: <Star size={13} strokeWidth={2} />, onClick: () => { setWhen("today"); setManualWhen(true); setPop(null); } },
+              { key: "someday", label: t("someday_short"), icon: <Moon size={13} strokeWidth={2} />, onClick: () => { setWhen("someday"); setManualWhen(true); setPop(null); } },
+              ...(when ? [{ key: "clear", label: t("remove"), danger: true, onClick: () => { setWhen(null); setManualWhen(true); setPop(null); } }] : []),
             ]}
             onPick={(d) => { setWhen(d); setManualWhen(true); setPop(null); }}
             onClose={() => setPop(null)}
@@ -164,7 +165,7 @@ export default function NewTaskModal({ view, projects, onCreate, onClose }: {
           <DatePickerPopover
             anchor={pop.anchor}
             value={deadline}
-            quick={deadline ? [{ key: "clear", label: "Убрать дедлайн", danger: true, onClick: () => { setDeadline(null); setPop(null); } }] : []}
+            quick={deadline ? [{ key: "clear", label: t("clear_deadline"), danger: true, onClick: () => { setDeadline(null); setPop(null); } }] : []}
             onPick={(d) => { setDeadline(d); setPop(null); }}
             onClose={() => setPop(null)}
           />
@@ -174,7 +175,7 @@ export default function NewTaskModal({ view, projects, onCreate, onClose }: {
             anchor={pop.anchor}
             value={projectId}
             items={[
-              { value: null, label: "Без проекта" },
+              { value: null, label: t("no_project") },
               ...projects.map((p) => ({ value: p.id, label: p.title, dot: projectColor(p.id) })),
             ]}
             onPick={(v) => { setProjectId(v as number | null); setPop(null); }}

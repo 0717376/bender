@@ -3,20 +3,21 @@ import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable"
 import { ChevronDown, ChevronRight, Layers, ListPlus, Plus } from "lucide-react";
 import { MenuPopover } from "./Popover";
 import TaskRow from "./TaskRow";
+import { MONTHS, doneOfTotal, locale, logbookStats, t } from "./i18n";
 import type { Area, Project, Task } from "./types";
 import type { Sel } from "./useTasks";
 
 const DRAGGABLE_VIEWS = new Set(["today", "inbox", "anytime", "someday"]);
 
 const EMPTY: Record<string, string> = {
-  today: "На сегодня ничего не запланировано.",
-  inbox: "Входящие пусты. Сюда попадают задачи без проекта и даты.",
-  upcoming: "Нет предстоящих задач с датой.",
-  anytime: "Нет задач «когда-нибудь».",
-  someday: "Список «когда-то потом» пуст.",
-  logbook: "Журнал пуст.",
-  project: "В проекте пока нет задач.",
-  tag: "Нет открытых задач с этим тегом.",
+  today: t("empty_today"),
+  inbox: t("empty_inbox"),
+  upcoming: t("empty_upcoming"),
+  anytime: t("empty_anytime"),
+  someday: t("empty_someday"),
+  logbook: t("empty_logbook"),
+  project: t("empty_project"),
+  tag: t("empty_tag"),
 };
 
 interface Ops {
@@ -31,37 +32,35 @@ interface Ops {
 }
 
 const KICKERS: Record<string, string> = {
-  inbox: "Несортированные мысли",
-  upcoming: "Календарь",
-  anytime: "Всё, что можно сделать",
-  someday: "Может быть, однажды",
+  inbox: t("kicker_inbox"),
+  upcoming: t("kicker_upcoming"),
+  anytime: t("kicker_anytime"),
+  someday: t("kicker_someday"),
 };
 
 const isoToday = () => new Date().toISOString().slice(0, 10);
 
-const MONTHS = ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"];
-
 function cap(s: string): string { return s.charAt(0).toUpperCase() + s.slice(1); }
 
-/** Group label for an upcoming date: Завтра / «чт, 4 июля» (7 days) / «Июль» / «Июль 2027». */
+/** Group label for an upcoming date: Tomorrow / "Thu, July 4" (7 days) / "July" / "July 2027". */
 function upcomingLabel(iso: string): string {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const d = new Date(iso + "T00:00:00");
   const days = Math.round((d.getTime() - today.getTime()) / 86400000);
-  if (days === 1) return "Завтра";
-  if (days <= 7) return cap(d.toLocaleDateString("ru-RU", { weekday: "short", day: "numeric", month: "long" }));
-  const m = cap(MONTHS[d.getMonth()]);
+  if (days === 1) return t("tomorrow");
+  if (days <= 7) return cap(d.toLocaleDateString(locale, { weekday: "short", day: "numeric", month: "long" }));
+  const m = MONTHS[d.getMonth()];
   return d.getFullYear() === today.getFullYear() ? m : `${m} ${d.getFullYear()}`;
 }
 
-/** Group label for the logbook: Сегодня / Вчера / «28 июня» / «28 июня 2025». */
+/** Group label for the logbook: Today / Yesterday / "June 28" / "June 28 2025". */
 function logbookLabel(iso: string): string {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const d = new Date(iso + "T00:00:00");
   const days = Math.round((today.getTime() - d.getTime()) / 86400000);
-  if (days === 0) return "Сегодня";
-  if (days === 1) return "Вчера";
-  const s = d.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+  if (days === 0) return t("view_today");
+  if (days === 1) return t("yesterday");
+  const s = d.toLocaleDateString(locale, { day: "numeric", month: "long" });
   return d.getFullYear() === today.getFullYear() ? s : `${s} ${d.getFullYear()}`;
 }
 
@@ -81,7 +80,7 @@ function Ring({ done, open }: { done: number; open: number }) {
   if (!total) return null;
   const r = 14, c = 2 * Math.PI * r;
   return (
-    <div className="ring-wrap" title={`Готово ${done} из ${total}`}>
+    <div className="ring-wrap" title={doneOfTotal(done, total)}>
       <svg width="36" height="36" viewBox="0 0 36 36">
         <circle cx="18" cy="18" r={r} className="ring-bg" />
         <circle cx="18" cy="18" r={r} className="ring-fg" strokeDasharray={`${(done / total) * c} ${c}`} transform="rotate(-90 18 18)" />
@@ -143,7 +142,7 @@ export default function TaskList({
   const isLogbook = view.kind === "view" && view.key === "logbook";
   const draggable = isProject || (view.kind === "view" && DRAGGABLE_VIEWS.has(view.key));
 
-  const emptyMsg = isProject ? EMPTY.project : view.kind === "tag" ? EMPTY.tag : EMPTY[view.key] ?? "Пусто";
+  const emptyMsg = isProject ? EMPTY.project : view.kind === "tag" ? EMPTY.tag : EMPTY[view.key] ?? t("empty_generic");
 
   // Weekly/monthly stats for the logbook kicker.
   const logStats = useMemo(() => {
@@ -154,13 +153,13 @@ export default function TaskList({
     const monthISO = isoToday().slice(0, 7);
     const week = tasks.filter((t) => (t.completed_at ?? "") >= mondayISO).length;
     const month = tasks.filter((t) => (t.completed_at ?? "").startsWith(monthISO)).length;
-    return `${week} за неделю · ${month} за месяц`;
+    return logbookStats(week, month);
   }, [isLogbook, tasks]);
 
-  const kicker = isProject ? "Проект"
-    : view.kind === "tag" ? "Тег"
+  const kicker = isProject ? t("project")
+    : view.kind === "tag" ? t("tag")
     : isToday ? todayLabel()
-    : isLogbook ? (logStats || "Всё, что ты завершил")
+    : isLogbook ? (logStats || t("kicker_logbook"))
     : KICKERS[view.key] ?? "";
 
   const project = isProject ? projects.find((p) => p.id === view.id) : null;
@@ -206,10 +205,10 @@ export default function TaskList({
           {isProject && (
             <div className="head-actions">
               <button className="head-btn" onClick={(e) => { const rect = e.currentTarget.getBoundingClientRect(); setAreaPop((c) => (c ? null : rect)); }}>
-                <Layers size={13} strokeWidth={2} />{projArea ? projArea.title : "Область"}
+                <Layers size={13} strokeWidth={2} />{projArea ? projArea.title : t("area")}
               </button>
               <button className="head-btn" onClick={() => setAddingHead(true)}>
-                <ListPlus size={13} strokeWidth={2} />Раздел
+                <ListPlus size={13} strokeWidth={2} />{t("add_heading")}
               </button>
             </div>
           )}
@@ -222,9 +221,9 @@ export default function TaskList({
             <ul className="tasks">
               {isToday && overdue.length > 0 && (
                 <>
-                  <li className="group-head danger">Просрочено</li>
+                  <li className="group-head danger">{t("overdue")}</li>
                   {overdue.map((t) => row(t, draggable))}
-                  {onTime.length > 0 && <li className="group-head">Сегодня</li>}
+                  {onTime.length > 0 && <li className="group-head">{t("view_today")}</li>}
                 </>
               )}
 
@@ -244,7 +243,7 @@ export default function TaskList({
           <form className="h-add" onSubmit={(e) => { e.preventDefault(); submitHeading(); }}>
             <input
               autoFocus
-              placeholder="Название раздела"
+              placeholder={t("heading_name")}
               value={headTitle}
               onChange={(e) => setHeadTitle(e.target.value)}
               onBlur={submitHeading}
@@ -257,7 +256,7 @@ export default function TaskList({
           <div className="done-block">
             <button className="done-toggle" onClick={toggleDone}>
               {doneOpen ? <ChevronDown size={14} strokeWidth={2.2} /> : <ChevronRight size={14} strokeWidth={2.2} />}
-              {isProject ? "Журнал" : "Готово сегодня"}
+              {isProject ? t("view_logbook") : t("done_today")}
               <span className="count">{doneTasks.length}</span>
             </button>
             {doneOpen && (isProject
@@ -273,7 +272,7 @@ export default function TaskList({
       </div>
 
       {view.key !== "logbook" && (
-        <button className="fab" onClick={onNewTask} aria-label="Новая задача">
+        <button className="fab" onClick={onNewTask} aria-label={t("new_task")}>
           <Plus size={24} strokeWidth={2.2} />
         </button>
       )}
@@ -282,7 +281,7 @@ export default function TaskList({
         <MenuPopover
           anchor={areaPop}
           value={project?.area_id ?? null}
-          items={[{ value: null, label: "Без области" }, ...areas.map((a) => ({ value: a.id, label: a.title }))]}
+          items={[{ value: null, label: t("no_area") }, ...areas.map((a) => ({ value: a.id, label: a.title }))]}
           onPick={(v) => { onSetArea(v as number | null); setAreaPop(null); }}
           onClose={() => setAreaPop(null)}
         />
@@ -292,5 +291,5 @@ export default function TaskList({
 }
 
 function todayLabel(): string {
-  return new Date().toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" });
+  return new Date().toLocaleDateString(locale, { weekday: "long", day: "numeric", month: "long" });
 }

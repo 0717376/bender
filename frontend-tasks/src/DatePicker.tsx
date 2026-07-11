@@ -1,12 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Popover } from "./Popover";
-
-const MONTHS = [
-  "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
-  "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
-];
-const WD = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+import { MONTHS, WEEKDAYS_SHORT as WD, t } from "./i18n";
 
 const iso = (y: number, m: number, d: number) =>
   `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
@@ -48,9 +43,9 @@ function Calendar({ value, onPick }: { value: string | null; onPick: (iso: strin
       <div className="dp-head">
         <div className="dp-title">{MONTHS[view.m]} {view.y}</div>
         <div className="dp-nav">
-          <button onClick={() => shift(-1)} aria-label="Предыдущий месяц"><ChevronLeft size={16} /></button>
-          <button className="dp-today" onClick={() => { const d = new Date(); setView({ y: d.getFullYear(), m: d.getMonth() }); }}>Сегодня</button>
-          <button onClick={() => shift(1)} aria-label="Следующий месяц"><ChevronRight size={16} /></button>
+          <button onClick={() => shift(-1)} aria-label={t("prev_month")}><ChevronLeft size={16} /></button>
+          <button className="dp-today" onClick={() => { const d = new Date(); setView({ y: d.getFullYear(), m: d.getMonth() }); }}>{t("view_today")}</button>
+          <button onClick={() => shift(1)} aria-label={t("next_month")}><ChevronRight size={16} /></button>
         </div>
       </div>
       <div className="dp-grid dp-wds">

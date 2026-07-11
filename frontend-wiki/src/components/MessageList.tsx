@@ -5,6 +5,7 @@ import { TypingIndicator } from './TypingIndicator'
 import { useAutoScroll } from '../hooks/useAutoScroll'
 import styles from './MessageList.module.css'
 import msgStyles from './Message.module.css'
+import { t } from '../lib/i18n'
 
 interface MessageListProps {
   messages: ChatMessage[]
@@ -31,7 +32,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
         <div className={styles.inner}>
           {empty ? (
             <div className={styles.empty}>
-              Спросите ассистента про вики<br />или попросите что-то записать.
+              {t('chatHint1')}<br />{t('chatHint2')}
             </div>
           ) : (
             <>
@@ -40,7 +41,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
               ))}
               {streamingId && (
                 <div className={`${msgStyles.message} ${msgStyles.assistant}`}>
-                  <div className={msgStyles.role}>ассистент</div>
+                  <div className={msgStyles.role}>{t('roleAssistant')}</div>
                   <div ref={streamingRef} className={msgStyles.content} />
                 </div>
               )}

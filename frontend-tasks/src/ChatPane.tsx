@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowUp, ChevronRight, Sparkles, Wrench } from "lucide-react";
 import MicButton from "./MicButton";
+import { t } from "./i18n";
 import { useChat } from "./useChat";
 
 export default function ChatPane({
@@ -43,7 +44,7 @@ export default function ChatPane({
 
   if (collapsed) {
     return (
-      <button className="chat-rail" onClick={onToggle} aria-label="Открыть ассистента">
+      <button className="chat-rail" onClick={onToggle} aria-label={t("open_assistant")}>
         <span className="logo"><span /></span>
       </button>
     );
@@ -56,11 +57,11 @@ export default function ChatPane({
       <div className="chat-head">
         <span className="chat-brand">
           <span className="logo"><Sparkles size={14} strokeWidth={2.4} /></span>
-          <span className="chat-title">Ассистент</span>
+          <span className="chat-title">{t("assistant")}</span>
         </span>
         <div className="chat-actions">
-          <button className="chat-clear" onClick={() => send("/clear")} title="Очистить контекст">Очистить</button>
-          <button className="chat-collapse" onClick={onToggle} aria-label="Свернуть">
+          <button className="chat-clear" onClick={() => send("/clear")} title={t("clear_context")}>{t("clear")}</button>
+          <button className="chat-collapse" onClick={onToggle} aria-label={t("collapse")}>
             <ChevronRight size={17} strokeWidth={2} />
           </button>
         </div>
@@ -69,9 +70,9 @@ export default function ChatPane({
       <div className="chat-log scroll" ref={scrollRef}>
         {empty && (
           <div className="chat-empty">
-            Спросите ассистента про ваши задачи и планы.
+            {t("chat_empty_1")}
             <br />
-            Напр.: «что у меня на сегодня?», «перенеси отчёт на пятницу».
+            {t("chat_empty_2")}
           </div>
         )}
         {messages.map((m) => (
@@ -85,7 +86,7 @@ export default function ChatPane({
           <textarea
             ref={taRef}
             rows={1}
-            placeholder="Спросите ассистента…"
+            placeholder={t("ask_assistant")}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
@@ -96,7 +97,7 @@ export default function ChatPane({
             }}
           />
           <MicButton onTranscription={onTranscription} />
-          <button className="chat-send" type="button" disabled={busy || !input.trim()} onClick={submit} aria-label="Отправить">
+          <button className="chat-send" type="button" disabled={busy || !input.trim()} onClick={submit} aria-label={t("send")}>
             <ArrowUp size={17} strokeWidth={2.4} />
           </button>
         </div>

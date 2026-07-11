@@ -2,19 +2,20 @@ import { useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { CalendarDays, CheckCircle2, Inbox, Layers, Moon, Plus, Settings, Star, X } from "lucide-react";
 import { projectColor } from "./colors";
+import { t } from "./i18n";
 import type { Overview } from "./types";
 import type { Sel } from "./useTasks";
 
 type IconType = typeof Inbox;
 
 const TOP_VIEWS: { key: string; label: string; Icon: IconType }[] = [
-  { key: "inbox", label: "Входящие", Icon: Inbox },
-  { key: "today", label: "Сегодня", Icon: Star },
-  { key: "upcoming", label: "Предстоящие", Icon: CalendarDays },
-  { key: "anytime", label: "В любое время", Icon: Layers },
-  { key: "someday", label: "Когда-нибудь", Icon: Moon },
+  { key: "inbox", label: t("view_inbox"), Icon: Inbox },
+  { key: "today", label: t("view_today"), Icon: Star },
+  { key: "upcoming", label: t("view_upcoming"), Icon: CalendarDays },
+  { key: "anytime", label: t("view_anytime"), Icon: Layers },
+  { key: "someday", label: t("view_someday"), Icon: Moon },
 ];
-const LOGBOOK = { key: "logbook", label: "Журнал", Icon: CheckCircle2 };
+const LOGBOOK = { key: "logbook", label: t("view_logbook"), Icon: CheckCircle2 };
 
 // Views that accept a dragged task (highlight + actual move). Others are droppable but no-op.
 const TARGET_VIEWS = new Set(["today", "upcoming", "anytime", "someday", "inbox"]);
@@ -127,8 +128,8 @@ export default function Sidebar({
     <aside className={"sidebar scroll" + (dragging ? " dragging" : "")}>
       <div className="brand">
         <span className="logo"><span /></span>
-        <span className="word">Задачи</span>
-        {onClose && <button className="side-x" onClick={onClose} aria-label="Закрыть меню"><X size={16} /></button>}
+        <span className="word">{t("app_title")}</span>
+        {onClose && <button className="side-x" onClick={onClose} aria-label={t("close_menu")}><X size={16} /></button>}
       </div>
 
       {TOP_VIEWS.map((v) => navView(v.key, v.label, v.Icon))}
@@ -142,12 +143,12 @@ export default function Sidebar({
             <div className="section">{a.title}</div>
             {inArea.length > 0
               ? inArea.map(projBtn)
-              : <div className="section-empty">Пока без проектов</div>}
+              : <div className="section-empty">{t("no_projects_yet")}</div>}
           </div>
         );
       })}
 
-      {ungrouped.length > 0 && <div className="section">Проекты</div>}
+      {ungrouped.length > 0 && <div className="section">{t("projects")}</div>}
       {ungrouped.map(projBtn)}
 
       {adding ? (
@@ -162,7 +163,7 @@ export default function Sidebar({
         >
           <input
             autoFocus
-            placeholder={adding === "area" ? "Название области" : "Название проекта"}
+            placeholder={adding === "area" ? t("area_name") : t("project_name")}
             value={name}
             onChange={(e) => setName(e.target.value)}
             onBlur={() => { if (!name.trim()) setAdding(null); }}
@@ -173,11 +174,11 @@ export default function Sidebar({
         <>
           <button className="nav muted" onClick={() => setAdding("project")}>
             <span className="ic"><Plus size={16} strokeWidth={1.9} /></span>
-            <span className="lbl">Новый проект</span>
+            <span className="lbl">{t("new_project")}</span>
           </button>
           <button className="nav muted" onClick={() => setAdding("area")}>
             <span className="ic"><Layers size={16} strokeWidth={1.9} /></span>
-            <span className="lbl">Новая область</span>
+            <span className="lbl">{t("new_area")}</span>
           </button>
         </>
       )}
@@ -185,7 +186,7 @@ export default function Sidebar({
       <div className="spacer" />
       <div className="side-foot">
         {navView(LOGBOOK.key, LOGBOOK.label, LOGBOOK.Icon)}
-        <button className="foot-gear" onClick={onSettings} aria-label="Настройки">
+        <button className="foot-gear" onClick={onSettings} aria-label={t("settings")}>
           <Settings size={16} strokeWidth={1.9} />
         </button>
       </div>

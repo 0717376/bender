@@ -1,6 +1,7 @@
 import { marked } from 'marked'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
+import { t } from './i18n'
 
 const renderer = new marked.Renderer()
 
@@ -66,13 +67,13 @@ export function enhanceCodeBlocks(container: HTMLElement): void {
 
     const header = document.createElement('div')
     header.className = 'code-header'
-    header.innerHTML = `<span class="code-lang">${escapeHtml(lang)}</span><button class="copy-btn">Скопировать</button>`
+    header.innerHTML = `<span class="code-lang">${escapeHtml(lang)}</span><button class="copy-btn">${t('copy')}</button>`
     header.querySelector('.copy-btn')!.addEventListener('click', function (this: HTMLButtonElement) {
       navigator.clipboard.writeText(code ? code.textContent! : pre.textContent!)
-      this.textContent = 'Скопировано'
+      this.textContent = t('copied')
       this.classList.add('copied')
       setTimeout(() => {
-        this.textContent = 'Скопировать'
+        this.textContent = t('copy')
         this.classList.remove('copied')
       }, 1500)
     })
@@ -88,7 +89,7 @@ export function enhanceCodeBlocks(container: HTMLElement): void {
 
     const header = document.createElement('div')
     header.className = 'code-header'
-    header.innerHTML = '<span class="code-lang">table</span><button class="copy-btn">Скопировать</button>'
+    header.innerHTML = `<span class="code-lang">table</span><button class="copy-btn">${t('copy')}</button>`
     header.querySelector('.copy-btn')!.addEventListener('click', function (this: HTMLButtonElement) {
       const headerCells: string[] = []
       table.querySelectorAll('thead th').forEach(th => headerCells.push(th.textContent!.trim()))
@@ -103,10 +104,10 @@ export function enhanceCodeBlocks(container: HTMLElement): void {
         rows.push('| ' + cells.join(' | ') + ' |')
       })
       navigator.clipboard.writeText(rows.join('\n'))
-      this.textContent = 'Скопировано'
+      this.textContent = t('copied')
       this.classList.add('copied')
       setTimeout(() => {
-        this.textContent = 'Скопировать'
+        this.textContent = t('copy')
         this.classList.remove('copied')
       }, 1500)
     })

@@ -8,6 +8,7 @@ import { FileTree } from './FileTree'
 import { ContentPane, type ContentPaneHandle } from './ContentPane'
 import { ChatPane } from './ChatPane'
 import styles from './WikiApp.module.css'
+import { t } from '../lib/i18n'
 
 interface WikiAppProps {
   onLogout: () => void
@@ -89,15 +90,15 @@ export function WikiApp({ onLogout }: WikiAppProps) {
       <nav className={styles.tabbar}>
         <button data-active={pane === 'tree'} onClick={() => setPane('tree')}>
           <FolderTree size={20} strokeWidth={1.75} />
-          <span>Файлы</span>
+          <span>{t('tabFiles')}</span>
         </button>
         <button data-active={pane === 'content'} onClick={() => setPane('content')}>
           <FileText size={20} strokeWidth={1.75} />
-          <span>Страница</span>
+          <span>{t('tabPage')}</span>
         </button>
         <button data-active={pane === 'chat'} onClick={() => setPane('chat')}>
           <Sparkles size={20} strokeWidth={1.75} />
-          <span>Ассистент</span>
+          <span>{t('assistant')}</span>
         </button>
       </nav>
     </div>

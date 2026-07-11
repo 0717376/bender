@@ -3,6 +3,7 @@ import type { ChatMessage } from '../lib/types'
 import { TOOL_LABELS } from '../lib/types'
 import { escapeHtml, enhanceCodeBlocks } from '../lib/markdown'
 import styles from './Message.module.css'
+import { t } from '../lib/i18n'
 
 interface MessageProps {
   msg: ChatMessage
@@ -41,7 +42,7 @@ export function Message({ msg }: MessageProps) {
     )
   }
 
-  const label = msg.role === 'user' ? 'вы' : 'ассистент'
+  const label = msg.role === 'user' ? t('roleUser') : t('roleAssistant')
 
   return (
     <div className={`${styles.message} ${styles[msg.role]}`}>

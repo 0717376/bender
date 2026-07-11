@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, subscribeTasks } from "./api";
+import { t } from "./i18n";
 import type { Overview, Task } from "./types";
 
 // view = built-in list, project = one project, tag = all open tasks carrying a tag (key = tag name)
 export type Sel = { kind: "view" | "project" | "tag"; key: string; id?: number; label: string };
 
 const VIEW_LABELS: Record<string, string> = {
-  today: "Сегодня", inbox: "Входящие", upcoming: "Предстоящие",
-  anytime: "В любое время", someday: "Когда-то потом", logbook: "Журнал",
+  today: t("view_today"), inbox: t("view_inbox"), upcoming: t("view_upcoming"),
+  anytime: t("view_anytime"), someday: t("view_someday"), logbook: t("view_logbook"),
 };
 
 // Selection ⇄ URL hash (#today, #project/5, #tag/дом): refresh restores the list, back/forward navigate.
@@ -41,9 +42,9 @@ const COMPLETE_ANIM_MS = 280;
 
 export function useTasks(pushToast: (t: ToastMsg) => void) {
   const [overview, setOverview] = useState<Overview | null>(null);
-  const [view, setView] = useState<Sel>(() => parseHash() ?? { kind: "view", key: "today", label: "Сегодня" });
+  const [view, setView] = useState<Sel>(() => parseHash() ?? { kind: "view", key: "today", label: t("view_today") });
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [doneTasks, setDoneTasks] = useState<Task[]>([]); // "Готово сегодня" (Today) / "Журнал" (project)
+  const [doneTasks, setDoneTasks] = useState<Task[]>([]); // "Done today" (Today) / "Logbook" (project)
   const [completing, setCompleting] = useState<Set<number>>(new Set());
   const [entering, setEntering] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -111,7 +112,7 @@ export function useTasks(pushToast: (t: ToastMsg) => void) {
     const v = viewRef.current;
     if (!overview || v.kind !== "project" || v.label) return;
     const p = overview.projects.find((x) => x.id === v.id);
-    setView(p ? { ...v, label: p.title } : { kind: "view", key: "today", label: "Сегодня" });
+    setView(p ? { ...v, label: p.title } : { kind: "view", key: "today", label: t("view_today") });
   }, [overview]);
 
   // On view switch: clear immediately so the previous view's rows never flash, then load.
@@ -199,7 +200,7 @@ export function useTasks(pushToast: (t: ToastMsg) => void) {
         setCompleting((s) => new Set(s).add(task.id));
         setTimeout(() => {
           setTasks((prev) => prev.filter((x) => x.id !== task.id));
-          // Land the crossed-out task in the view's done block (Готово сегодня / Журнал) right away.
+          // Land the crossed-out task in the view's done block (Done today / Logbook) right away.
           const v = viewRef.current;
           if (willComplete && ((v.kind === "view" && v.key === "today") || v.kind === "project")) {
             const iso = new Date().toISOString().slice(0, 10);
@@ -220,7 +221,7 @@ export function useTasks(pushToast: (t: ToastMsg) => void) {
       if (willComplete) {
         pushToast({
           id: `c${task.id}-${Date.now()}`,
-          text: `Выполнено: ${task.title}`,
+          text: `${t("toast_done")}: ${task.title}`,
           undo: () => {
             api.complete(task.id, false).then(reload).catch(() => {});
           },
@@ -253,7 +254,7 @@ export function useTasks(pushToast: (t: ToastMsg) => void) {
       api.remove(id).then(loadOverview).catch(() => reload());
       pushToast({
         id: `d${id}-${Date.now()}`,
-        text: `Удалено: ${title}`,
+        text: `${t("toast_deleted")}: ${title}`,
         undo: () => { api.restore(id).then(reload).catch(() => {}); },
       });
     },

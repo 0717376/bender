@@ -5,6 +5,7 @@ import { Calendar, Check, Flag, ListChecks, Repeat, X } from "lucide-react";
 import TaskDetail from "./TaskDetail";
 import { repeatLabel } from "./RepeatPopover";
 import { projectColor } from "./colors";
+import { t } from "./i18n";
 import type { Project, Task } from "./types";
 
 const isoToday = () => new Date().toISOString().slice(0, 10);
@@ -168,7 +169,7 @@ export default function TaskRow({
           ) : (
             <span className="h-title" onClick={() => setEditingHead(true)}>{task.title}</span>
           )}
-          <button className="h-del" onPointerDown={stop} onClick={(e) => { stop(e); ops.remove(task.id, task.title); }} aria-label="Удалить раздел">
+          <button className="h-del" onPointerDown={stop} onClick={(e) => { stop(e); ops.remove(task.id, task.title); }} aria-label={t("delete_heading")}>
             <X size={14} strokeWidth={2} />
           </button>
         </div>
@@ -195,7 +196,7 @@ export default function TaskRow({
           className={"check" + (done ? " done" : "")}
           onPointerDown={stop}
           onClick={(e) => { stop(e); ops.toggle(task); }}
-          aria-label={done ? "Снять отметку" : "Выполнить"}
+          aria-label={done ? t("mark_open") : t("mark_done")}
         >
           {done && <Check size={13} strokeWidth={3.2} />}
         </button>
@@ -204,7 +205,7 @@ export default function TaskRow({
           <input
             className="d-title"
             value={title}
-            placeholder="Без названия"
+            placeholder={t("untitled")}
             onPointerDown={stop}
             onClick={stop}
             onChange={(e) => setTitle(e.target.value)}

@@ -6,6 +6,7 @@ import {
 import type { FileNode } from '../lib/types'
 import { createNode, renameNode, deleteNode } from '../lib/api'
 import styles from './FileTree.module.css'
+import { t, confirmDelete } from '../lib/i18n'
 
 type Creating = { parent: string; type: 'file' | 'dir' } | null
 
@@ -95,7 +96,7 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged }: FileTreePr
   }
 
   const remove = async (path: string) => {
-    if (!confirm(`Удалить «${path}»?`)) return
+    if (!confirm(confirmDelete(path))) return
     try {
       await deleteNode(path)
       onChanged()
@@ -165,13 +166,13 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged }: FileTreePr
       <div className={styles.toolbar}>
         <span className={styles.brand}>
           <span className={styles.logo}><span /></span>
-          <span className={styles.heading}>Вики</span>
+          <span className={styles.heading}>{t('wiki')}</span>
         </span>
         <div className={styles.actions}>
-          <button title="Новая страница" onClick={() => startCreate(toolbarParent, 'file')}><FilePlus2 size={15} /></button>
-          <button title="Новая папка" onClick={() => startCreate(toolbarParent, 'dir')}><FolderPlus size={15} /></button>
-          <button title="Обновить" onClick={onChanged}><RotateCw size={14} /></button>
-          <button title="Сменить тему" onClick={toggleTheme}>{dark ? <Sun size={15} /> : <Moon size={15} />}</button>
+          <button title={t('newPage')} onClick={() => startCreate(toolbarParent, 'file')}><FilePlus2 size={15} /></button>
+          <button title={t('newFolder')} onClick={() => startCreate(toolbarParent, 'dir')}><FolderPlus size={15} /></button>
+          <button title={t('refresh')} onClick={onChanged}><RotateCw size={14} /></button>
+          <button title={t('toggleTheme')} onClick={toggleTheme}>{dark ? <Sun size={15} /> : <Moon size={15} />}</button>
         </div>
       </div>
       <div
@@ -187,7 +188,7 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged }: FileTreePr
             onCancel={cancel}
           />
         )}
-        {tree.length === 0 && !creating && <div className={styles.emptyHint}>Пусто. Создайте страницу.</div>}
+        {tree.length === 0 && !creating && <div className={styles.emptyHint}>{t('emptyTree')}</div>}
         {tree.map(node => (
           <TreeNode key={node.path} node={node} ctx={ctx} />
         ))}
@@ -199,7 +200,7 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged }: FileTreePr
           onDrop={(e) => onDropDir(e, '')}
         >
           <FolderUp size={15} />
-          <span>Переместить в корень</span>
+          <span>{t('moveToRoot')}</span>
         </div>
       )}
     </div>
@@ -260,11 +261,11 @@ function TreeNode({ node, ctx }: { node: FileNode; ctx: TreeCtx }) {
         <span className={styles.name}>{node.name}</span>
         <span className={styles.rowActions}>
           {isDir && <>
-            <button title="Новая страница здесь" onClick={(e) => beginCreate(e, 'file')}><FilePlus2 size={13} /></button>
-            <button title="Новая папка здесь" onClick={(e) => beginCreate(e, 'dir')}><FolderPlus size={13} /></button>
+            <button title={t('newPageHere')} onClick={(e) => beginCreate(e, 'file')}><FilePlus2 size={13} /></button>
+            <button title={t('newFolderHere')} onClick={(e) => beginCreate(e, 'dir')}><FolderPlus size={13} /></button>
           </>}
-          <button title="Переименовать" onClick={(e) => { e.stopPropagation(); ctx.startRename(node.path) }}><Pencil size={13} /></button>
-          <button title="Удалить" onClick={(e) => { e.stopPropagation(); ctx.remove(node.path) }}><Trash2 size={13} /></button>
+          <button title={t('rename')} onClick={(e) => { e.stopPropagation(); ctx.startRename(node.path) }}><Pencil size={13} /></button>
+          <button title={t('delete')} onClick={(e) => { e.stopPropagation(); ctx.remove(node.path) }}><Trash2 size={13} /></button>
         </span>
       </div>
       {isDir && open && (
@@ -325,7 +326,7 @@ function InlineInput({ type, initial = '', icon, onSubmit, onCancel }: InlineInp
         className={styles.inlineInput}
         value={value}
         spellCheck={false}
-        placeholder={type === 'dir' ? 'имя папки' : 'имя страницы'}
+        placeholder={type === 'dir' ? t('folderName') : t('pageName')}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter') { e.preventDefault(); finish(true) }

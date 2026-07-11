@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import { api } from "./api";
+import { t as tr } from "./i18n"; // alias: `t` is used for tasks in this file
 import type { Task } from "./types";
 
 export default function CommandPalette({ onPick, onClose }: { onPick: (t: Task) => void; onClose: () => void }) {
@@ -33,7 +34,7 @@ export default function CommandPalette({ onPick, onClose }: { onPick: (t: Task) 
           <Search size={17} strokeWidth={2} />
           <input
             ref={inputRef}
-            placeholder="Поиск задач…"
+            placeholder={tr("search_tasks")}
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={onKey}
@@ -54,7 +55,7 @@ export default function CommandPalette({ onPick, onClose }: { onPick: (t: Task) 
             ))}
           </ul>
         )}
-        {q.trim() && results.length === 0 && <div className="palette-empty">Ничего не найдено</div>}
+        {q.trim() && results.length === 0 && <div className="palette-empty">{tr("nothing_found")}</div>}
       </div>
     </div>
   );

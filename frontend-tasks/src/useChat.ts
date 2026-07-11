@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getToken } from "./api";
+import { t as tr } from "./i18n"; // alias: `t` is a local variable inside send()
 
 export interface ChatMsg {
   id: string;
@@ -93,7 +94,7 @@ export function useChat(onActivity?: () => void) {
       } catch {
         setBusy(false);
         setStreaming(null);
-        setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "assistant", text: "⚠ Нет связи с ассистентом." }]);
+        setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "assistant", text: tr("no_connection") }]);
       }
     },
     [busy, connect],

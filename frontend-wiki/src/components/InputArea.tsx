@@ -1,6 +1,7 @@
 import { useRef, useCallback } from 'react'
 import { MicButton } from './MicButton'
 import styles from './InputArea.module.css'
+import { t } from '../lib/i18n'
 
 interface InputAreaProps {
   busy: boolean
@@ -49,7 +50,7 @@ export function InputArea({ busy, onSend }: InputAreaProps) {
         <textarea
           ref={textareaRef}
           className={styles.textarea}
-          placeholder="Спросите ассистента…"
+          placeholder={t('askAssistant')}
           rows={1}
           spellCheck={false}
           onInput={handleInput}
@@ -58,7 +59,7 @@ export function InputArea({ busy, onSend }: InputAreaProps) {
         <MicButton onTranscription={handleTranscription} />
         <button
           className={styles.sendBtn}
-          aria-label="Отправить"
+          aria-label={t('send')}
           disabled={busy}
           onClick={handleSubmit}
         >

@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react'
 import { transcribeAudio } from '../lib/api'
 import styles from './MicButton.module.css'
+import { t } from '../lib/i18n'
 
 interface MicButtonProps {
   onTranscription: (text: string) => void
@@ -74,7 +75,7 @@ export function MicButton({ onTranscription }: MicButtonProps) {
   ].filter(Boolean).join(' ')
 
   return (
-    <button type="button" className={className} aria-label="Голосовой ввод" onClick={toggle}>
+    <button type="button" className={className} aria-label={t('voiceInput')} onClick={toggle}>
       <svg className={styles.micIcon} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <rect x="9" y="1" width="6" height="12" rx="3" />
         <path d="M19 10v1a7 7 0 0 1-14 0v-1" />

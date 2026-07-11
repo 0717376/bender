@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { t as tr } from "./i18n"; // alias: `t` names toasts in map callbacks here
 import type { ToastMsg } from "./useTasks";
 
 const LIFETIME_MS = 5000;
@@ -27,7 +28,7 @@ function Toast({ toast, dismiss }: { toast: ToastMsg; dismiss: (id: string) => v
           className="toast-undo"
           onClick={() => { toast.undo!(); dismiss(toast.id); }}
         >
-          Отменить
+          {tr("undo")}
         </button>
       )}
     </div>

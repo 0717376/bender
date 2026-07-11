@@ -3,6 +3,7 @@ import { Eye, Pencil } from 'lucide-react'
 import { fetchFile, saveFile } from '../lib/api'
 import { renderMarkdown, enhanceCodeBlocks, resolveWikiPath } from '../lib/markdown'
 import styles from './ContentPane.module.css'
+import { t } from '../lib/i18n'
 
 interface ContentPaneProps {
   path: string | null
@@ -167,7 +168,7 @@ export const ContentPane = forwardRef<ContentPaneHandle, ContentPaneProps>(
     }
 
     if (!path) {
-      return <div className={styles.pane}><div className={styles.empty}>Выберите страницу из списка файлов</div></div>
+      return <div className={styles.pane}><div className={styles.empty}>{t('pickPage')}</div></div>
     }
 
     return (
@@ -176,13 +177,13 @@ export const ContentPane = forwardRef<ContentPaneHandle, ContentPaneProps>(
           <span className={styles.path}>{path}</span>
           <div className={styles.barActions}>
             {mode === 'edit' && (
-              <span className={styles.status}>{saving || dirty ? 'Сохранение…' : 'Сохранено'}</span>
+              <span className={styles.status}>{saving || dirty ? t('saving') : t('saved')}</span>
             )}
             <button
               className={styles.toggle}
               onClick={() => setMode(m => (m === 'view' ? 'edit' : 'view'))}
             >
-              {mode === 'view' ? <><Pencil size={13} /> Редактировать</> : <><Eye size={13} /> Просмотр</>}
+              {mode === 'view' ? <><Pencil size={13} /> {t('edit')}</> : <><Eye size={13} /> {t('view')}</>}
             </button>
           </div>
         </div>

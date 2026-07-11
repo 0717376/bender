@@ -15,6 +15,7 @@ import Sidebar from "./Sidebar";
 import TaskList from "./TaskList";
 import { DragCard } from "./TaskRow";
 import Toasts from "./Toast";
+import { t, t as tr } from "./i18n"; // tr: alias for scopes where a local `t` shadows the import
 import type { Task } from "./types";
 import { Sel, ToastMsg, useTasks } from "./useTasks";
 
@@ -60,28 +61,28 @@ function Auth({ onOk }: { onOk: () => void }) {
       await login(pw);
       onOk();
     } catch {
-      setErr("Неверный пароль");
+      setErr(t("wrong_password"));
     }
   };
   return (
     <div className="auth">
       <form onSubmit={submit}>
-        <h1>Задачи</h1>
-        <input type="password" placeholder="Пароль" value={pw} onChange={(e) => setPw(e.target.value)} autoFocus />
+        <h1>{t("app_title")}</h1>
+        <input type="password" placeholder={t("password")} value={pw} onChange={(e) => setPw(e.target.value)} autoFocus />
         {err && <div className="err">{err}</div>}
-        <button type="submit">Войти</button>
+        <button type="submit">{t("sign_in")}</button>
       </form>
     </div>
   );
 }
 
 function taskToView(t: Task, label: (id: number) => string): Sel {
-  if (t.status === "completed") return { kind: "view", key: "logbook", label: "Журнал" };
-  if (t.someday) return { kind: "view", key: "someday", label: "Когда-то потом" };
+  if (t.status === "completed") return { kind: "view", key: "logbook", label: tr("view_logbook") };
+  if (t.someday) return { kind: "view", key: "someday", label: tr("view_someday") };
   if (t.project_id != null) return { kind: "project", key: "p", id: t.project_id, label: label(t.project_id) };
-  if (t.when_date && t.when_date <= isoToday()) return { kind: "view", key: "today", label: "Сегодня" };
-  if (t.when_date) return { kind: "view", key: "upcoming", label: "Предстоящие" };
-  return { kind: "view", key: "inbox", label: "Входящие" };
+  if (t.when_date && t.when_date <= isoToday()) return { kind: "view", key: "today", label: tr("view_today") };
+  if (t.when_date) return { kind: "view", key: "upcoming", label: tr("view_upcoming") };
+  return { kind: "view", key: "inbox", label: tr("view_inbox") };
 }
 
 function Board() {
@@ -187,7 +188,7 @@ function Board() {
   }, [T.tasks, onExpand]);
 
   const projectLabel = useCallback(
-    (id: number) => T.overview?.projects.find((p) => p.id === id)?.title ?? "Проект",
+    (id: number) => T.overview?.projects.find((p) => p.id === id)?.title ?? t("project"),
     [T.overview],
   );
 
@@ -257,10 +258,10 @@ function Board() {
   return (
     <div className={"board" + (navOpen ? " nav-open" : "")}>
       <div className="topbar">
-        <button className="icon-btn" onClick={() => setNavOpen(true)} aria-label="Меню"><Menu size={20} /></button>
+        <button className="icon-btn" onClick={() => setNavOpen(true)} aria-label={t("menu")}><Menu size={20} /></button>
         <span className="topbar-title">{T.view.label}</span>
-        <button className="icon-btn" onClick={() => setPaletteOpen(true)} aria-label="Поиск"><Search size={19} /></button>
-        <button className="icon-btn" onClick={toggleChat} aria-label="Ассистент"><Sparkles size={19} /></button>
+        <button className="icon-btn" onClick={() => setPaletteOpen(true)} aria-label={t("search")}><Search size={19} /></button>
+        <button className="icon-btn" onClick={toggleChat} aria-label={t("assistant")}><Sparkles size={19} /></button>
       </div>
 
       {navOpen && <div className="nav-scrim" onClick={() => setNavOpen(false)} />}

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { login } from '../lib/api'
 import { setToken } from '../lib/auth'
 import styles from './AuthScreen.module.css'
+import { t } from '../lib/i18n'
 
 interface AuthScreenProps {
   onSuccess: () => void
@@ -23,7 +24,7 @@ export function AuthScreen({ onSuccess }: AuthScreenProps) {
       setToken(res.token)
       onSuccess()
     } else {
-      setError(res.error || 'Ошибка входа')
+      setError(res.error || t('loginError'))
     }
   }
 
@@ -34,14 +35,14 @@ export function AuthScreen({ onSuccess }: AuthScreenProps) {
         <input
           className={styles.input}
           type="password"
-          placeholder="Пароль"
+          placeholder={t('password')}
           value={password}
           autoFocus
           onChange={e => setPassword(e.target.value)}
         />
         {error && <div className={styles.error}>{error}</div>}
         <button className={styles.btn} type="submit" disabled={busy}>
-          {busy ? '…' : 'Войти'}
+          {busy ? '…' : t('signIn')}
         </button>
       </form>
     </div>

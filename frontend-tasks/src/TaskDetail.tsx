@@ -4,6 +4,7 @@ import { DatePickerPopover } from "./DatePicker";
 import { MenuPopover } from "./Popover";
 import { RepeatPopover, repeatLabel } from "./RepeatPopover";
 import { projectColor } from "./colors";
+import { t } from "./i18n";
 import type { Project, Task } from "./types";
 
 const isoToday = () => new Date().toISOString().slice(0, 10);
@@ -84,14 +85,14 @@ export default function TaskDetail({
   const proj = task.project_id != null ? projects.find((p) => p.id === task.project_id) : null;
   const isTodayWhen = task.when_date === isoToday();
   const scheduled = task.someday || !!task.when_date;
-  const whenLabel = task.someday ? "Потом" : isTodayWhen ? "Сегодня" : task.when_date ? fmt(task.when_date) : "Когда";
+  const whenLabel = task.someday ? t("someday_short") : isTodayWhen ? t("view_today") : task.when_date ? fmt(task.when_date) : t("when");
 
   return (
     <div className="detail-inline" onFocusCapture={() => ops.beginEdit(task.id)} onBlurCapture={onBlurCapture}>
       <textarea
         ref={notesRef}
         className="d-notes-plain"
-        placeholder="Заметки"
+        placeholder={t("notes")}
         value={notes}
         rows={1}
         onChange={(e) => setNotes(e.target.value)}
@@ -107,7 +108,7 @@ export default function TaskDetail({
               <li key={c.id} className={c.done ? "done" : ""} onClick={() => ops.checkToggle(task.id, c.id, !c.done)}>
                 <span className="cbox">{c.done && <Check size={11} strokeWidth={3.4} />}</span>
                 <span className="ct">{c.title}</span>
-                <button className="cdel" onClick={(e) => { e.stopPropagation(); ops.checkRemove(task.id, c.id); }} aria-label="Удалить">
+                <button className="cdel" onClick={(e) => { e.stopPropagation(); ops.checkRemove(task.id, c.id); }} aria-label={t("delete")}>
                   <X size={13} strokeWidth={2} />
                 </button>
               </li>
@@ -118,7 +119,7 @@ export default function TaskDetail({
       {editor === "checklist" && (
         <form className="d-check-add" onSubmit={(e) => { e.preventDefault(); ops.checkAdd(task.id, checkInput); setCheckInput(""); }}>
           <Plus size={14} strokeWidth={2} />
-          <input autoFocus placeholder="Пункт чек-листа" value={checkInput} onChange={(e) => setCheckInput(e.target.value)} />
+          <input autoFocus placeholder={t("checklist_item")} value={checkInput} onChange={(e) => setCheckInput(e.target.value)} />
         </form>
       )}
 
@@ -144,12 +145,12 @@ export default function TaskDetail({
       {editor === "tags" && (
         <div className="d-editor">
           {task.tags.map((tag) => (
-            <span className="chip tag editable" key={tag}>{tag}<button onClick={() => removeTag(tag)} aria-label="Убрать тег"><X size={11} strokeWidth={2.5} /></button></span>
+            <span className="chip tag editable" key={tag}>{tag}<button onClick={() => removeTag(tag)} aria-label={t("remove_tag")}><X size={11} strokeWidth={2.5} /></button></span>
           ))}
           <input
             autoFocus
             className="tag-input"
-            placeholder="＃ тег"
+            placeholder={t("tag_placeholder")}
             value={tagInput}
             onChange={(e) => setTagInput(e.target.value)}
             onKeyDown={(e) => {
@@ -167,12 +168,12 @@ export default function TaskDetail({
           {whenLabel}
         </button>
         <div className="d-tools">
-          <button className={"d-tool" + (task.tags.length ? " on" : "")} onClick={() => toggle("tags")} aria-label="Теги"><Hash size={16} strokeWidth={2} /></button>
-          <button className={"d-tool" + (editor === "checklist" || checklist.length ? " on" : "")} onClick={() => toggle("checklist")} aria-label="Чек-лист"><ListChecks size={16} strokeWidth={2} /></button>
-          <button className={"d-tool" + (task.deadline ? " on" : "")} onClick={(e) => openDate(e, "deadline")} aria-label="Дедлайн"><Flag size={16} strokeWidth={2} /></button>
-          <button className={"d-tool" + (task.repeat ? " on" : "")} onClick={openRep} aria-label="Повтор"><Repeat size={16} strokeWidth={2} /></button>
-          <button className={"d-tool" + (proj ? " on" : "")} onClick={openProj} aria-label="Проект"><Folder size={16} strokeWidth={2} /></button>
-          <button className="d-tool del" onClick={() => { ops.remove(task.id, task.title); onCollapse(); }} aria-label="Удалить"><Trash2 size={16} strokeWidth={2} /></button>
+          <button className={"d-tool" + (task.tags.length ? " on" : "")} onClick={() => toggle("tags")} aria-label={t("tags")}><Hash size={16} strokeWidth={2} /></button>
+          <button className={"d-tool" + (editor === "checklist" || checklist.length ? " on" : "")} onClick={() => toggle("checklist")} aria-label={t("checklist")}><ListChecks size={16} strokeWidth={2} /></button>
+          <button className={"d-tool" + (task.deadline ? " on" : "")} onClick={(e) => openDate(e, "deadline")} aria-label={t("deadline")}><Flag size={16} strokeWidth={2} /></button>
+          <button className={"d-tool" + (task.repeat ? " on" : "")} onClick={openRep} aria-label={t("repeat")}><Repeat size={16} strokeWidth={2} /></button>
+          <button className={"d-tool" + (proj ? " on" : "")} onClick={openProj} aria-label={t("project")}><Folder size={16} strokeWidth={2} /></button>
+          <button className="d-tool del" onClick={() => { ops.remove(task.id, task.title); onCollapse(); }} aria-label={t("delete")}><Trash2 size={16} strokeWidth={2} /></button>
         </div>
       </div>
 
@@ -181,9 +182,9 @@ export default function TaskDetail({
           anchor={datePop.anchor}
           value={task.when_date ?? null}
           quick={[
-            { key: "today", label: "Сегодня", icon: <Star size={13} strokeWidth={2} />, onClick: () => { ops.patch(task.id, { when: "today" }); setDatePop(null); } },
-            { key: "someday", label: "Потом", icon: <Moon size={13} strokeWidth={2} />, onClick: () => { ops.patch(task.id, { when: "someday" }); setDatePop(null); } },
-            ...(scheduled ? [{ key: "clear", label: "Убрать", danger: true, onClick: () => { ops.patch(task.id, { when: "" }); setDatePop(null); } }] : []),
+            { key: "today", label: t("view_today"), icon: <Star size={13} strokeWidth={2} />, onClick: () => { ops.patch(task.id, { when: "today" }); setDatePop(null); } },
+            { key: "someday", label: t("someday_short"), icon: <Moon size={13} strokeWidth={2} />, onClick: () => { ops.patch(task.id, { when: "someday" }); setDatePop(null); } },
+            ...(scheduled ? [{ key: "clear", label: t("remove"), danger: true, onClick: () => { ops.patch(task.id, { when: "" }); setDatePop(null); } }] : []),
           ]}
           onPick={(d) => { ops.patch(task.id, { when: d }); setDatePop(null); }}
           onClose={() => setDatePop(null)}
@@ -193,7 +194,7 @@ export default function TaskDetail({
         <DatePickerPopover
           anchor={datePop.anchor}
           value={task.deadline ?? null}
-          quick={task.deadline ? [{ key: "clear", label: "Убрать дедлайн", danger: true, onClick: () => { ops.patch(task.id, { deadline: "" }); setDatePop(null); } }] : []}
+          quick={task.deadline ? [{ key: "clear", label: t("clear_deadline"), danger: true, onClick: () => { ops.patch(task.id, { deadline: "" }); setDatePop(null); } }] : []}
           onPick={(d) => { ops.patch(task.id, { deadline: d }); setDatePop(null); }}
           onClose={() => setDatePop(null)}
         />
@@ -212,7 +213,7 @@ export default function TaskDetail({
           anchor={projPop}
           value={task.project_id ?? null}
           items={[
-            { value: null, label: "Без проекта" },
+            { value: null, label: t("no_project") },
             ...projects.map((p) => ({ value: p.id, label: p.title, dot: projectColor(p.id) })),
           ]}
           onPick={(v) => { ops.patch(task.id, { project: v === null ? "null" : v }); setProjPop(null); }}
