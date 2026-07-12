@@ -9,6 +9,7 @@ import type { CollisionDetection } from "@dnd-kit/core";
 import { api, getToken, login } from "./api";
 import ChatPane from "./ChatPane";
 import CommandPalette from "./CommandPalette";
+import ConfirmModal from "./ConfirmModal";
 import NewTaskModal from "./NewTaskModal";
 import SettingsModal, { ThemeMode } from "./SettingsModal";
 import Sidebar from "./Sidebar";
@@ -94,6 +95,7 @@ function Board() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
+  const [confirmDel, setConfirmDel] = useState<{ id: number; title: string; kind?: string } | null>(null);
   const [navOpen, setNavOpen] = useState(false); // mobile sidebar drawer
   const [chatCollapsed, setChatCollapsed] = useState(() => {
     const s = localStorage.getItem("tasks_chat");
@@ -208,7 +210,7 @@ function Board() {
         setNewTaskOpen(true);
       } else if (e.key === "Escape") {
         if (paletteOpen) setPaletteOpen(false);
-        else if (newTaskOpen) { /* the modal closes itself */ }
+        else if (newTaskOpen || confirmDel) { /* the modal closes itself */ }
         else if (expandedId != null) setExpandedId(null);
         else if (focusId != null) setFocusId(null);
         else if (navOpen) setNavOpen(false);
@@ -218,7 +220,7 @@ function Board() {
       // List navigation — only when not typing and no overlay is open.
       const el = e.target as HTMLElement;
       const typing = el?.matches?.("input, textarea, select, [contenteditable]");
-      if (mod || typing || paletteOpen || newTaskOpen) return;
+      if (mod || typing || paletteOpen || newTaskOpen || confirmDel) return;
       const rows = T.tasks.filter((t) => t.kind !== "heading");
       if (!rows.length) return;
       const idx = focusId != null ? rows.findIndex((t) => t.id === focusId) : -1;
@@ -240,7 +242,7 @@ function Board() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [paletteOpen, expandedId, navOpen, newTaskOpen, focusId, T, onExpand]);
+  }, [paletteOpen, expandedId, navOpen, newTaskOpen, confirmDel, focusId, T, onExpand]);
 
   const toggleChat = () => {
     setChatCollapsed((v) => {
@@ -250,7 +252,8 @@ function Board() {
   };
 
   const ops = {
-    patch: T.patch, remove: T.remove, toggle: T.toggle,
+    patch: T.patch, toggle: T.toggle,
+    remove: (id: number, title: string, kind?: string) => setConfirmDel({ id, title, kind }),
     checkAdd: T.checkAdd, checkToggle: T.checkToggle, checkRemove: T.checkRemove,
     beginEdit: T.beginEdit, endEdit: T.endEdit,
   };
@@ -321,6 +324,18 @@ function Board() {
           projects={T.overview?.projects ?? []}
           onCreate={(title, extra) => void T.add(title, extra)}
           onClose={() => setNewTaskOpen(false)}
+        />
+      )}
+      {confirmDel && (
+        <ConfirmModal
+          question={t(confirmDel.kind === "heading" ? "confirm_delete_heading" : "confirm_delete")}
+          detail={confirmDel.title}
+          onConfirm={() => {
+            T.remove(confirmDel.id, confirmDel.title);
+            setExpandedId((c) => (c === confirmDel.id ? null : c));
+            setConfirmDel(null);
+          }}
+          onClose={() => setConfirmDel(null)}
         />
       )}
       {paletteOpen && <CommandPalette onPick={pickFromPalette} onClose={() => setPaletteOpen(false)} />}
