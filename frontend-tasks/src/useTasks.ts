@@ -238,8 +238,9 @@ export function useTasks(pushToast: (t: ToastMsg) => void) {
         const server = await api.patch(id, body);
         setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...server } : t)));
         loadOverview();
-        // Membership may have changed (e.g. moved out of Today) — reconcile unless mid-edit.
-        if (!fieldFocused.current) void loadTasks();
+        // when/project reconcile even mid-edit — the row must leave the view right away
+        const affectsMembership = "when" in body || "project" in body;
+        if (affectsMembership || !fieldFocused.current) void loadTasks();
       } catch {
         void reload();
       }
