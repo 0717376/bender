@@ -15,7 +15,7 @@ function Calendar({ value, onPick }: { value: string | null; onPick: (iso: strin
     ? [Number(value.slice(0, 4)), Number(value.slice(5, 7)) - 1]
     : [now.getFullYear(), now.getMonth()];
   const [view, setView] = useState({ y: vy, m: vm });
-  const t = todayISO();
+  const today = todayISO();
 
   const shift = (delta: number) => {
     const d = new Date(view.y, view.m + delta, 1);
@@ -57,7 +57,7 @@ function Calendar({ value, onPick }: { value: string | null; onPick: (iso: strin
           return (
             <button
               key={i}
-              className={"dp-day" + (c.out ? " out" : "") + (ci === t ? " today" : "") + (ci === value ? " sel" : "")}
+              className={"dp-day" + (c.out ? " out" : "") + (ci === today ? " today" : "") + (ci === value ? " sel" : "")}
               onClick={() => onPick(ci)}
             >
               {c.d}
