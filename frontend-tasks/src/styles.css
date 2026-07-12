@@ -318,6 +318,15 @@ button, input, textarea, select { font-family: inherit; -webkit-tap-highlight-co
 .ntm-create:hover:not(:disabled) { filter: brightness(1.05); }
 .ntm-create:disabled { opacity: .35; box-shadow: none; cursor: default; }
 
+/* Confirm modal */
+.confirm { width: 380px; max-width: 90vw; background: var(--panel); border: 1px solid var(--border-3); border-radius: 16px; box-shadow: var(--shadow-pop); padding: 20px; display: flex; flex-direction: column; gap: 6px; animation: popCard .3s cubic-bezier(.2, .9, .2, 1) both; }
+.confirm-q { font-size: 15px; font-weight: 700; letter-spacing: -.01em; color: var(--text); }
+.confirm-detail { font-size: 13px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.confirm-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.confirm-btns .qbtn { padding: 7px 14px; }
+.qbtn.confirm-del { color: #fff; background: var(--danger); border-color: transparent; }
+.qbtn.confirm-del:hover { color: #fff; background: var(--danger); filter: brightness(1.08); }
+
 /* Settings modal */
 .stm { width: 460px; max-width: 92vw; background: var(--panel); border: 1px solid var(--border-3); border-radius: 18px; box-shadow: var(--shadow-pop); padding: 20px 20px 18px; display: flex; flex-direction: column; gap: 14px; animation: popCard .3s cubic-bezier(.2, .9, .2, 1) both; }
 .stm-head { display: flex; align-items: center; }

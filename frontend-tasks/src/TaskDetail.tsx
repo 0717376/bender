@@ -26,12 +26,10 @@ export default function TaskDetail({
   task,
   projects,
   ops,
-  onCollapse,
 }: {
   task: Task;
   projects: Project[];
   ops: Ops;
-  onCollapse: () => void;
 }) {
   const [notes, setNotes] = useState(task.notes);
   const [tagInput, setTagInput] = useState("");
@@ -176,7 +174,7 @@ export default function TaskDetail({
           <button className={"d-tool" + (task.deadline ? " on" : "")} onClick={(e) => openDate(e, "deadline")} aria-label={t("deadline")}><Flag size={16} strokeWidth={2} /></button>
           <button className={"d-tool" + (task.repeat ? " on" : "")} onClick={openRep} aria-label={t("repeat")}><Repeat size={16} strokeWidth={2} /></button>
           <button className={"d-tool" + (proj ? " on" : "")} onClick={openProj} aria-label={t("project")}><Folder size={16} strokeWidth={2} /></button>
-          <button className="d-tool del" onClick={() => { ops.remove(task.id, task.title); onCollapse(); }} aria-label={t("delete")}><Trash2 size={16} strokeWidth={2} /></button>
+          <button className="d-tool del" onClick={() => ops.remove(task.id, task.title)} aria-label={t("delete")}><Trash2 size={16} strokeWidth={2} /></button>
         </div>
       </div>
 

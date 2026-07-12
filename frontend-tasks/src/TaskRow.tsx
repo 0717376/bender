@@ -65,7 +65,7 @@ export function DragCard({ task, projects }: { task: Task; projects: Project[] }
 
 interface Ops {
   patch: (id: number, body: Record<string, unknown>) => void;
-  remove: (id: number, title: string) => void;
+  remove: (id: number, title: string, kind?: string) => void;
   toggle: (t: Task) => void;
   checkAdd: (taskId: number, title: string) => void;
   checkToggle: (taskId: number, itemId: number, done: boolean) => void;
@@ -169,7 +169,7 @@ export default function TaskRow({
           ) : (
             <span className="h-title" onClick={() => setEditingHead(true)}>{task.title}</span>
           )}
-          <button className="h-del" onPointerDown={stop} onClick={(e) => { stop(e); ops.remove(task.id, task.title); }} aria-label={t("delete_heading")}>
+          <button className="h-del" onPointerDown={stop} onClick={(e) => { stop(e); ops.remove(task.id, task.title, "heading"); }} aria-label={t("delete_heading")}>
             <X size={14} strokeWidth={2} />
           </button>
         </div>
@@ -223,7 +223,7 @@ export default function TaskRow({
 
       {render && (
         <div ref={wrapRef} className={"detail-wrap" + (opening ? " opening" : "")}>
-          <TaskDetail task={task} projects={projects} ops={ops} onCollapse={() => onExpand(null)} />
+          <TaskDetail task={task} projects={projects} ops={ops} />
         </div>
       )}
     </li>
