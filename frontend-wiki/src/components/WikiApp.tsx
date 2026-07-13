@@ -7,6 +7,7 @@ import { clearToken } from '../lib/auth'
 import { FileTree } from './FileTree'
 import { ContentPane, type ContentPaneHandle } from './ContentPane'
 import { ChatPane } from './ChatPane'
+import { SettingsModal, type ThemeMode } from './SettingsModal'
 import styles from './WikiApp.module.css'
 import { t } from '../lib/i18n'
 
@@ -23,7 +24,31 @@ export function WikiApp({ onLogout }: WikiAppProps) {
   const [selText, setSelText] = useState('')
   // Which pane is visible on mobile (single-pane layout). Ignored on desktop.
   const [pane, setPane] = useState<Pane>('tree')
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
+    const s = localStorage.getItem('wiki_theme')
+    return s === 'light' || s === 'dark' ? s : 'auto'
+  })
+  const [palette, setPalette] = useState(() => localStorage.getItem('wiki_palette') ?? 'halo')
   const contentRef = useRef<ContentPaneHandle>(null)
+
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const apply = () => {
+      const dark = themeMode === 'dark' || (themeMode === 'auto' && mq.matches)
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+    }
+    apply()
+    localStorage.setItem('wiki_theme', themeMode)
+    mq.addEventListener('change', apply) // follow the OS while in auto
+    return () => mq.removeEventListener('change', apply)
+  }, [themeMode])
+
+  useEffect(() => {
+    if (palette === 'halo') delete document.documentElement.dataset.palette
+    else document.documentElement.dataset.palette = palette
+    localStorage.setItem('wiki_palette', palette)
+  }, [palette])
 
   // Tapping a file in the tree opens it and slides to the content pane on mobile.
   const selectPath = useCallback((p: string | null) => {
@@ -65,6 +90,7 @@ export function WikiApp({ onLogout }: WikiAppProps) {
           selectedPath={selectedPath}
           onSelect={selectPath}
           onChanged={reloadTree}
+          onSettings={() => setSettingsOpen(true)}
         />
       </aside>
       <main className={styles.center}>
@@ -86,6 +112,16 @@ export function WikiApp({ onLogout }: WikiAppProps) {
           onClearSelection={clearSelection}
         />
       </aside>
+
+      {settingsOpen && (
+        <SettingsModal
+          mode={themeMode}
+          palette={palette}
+          onMode={setThemeMode}
+          onPalette={setPalette}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
 
       <nav className={styles.tabbar}>
         <button data-active={pane === 'tree'} onClick={() => setPane('tree')}>
