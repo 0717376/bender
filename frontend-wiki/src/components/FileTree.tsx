@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import {
   ChevronRight, Folder, FolderOpen, FileText,
-  FilePlus2, FolderPlus, RotateCw, Pencil, Trash2, FolderUp, Sun, Moon,
+  FilePlus2, FolderPlus, RotateCw, Pencil, Trash2, FolderUp, Settings,
 } from 'lucide-react'
 import type { FileNode } from '../lib/types'
 import { createNode, renameNode, deleteNode } from '../lib/api'
@@ -34,28 +34,19 @@ interface FileTreeProps {
   selectedPath: string | null
   onSelect: (path: string) => void
   onChanged: () => void
-}
-
-function useTheme(): [boolean, () => void] {
-  const [dark, setDark] = useState(() => document.documentElement.dataset.theme === 'dark')
-  useEffect(() => {
-    document.documentElement.dataset.theme = dark ? 'dark' : 'light'
-    try { localStorage.setItem('wiki_theme', dark ? 'dark' : 'light') } catch { /* ignore */ }
-  }, [dark])
-  return [dark, () => setDark(v => !v)]
+  onSettings: () => void
 }
 
 const parentOf = (p: string) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '')
 const baseOf = (p: string) => (p.includes('/') ? p.slice(p.lastIndexOf('/') + 1) : p)
 const join = (parent: string, name: string) => (parent ? `${parent}/${name}` : name)
 
-export function FileTree({ tree, selectedPath, onSelect, onChanged }: FileTreeProps) {
+export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings }: FileTreeProps) {
   const [creating, setCreating] = useState<Creating>(null)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const dragPathRef = useRef<string | null>(null)
-  const [dark, toggleTheme] = useTheme()
 
   const startCreate = (parent: string, type: 'file' | 'dir') => {
     setRenaming(null)
@@ -172,7 +163,6 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged }: FileTreePr
           <button title={t('newPage')} onClick={() => startCreate(toolbarParent, 'file')}><FilePlus2 size={15} /></button>
           <button title={t('newFolder')} onClick={() => startCreate(toolbarParent, 'dir')}><FolderPlus size={15} /></button>
           <button title={t('refresh')} onClick={onChanged}><RotateCw size={14} /></button>
-          <button title={t('toggleTheme')} onClick={toggleTheme}>{dark ? <Sun size={15} /> : <Moon size={15} />}</button>
         </div>
       </div>
       <div
@@ -203,6 +193,11 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged }: FileTreePr
           <span>{t('moveToRoot')}</span>
         </div>
       )}
+      <div className={styles.foot}>
+        <button className={styles.gear} title={t('settings')} onClick={onSettings} aria-label={t('settings')}>
+          <Settings size={16} strokeWidth={1.9} />
+        </button>
+      </div>
     </div>
   )
 }

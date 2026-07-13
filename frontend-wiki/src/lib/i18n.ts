@@ -1,5 +1,17 @@
-// UI language: follows the browser (no in-app switcher — the wiki chrome is tiny).
-const ru = navigator.language.toLowerCase().startsWith('ru')
+export type Lang = 'ru' | 'en'
+
+const stored = localStorage.getItem('wiki_lang')
+export const lang: Lang =
+  stored === 'ru' || stored === 'en'
+    ? stored
+    : navigator.language.toLowerCase().startsWith('ru') ? 'ru' : 'en'
+
+export function setLang(l: Lang) {
+  localStorage.setItem('wiki_lang', l)
+  location.reload()
+}
+
+const ru = lang === 'ru'
 
 const RU = {
   loginError: 'Ошибка входа',
@@ -22,7 +34,25 @@ const RU = {
   newPage: 'Новая страница',
   newFolder: 'Новая папка',
   refresh: 'Обновить',
-  toggleTheme: 'Сменить тему',
+  settings: 'Настройки',
+  close: 'Закрыть',
+  theme: 'Тема',
+  themeLight: 'Светлая',
+  themeDark: 'Тёмная',
+  themeAuto: 'Авто',
+  palette: 'Расцветка',
+  language: 'Язык',
+  langRu: 'Русский',
+  langEn: 'English',
+  palIndigo: 'Индиго',
+  palForest: 'Лес',
+  palOcean: 'Океан',
+  palPlum: 'Слива',
+  palAmber: 'Янтарь',
+  palRosewood: 'Роза',
+  palInk: 'Тушь',
+  palMatcha: 'Матча',
+  palSky: 'Небо',
   newPageHere: 'Новая страница здесь',
   newFolderHere: 'Новая папка здесь',
   rename: 'Переименовать',
@@ -64,7 +94,25 @@ const EN: Record<keyof typeof RU, string> = {
   newPage: 'New page',
   newFolder: 'New folder',
   refresh: 'Refresh',
-  toggleTheme: 'Toggle theme',
+  settings: 'Settings',
+  close: 'Close',
+  theme: 'Theme',
+  themeLight: 'Light',
+  themeDark: 'Dark',
+  themeAuto: 'Auto',
+  palette: 'Palette',
+  language: 'Language',
+  langRu: 'Русский',
+  langEn: 'English',
+  palIndigo: 'Indigo',
+  palForest: 'Forest',
+  palOcean: 'Ocean',
+  palPlum: 'Plum',
+  palAmber: 'Amber',
+  palRosewood: 'Rose',
+  palInk: 'Ink',
+  palMatcha: 'Matcha',
+  palSky: 'Sky',
   newPageHere: 'New page here',
   newFolderHere: 'New folder here',
   rename: 'Rename',
