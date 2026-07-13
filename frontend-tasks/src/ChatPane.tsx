@@ -45,7 +45,7 @@ export default function ChatPane({
   if (collapsed) {
     return (
       <button className="chat-rail" onClick={onToggle} aria-label={t("open_assistant")}>
-        <span className="logo"><span /></span>
+        <span className="logo"><Sparkles size={15} strokeWidth={2.4} /></span>
       </button>
     );
   }

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
-import { CalendarDays, CheckCircle2, Inbox, Layers, Moon, Plus, Settings, Star, X } from "lucide-react";
+import { CalendarDays, Check, CheckCircle2, Inbox, Layers, Moon, Plus, Settings, Star, X } from "lucide-react";
 import { projectColor } from "./colors";
 import { t } from "./i18n";
 import type { Overview } from "./types";
@@ -127,7 +127,7 @@ export default function Sidebar({
   return (
     <aside className={"sidebar scroll" + (dragging ? " dragging" : "")}>
       <div className="brand">
-        <span className="logo"><span /></span>
+        <span className="logo"><Check size={16} strokeWidth={3} /></span>
         <span className="word">{t("app_title")}</span>
         {onClose && <button className="side-x" onClick={onClose} aria-label={t("close_menu")}><X size={16} /></button>}
       </div>
