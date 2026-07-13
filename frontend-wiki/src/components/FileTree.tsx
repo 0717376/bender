@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import {
-  ChevronRight, Folder, FolderOpen, FileText,
+  BookOpen, ChevronRight, Folder, FolderOpen, FileText,
   FilePlus2, FolderPlus, RotateCw, Pencil, Trash2, FolderUp, Settings,
 } from 'lucide-react'
 import type { FileNode } from '../lib/types'
@@ -156,7 +156,7 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings }
     <div className={styles.tree}>
       <div className={styles.toolbar}>
         <span className={styles.brand}>
-          <span className={styles.logo}><span /></span>
+          <span className={styles.logo}><BookOpen size={14} strokeWidth={2.4} /></span>
           <span className={styles.heading}>{t('wiki')}</span>
         </span>
         <div className={styles.actions}>

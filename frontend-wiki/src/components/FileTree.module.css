@@ -43,17 +43,11 @@
     height: 26px;
     border-radius: 8px;
     background: var(--accent-grad);
+    color: #fff;
     box-shadow: var(--shadow-accent);
     display: grid;
     place-items: center;
     flex-shrink: 0;
-}
-
-.logo > span {
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    background: #fff;
 }
 
 .heading {
