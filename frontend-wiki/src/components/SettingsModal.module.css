@@ -151,6 +151,13 @@
     color: var(--accent-ink);
 }
 
+.ver {
+    font-size: 11px;
+    color: var(--text-3);
+    text-align: center;
+    margin-top: 2px;
+}
+
 @media (max-width: 760px) {
     .scrim { padding-top: 10vh; }
     .palGrid { grid-template-columns: repeat(4, 1fr); }
