@@ -307,6 +307,15 @@ function Board() {
     });
   };
 
+  // Crossing into the mobile layout (resize or browser zoom) turns the side chat into a
+  // 74dvh bottom sheet — close it instead of surprising the user with a covered list.
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 860px)");
+    const onChange = () => { if (mq.matches) setChatCollapsed(true); };
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
   const ops = {
     patch: T.patch, toggle: T.toggle,
     remove: (id: number, title: string, kind?: string) => setConfirmDel({ id, title, kind }),
@@ -374,6 +383,7 @@ function Board() {
         </DragOverlay>
       </DndContext>
 
+      {!chatCollapsed && <div className="chat-scrim" onClick={toggleChat} />}
       <ChatPane onActivity={T.reload} collapsed={chatCollapsed} onToggle={toggleChat} />
 
       {newTaskOpen && (
