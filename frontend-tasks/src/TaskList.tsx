@@ -5,7 +5,7 @@ import { MenuPopover } from "./Popover";
 import TaskRow from "./TaskRow";
 import { MONTHS, doneOfTotal, locale, logbookStats, t } from "./i18n";
 import type { Area, Project, Task } from "./types";
-import type { Sel } from "./useTasks";
+import { isOverdue, type Sel } from "./useTasks";
 
 const DRAGGABLE_VIEWS = new Set(["today", "inbox", "anytime", "someday"]);
 
@@ -166,7 +166,7 @@ export default function TaskList({
   const projArea = project?.area_id != null ? areas.find((a) => a.id === project.area_id) : null;
 
   const today = isoToday();
-  const overdue = isToday ? tasks.filter((t) => (t.when_date && t.when_date < today) || (t.deadline && t.deadline < today)) : [];
+  const overdue = isToday ? tasks.filter((t) => isOverdue(t, today)) : [];
   const onTime = isToday ? tasks.filter((t) => !overdue.includes(t)) : tasks;
 
   const row = (t: Task, drag: boolean) => (
