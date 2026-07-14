@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Menu, Search, Sparkles } from "lucide-react";
 import {
-  DndContext, DragEndEvent, DragStartEvent, DragOverlay,
+  DndContext, DragEndEvent, DragOverEvent, DragStartEvent, DragOverlay,
   KeyboardSensor, PointerSensor, pointerWithin, closestCenter, useSensor, useSensors,
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
@@ -20,12 +20,6 @@ import { t, t as tr } from "./i18n"; // tr: alias for scopes where a local `t` s
 import type { Task } from "./types";
 import { Sel, ToastMsg, isOverdue, useTasks } from "./useTasks";
 
-// Pointer-based hit testing so dropping onto a sidebar category registers reliably;
-// fall back to closestCenter for list reordering when the pointer is between rows.
-const collision: CollisionDetection = (args) => {
-  const hits = pointerWithin(args);
-  return hits.length ? hits : closestCenter(args);
-};
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const tomorrowISO = () => {
@@ -110,6 +104,8 @@ function Board() {
   const [palette, setPalette] = useState(() => localStorage.getItem("tasks_palette") ?? "halo");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeId, setActiveId] = useState<number | null>(null);
+  // Overdue task currently carried into the Today group mid-drag (renders there as a live preview).
+  const [previewTodayId, setPreviewTodayId] = useState<number | null>(null);
   const [focusId, setFocusId] = useState<number | null>(null); // keyboard-focused row
   const pendingExpand = useRef<number | null>(null);
 
@@ -118,41 +114,90 @@ function Board() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
+  const isTodayView = T.view.kind === "view" && T.view.key === "today";
+  const activeTask = activeId != null ? T.tasks.find((t) => t.id === activeId) ?? null : null;
+
+  // Pointer-based hit testing so dropping onto a sidebar category registers reliably;
+  // fall back to closestCenter for list reordering when the pointer is between rows.
+  // In Today, a task from the Today group ignores the Overdue group entirely: hovering it
+  // yields no target at all (no gap opens, dropping there is a no-op).
+  const collision = useCallback<CollisionDetection>((args) => {
+    const hits = pointerWithin(args);
+    if (isTodayView && activeTask && !isOverdue(activeTask, isoToday())) {
+      const today = isoToday();
+      const overdueIds = new Set(T.tasks.filter((t) => isOverdue(t, today)).map((t) => t.id));
+      const blocked = (id: unknown) => typeof id === "number" && overdueIds.has(id);
+      const best = hits.length ? hits : closestCenter(args);
+      return best.length && blocked(best[0].id) ? [] : best;
+    }
+    return hits.length ? hits : closestCenter(args);
+  }, [isTodayView, activeTask, T.tasks]);
+
   const onDragStart = (e: DragStartEvent) => { setActiveId(Number(e.active.id)); T.setDragging(true); };
-  const onDragCancel = () => { setActiveId(null); T.setDragging(false); };
+  const onDragCancel = () => {
+    setActiveId(null);
+    T.setDragging(false);
+    if (previewTodayId != null) { setPreviewTodayId(null); void T.reload(); }
+  };
+
+  // Crossing the Overdue → Today boundary mid-drag: move the row into the Today group right away
+  // so it previews as a real element there (and back, if dragged up again).
+  const onDragOver = (e: DragOverEvent) => {
+    if (!isTodayView) return;
+    const { active, over } = e;
+    if (!over || typeof over.id !== "number" || active.id === over.id) return;
+    const from = T.tasks.findIndex((t) => t.id === active.id);
+    const to = T.tasks.findIndex((t) => t.id === over.id);
+    if (from < 0 || to < 0) return;
+    const today = isoToday();
+    const a = T.tasks[from];
+    const aOver = isOverdue(a, today) && a.id !== previewTodayId;
+    const oOver = isOverdue(T.tasks[to], today);
+    if (aOver === oOver) return;
+    if (aOver) setPreviewTodayId(a.id);
+    else if (a.id === previewTodayId) setPreviewTodayId(null);
+    else return; // genuine Today task can't enter Overdue
+    const next = [...T.tasks];
+    next.splice(from, 1);
+    const at = next.findIndex((t) => t.id === over.id);
+    next.splice(from < to ? at + 1 : at, 0, a);
+    T.arrange(next);
+  };
+
   const onDragEnd = (e: DragEndEvent) => {
     setActiveId(null);
     T.setDragging(false);
+    const preview = previewTodayId;
+    setPreviewTodayId(null);
     const { active, over } = e;
-    if (!over) return;
+    if (!over) { if (preview != null) void T.reload(); return; }
     const taskId = Number(active.id);
     if (typeof over.id === "string" && over.id.startsWith("drop:")) {
       const body = dropBody(over.id);
       if (body) T.patch(taskId, body); // membership reconciles via the patch reload
       return;
     }
-    // Same-list reorder.
-    if (active.id === over.id) return;
     const from = T.tasks.findIndex((t) => t.id === active.id);
     const to = T.tasks.findIndex((t) => t.id === over.id);
-    if (from < 0 || to < 0) return;
-    const next = [...T.tasks];
-    const [moved] = next.splice(from, 1);
-    next.splice(to, 0, moved);
-    if (T.view.kind === "view" && T.view.key === "today") {
-      const today = isoToday();
-      const src = isOverdue(T.tasks[from], today);
-      const dst = isOverdue(T.tasks[to], today);
-      if (src !== dst) {
-        if (!src) return; // Today → Overdue makes no sense: snap back
-        T.reorder(next); // Overdue → Today: reschedule, keeping the drop position
-        T.patch(moved.id, { when: "today" });
+    if (from < 0 || to < 0) { if (preview != null) void T.reload(); return; }
+    let next = T.tasks;
+    if (from !== to) {
+      next = [...T.tasks];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+    }
+    if (isTodayView) {
+      if (preview === taskId) {
+        // Overdue task dropped inside Today: persist the order and reschedule it
+        T.reorder(next);
+        T.patch(taskId, { when: "today" });
         return;
       }
+      const today = isoToday();
+      if (isOverdue(T.tasks[from], today) !== isOverdue(T.tasks[to], today)) return;
     }
-    T.reorder(next);
+    if (from !== to) T.reorder(next);
   };
-  const activeTask = activeId != null ? T.tasks.find((t) => t.id === activeId) ?? null : null;
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
@@ -284,6 +329,7 @@ function Board() {
         sensors={sensors}
         collisionDetection={collision}
         onDragStart={onDragStart}
+        onDragOver={onDragOver}
         onDragCancel={onDragCancel}
         onDragEnd={onDragEnd}
       >
@@ -319,6 +365,7 @@ function Board() {
           }}
           onTag={(tag) => T.setView({ kind: "tag", key: tag, label: `#${tag}` })}
           activeId={activeId}
+          previewTodayId={previewTodayId}
           focusId={focusId}
         />
 

@@ -280,6 +280,9 @@ export function useTasks(pushToast: (t: ToastMsg) => void) {
     api.reorder(ordered.map((t) => t.id)).catch(() => {});
   }, []);
 
+  /** Local-only reorder for live drag previews — nothing is persisted. */
+  const arrange = useCallback((ordered: Task[]) => setTasks(ordered), []);
+
   // --- checklist (optimistic on the open task) ---
   const patchLocal = (id: number, fn: (t: Task) => Task) =>
     setTasks((prev) => prev.map((t) => (t.id === id ? fn(t) : t)));
@@ -329,7 +332,7 @@ export function useTasks(pushToast: (t: ToastMsg) => void) {
 
   return {
     overview, view, setView, tasks, doneTasks, completing, entering, loading,
-    reload, add, toggle, patch, remove, reorder, hydrate,
+    reload, add, toggle, patch, remove, reorder, arrange, hydrate,
     checkAdd, checkToggle, checkRemove,
     beginEdit, endEdit, setDragging,
   };
