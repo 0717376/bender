@@ -40,6 +40,18 @@ export interface ToastMsg {
 
 const COMPLETE_ANIM_MS = 280;
 
+const isoToday = () => new Date().toISOString().slice(0, 10);
+
+export const isOverdue = (t: Task, today: string): boolean =>
+  !!((t.when_date && t.when_date < today) || (t.deadline && t.deadline < today));
+
+// Today renders Overdue above Today — keep the array in that visual order so dnd indexes match the screen.
+const todayOrder = (list: Task[]): Task[] => {
+  const today = isoToday();
+  const over = list.filter((t) => isOverdue(t, today));
+  return over.length ? [...over, ...list.filter((t) => !isOverdue(t, today))] : list;
+};
+
 export function useTasks(pushToast: (t: ToastMsg) => void) {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [view, setView] = useState<Sel>(() => parseHash() ?? { kind: "view", key: "today", label: t("view_today") });
@@ -64,10 +76,11 @@ export function useTasks(pushToast: (t: ToastMsg) => void) {
   const loadTasks = useCallback(async () => {
     const v = viewRef.current;
     try {
-      const fresh =
+      let fresh =
         v.kind === "view" ? await api.list(v.key)
         : v.kind === "tag" ? await api.list("", undefined, v.key)
         : await api.list("", v.id);
+      if (v.kind === "view" && v.key === "today") fresh = todayOrder(fresh);
       if (v.kind === "view" && v.key === "today") {
         api.list("done_today").then(setDoneTasks).catch(() => setDoneTasks([]));
       } else if (v.kind === "project") {

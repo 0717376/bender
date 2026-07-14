@@ -18,7 +18,7 @@ import { DragCard } from "./TaskRow";
 import Toasts from "./Toast";
 import { t, t as tr } from "./i18n"; // tr: alias for scopes where a local `t` shadows the import
 import type { Task } from "./types";
-import { Sel, ToastMsg, useTasks } from "./useTasks";
+import { Sel, ToastMsg, isOverdue, useTasks } from "./useTasks";
 
 // Pointer-based hit testing so dropping onto a sidebar category registers reliably;
 // fall back to closestCenter for list reordering when the pointer is between rows.
@@ -139,6 +139,17 @@ function Board() {
     const next = [...T.tasks];
     const [moved] = next.splice(from, 1);
     next.splice(to, 0, moved);
+    if (T.view.kind === "view" && T.view.key === "today") {
+      const today = isoToday();
+      const src = isOverdue(T.tasks[from], today);
+      const dst = isOverdue(T.tasks[to], today);
+      if (src !== dst) {
+        if (!src) return; // Today → Overdue makes no sense: snap back
+        T.reorder(next); // Overdue → Today: reschedule, keeping the drop position
+        T.patch(moved.id, { when: "today" });
+        return;
+      }
+    }
     T.reorder(next);
   };
   const activeTask = activeId != null ? T.tasks.find((t) => t.id === activeId) ?? null : null;
