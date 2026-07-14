@@ -80,6 +80,8 @@ export default function SettingsModal({ mode, palette, onMode, onPalette, onClos
             </button>
           ))}
         </div>
+
+        <div className="stm-ver">{t("app_title")} · v{__APP_VERSION__}</div>
       </div>
     </div>
   );

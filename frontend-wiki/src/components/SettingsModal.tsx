@@ -84,6 +84,8 @@ export function SettingsModal({ mode, palette, onMode, onPalette, onClose }: Set
             </button>
           ))}
         </div>
+
+        <div className={styles.ver}>{t('wiki')} · v{__APP_VERSION__}</div>
       </div>
     </div>
   )

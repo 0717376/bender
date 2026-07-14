@@ -26,3 +26,4 @@ frontend-*/dist/
 .idea/
 .vscode/
 docs/PLAN.md
+.vite/
