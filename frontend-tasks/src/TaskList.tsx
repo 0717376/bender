@@ -107,6 +107,7 @@ export default function TaskList({
   onSetArea,
   onTag,
   activeId,
+  previewTodayId,
   focusId,
 }: {
   view: Sel;
@@ -125,6 +126,7 @@ export default function TaskList({
   onSetArea: (areaId: number | null) => void;
   onTag: (tag: string) => void;
   activeId: number | null;
+  previewTodayId: number | null;
   focusId: number | null;
 }) {
   const [doneOpen, setDoneOpen] = useState(() => localStorage.getItem("tasks_log_open") === "1");
@@ -166,7 +168,8 @@ export default function TaskList({
   const projArea = project?.area_id != null ? areas.find((a) => a.id === project.area_id) : null;
 
   const today = isoToday();
-  const overdue = isToday ? tasks.filter((t) => isOverdue(t, today)) : [];
+  // A task mid-drag from Overdue previews as a member of the Today group.
+  const overdue = isToday ? tasks.filter((t) => isOverdue(t, today) && t.id !== previewTodayId) : [];
   const onTime = isToday ? tasks.filter((t) => !overdue.includes(t)) : tasks;
 
   const row = (t: Task, drag: boolean) => (
@@ -217,26 +220,37 @@ export default function TaskList({
         {tasks.length === 0 && !addingHead ? (
           loading ? <div className="list-loading" /> : <div className="empty">{emptyMsg}</div>
         ) : (
-          <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-            <ul className="tasks">
-              {isToday && overdue.length > 0 && (
-                <>
-                  <li className="group-head danger">{t("overdue")}</li>
-                  {overdue.map((t) => row(t, draggable))}
-                  {onTime.length > 0 && <li className="group-head">{t("view_today")}</li>}
-                </>
-              )}
-
-              {isUpcoming || isLogbook
-                ? sections(onTime, (t) => (isUpcoming ? upcomingLabel(t.when_date ?? today) : logbookLabel(t.completed_at ?? today))).map((s) => (
-                    <li key={s.label} className="group-li">
-                      <div className="group-head">{s.label}</div>
-                      <ul className="tasks">{s.tasks.map((t) => row(t, false))}</ul>
-                    </li>
-                  ))
-                : onTime.map((t) => row(t, draggable))}
-            </ul>
-          </SortableContext>
+          <ul className="tasks">
+            {isToday ? (
+              // Two contexts, one per group: row shifting stays inside its group instead of
+              // sliding across the static headers; cross-group moves transfer via onDragOver.
+              <>
+                {overdue.length > 0 && (
+                  <>
+                    <li className="group-head danger">{t("overdue")}</li>
+                    <SortableContext items={overdue.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+                      {overdue.map((t) => row(t, draggable))}
+                    </SortableContext>
+                    {onTime.length > 0 && <li className="group-head">{t("view_today")}</li>}
+                  </>
+                )}
+                <SortableContext items={onTime.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+                  {onTime.map((t) => row(t, draggable))}
+                </SortableContext>
+              </>
+            ) : (
+              <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+                {isUpcoming || isLogbook
+                  ? sections(onTime, (t) => (isUpcoming ? upcomingLabel(t.when_date ?? today) : logbookLabel(t.completed_at ?? today))).map((s) => (
+                      <li key={s.label} className="group-li">
+                        <div className="group-head">{s.label}</div>
+                        <ul className="tasks">{s.tasks.map((t) => row(t, false))}</ul>
+                      </li>
+                    ))
+                  : onTime.map((t) => row(t, draggable))}
+              </SortableContext>
+            )}
+          </ul>
         )}
 
         {addingHead && (
