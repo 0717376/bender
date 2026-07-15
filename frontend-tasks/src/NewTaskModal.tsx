@@ -25,7 +25,8 @@ function defaults(view: Sel): { when: string | null; project: number | null } {
     case "today": return { when: "today", project: null };
     case "upcoming": return { when: tomorrowISO(), project: null };
     case "someday": return { when: "someday", project: null };
-    default: return { when: null, project: null }; // inbox / anytime / logbook
+    case "anytime": return { when: "anytime", project: null };
+    default: return { when: null, project: null }; // inbox / logbook
   }
 }
 
@@ -89,7 +90,7 @@ export default function NewTaskModal({ view, projects, onCreate, onClose }: {
   };
 
   const proj = projectId != null ? projects.find((p) => p.id === projectId) : null;
-  const whenLabel = when === "someday" ? t("someday_short") : when === "today" || when === isoToday() ? t("view_today") : when ? fmt(when) : t("when");
+  const whenLabel = when === "someday" ? t("someday_short") : when === "anytime" ? t("view_anytime") : when === "today" || when === isoToday() ? t("view_today") : when ? fmt(when) : t("when");
 
   return (
     <div className="modal-scrim" onMouseDown={onClose}>
@@ -151,7 +152,7 @@ export default function NewTaskModal({ view, projects, onCreate, onClose }: {
         {pop?.kind === "when" && (
           <DatePickerPopover
             anchor={pop.anchor}
-            value={when === "today" ? isoToday() : when === "someday" ? null : when}
+            value={when === "today" ? isoToday() : when === "someday" || when === "anytime" ? null : when}
             quick={[
               { key: "today", label: t("view_today"), icon: <Star size={13} strokeWidth={2} />, onClick: () => { setWhen("today"); setManualWhen(true); setPop(null); } },
               { key: "someday", label: t("someday_short"), icon: <Moon size={13} strokeWidth={2} />, onClick: () => { setWhen("someday"); setManualWhen(true); setPop(null); } },

@@ -183,7 +183,7 @@ export function useTasks(pushToast: (t: ToastMsg) => void) {
       const v = viewRef.current;
       // The new-task modal passes explicit fields; bare calls fall back to view defaults.
       const body = extra ?? {
-        when: v.kind === "view" && ["today", "someday"].includes(v.key) ? v.key : undefined,
+        when: v.kind === "view" && ["today", "someday", "anytime"].includes(v.key) ? v.key : undefined,
         project: v.kind === "project" ? v.id : undefined,
       };
       const created = await api.create({ title: t, ...body });

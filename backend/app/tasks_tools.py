@@ -34,7 +34,7 @@ async def list_tasks(args):
 
 @tool(
     "create_task",
-    "Создать задачу. when: ISO-дата 'YYYY-MM-DD' | 'today' | 'someday' | null. "
+    "Создать задачу. when: ISO-дата 'YYYY-MM-DD' | 'today' | 'someday' | 'anytime' | null (null → Входящие). "
     "project — имя или id проекта (создаётся, если новое имя). "
     "repeat — повтор: {unit: day|week|month|year, interval: N, mode: schedule|done} "
     "(schedule — от даты задачи, done — от даты выполнения).",
@@ -63,7 +63,8 @@ async def create_task(args):
 @tool(
     "update_task",
     "Изменить задачу по id. Любые поля: title, notes, when, deadline, project, tags, status, "
-    "repeat ({unit, interval, mode}; пустой объект {} убирает повтор).",
+    "repeat ({unit, interval, mode}; пустой объект {} убирает повтор). "
+    "when: ISO-дата | 'today' | 'someday' | 'anytime' (убрать дату) | 'inbox' (вернуть во Входящие).",
     {
         "type": "object",
         "properties": {

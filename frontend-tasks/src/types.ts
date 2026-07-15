@@ -21,6 +21,7 @@ export interface Task {
   when_date: string | null;
   deadline: string | null;
   someday: boolean;
+  triaged: boolean;
   tags: string[];
   sort: number;
   repeat?: RepeatRule | null;
