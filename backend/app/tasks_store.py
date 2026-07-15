@@ -96,6 +96,12 @@ def init() -> None:
     if "kind" not in cols:
         # 'task' | 'heading' — headings are section dividers inside a project list.
         _conn.execute("ALTER TABLE tasks ADD COLUMN kind TEXT NOT NULL DEFAULT 'task'")
+    if "triaged" not in cols:
+        # 0 = never scheduled/filed anywhere → lives in Inbox; 1 = user decided "when",
+        # so a dateless task shows in Anytime even without a project (Things-style).
+        _conn.execute("ALTER TABLE tasks ADD COLUMN triaged INTEGER NOT NULL DEFAULT 0")
+        _conn.execute("UPDATE tasks SET triaged=1 WHERE when_date IS NOT NULL OR someday=1 "
+                      "OR project_id IS NOT NULL OR area_id IS NOT NULL")
     _conn.execute("DELETE FROM tasks WHERE deleted_at IS NOT NULL AND deleted_at < date('now','-30 days')")
     _conn.commit()
 
@@ -134,6 +140,7 @@ def _checklist(task_id: int) -> list[dict]:
 def task_dict(r: sqlite3.Row, with_checklist: bool = True) -> dict:
     d = dict(r)
     d["someday"] = bool(d["someday"])
+    d["triaged"] = bool(d.get("triaged"))
     try:
         d["tags"] = json.loads(d["tags"] or "[]")
     except json.JSONDecodeError:
@@ -257,8 +264,8 @@ def _spawn_next(t: dict) -> int:
         when = nxt(today)
 
     tid = _exec(
-        "INSERT INTO tasks(title,notes,when_date,deadline,someday,project_id,area_id,tags,repeat,sort,created_at) "
-        "VALUES(?,?,?,?,0,?,?,?,?,?,?)",
+        "INSERT INTO tasks(title,notes,when_date,deadline,someday,project_id,area_id,tags,repeat,sort,created_at,triaged) "
+        "VALUES(?,?,?,?,0,?,?,?,?,?,?,1)",
         (t["title"], t["notes"], when, deadline, t["project_id"], t["area_id"],
          json.dumps(t["tags"], ensure_ascii=False), json.dumps(rule), _next_sort(), _today()),
     )
@@ -288,7 +295,7 @@ def list_tasks(view: str | None = None, project_id: int | None = None,
         where.append("kind='task'")  # headings only show inside their project's list
 
     if view == "inbox":
-        where.append("project_id IS NULL AND area_id IS NULL AND when_date IS NULL AND someday=0")
+        where.append("project_id IS NULL AND area_id IS NULL AND when_date IS NULL AND someday=0 AND triaged=0")
     elif view == "today":
         where.append("someday=0 AND ((when_date IS NOT NULL AND when_date<=?) OR (deadline IS NOT NULL AND deadline<=?))")
         params += [today, today]
@@ -299,7 +306,7 @@ def list_tasks(view: str | None = None, project_id: int | None = None,
         where.append("someday=0 AND when_date IS NOT NULL AND when_date>?")
         params.append(today)
     elif view == "anytime":
-        where.append("someday=0 AND when_date IS NULL AND (project_id IS NOT NULL OR area_id IS NOT NULL)")
+        where.append("someday=0 AND when_date IS NULL AND (triaged=1 OR project_id IS NOT NULL OR area_id IS NOT NULL)")
     elif view == "someday":
         where.append("someday=1")
 
@@ -364,15 +371,16 @@ def create_task(title: str, notes: str = "", when: str | None = None, deadline: 
         when_date = _today()
     elif when == "someday":
         someday = 1
-    elif when:
+    elif when and when != "anytime":
         when_date = when
     project_id = resolve_project(project)
+    triaged = 1 if (when or project_id is not None or area_id is not None) else 0
     tid = _exec(
-        "INSERT INTO tasks(title,notes,when_date,deadline,someday,project_id,area_id,tags,repeat,kind,sort,created_at) "
-        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO tasks(title,notes,when_date,deadline,someday,project_id,area_id,tags,repeat,kind,sort,created_at,triaged) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (title, notes, when_date, deadline, someday, project_id, area_id,
          json.dumps(tags or [], ensure_ascii=False), _norm_repeat(repeat),
-         kind if kind in ("task", "heading") else "task", _next_sort(), _today()),
+         kind if kind in ("task", "heading") else "task", _next_sort(), _today(), triaged),
     )
     return get_task(tid)
 
@@ -384,15 +392,22 @@ def update_task(task_id: int, **fields) -> dict | None:
             fields["when_date"], fields["someday"] = _today(), 0
         elif w == "someday":
             fields["when_date"], fields["someday"] = None, 1
+        elif w == "inbox":
+            # Explicit "back to Inbox": the only way a task becomes untriaged again.
+            fields["when_date"], fields["someday"], fields["triaged"] = None, 0, 0
         else:
-            fields["when_date"], fields["someday"] = (w or None), 0
+            # date, "anytime" or empty (clear date) — all count as a triage decision
+            fields["when_date"], fields["someday"] = (None if w in (None, "", "anytime") else w), 0
+        fields.setdefault("triaged", 1)
     if "project" in fields:
         fields["project_id"] = resolve_project(fields.pop("project"))
+    if fields.get("project_id") is not None or fields.get("area_id") is not None:
+        fields["triaged"] = 1
     if "tags" in fields and isinstance(fields["tags"], list):
         fields["tags"] = json.dumps(fields["tags"], ensure_ascii=False)
     if "repeat" in fields:
         fields["repeat"] = _norm_repeat(fields["repeat"])  # {} / invalid → NULL (repeat off)
-    allowed = {"title", "notes", "when_date", "deadline", "someday", "project_id", "area_id", "tags", "status", "sort", "repeat"}
+    allowed = {"title", "notes", "when_date", "deadline", "someday", "project_id", "area_id", "tags", "status", "sort", "repeat", "triaged"}
     sets = {k: v for k, v in fields.items() if k in allowed}
     if not sets:
         return get_task(task_id)

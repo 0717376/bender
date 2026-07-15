@@ -27,3 +27,4 @@ frontend-*/dist/
 .vscode/
 docs/PLAN.md
 .vite/
+*.tsbuildinfo

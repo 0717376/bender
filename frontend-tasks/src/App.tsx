@@ -32,9 +32,9 @@ const tomorrowISO = () => {
 function dropBody(overId: string): Record<string, unknown> | null {
   if (overId === "drop:view:today") return { when: "today" };
   if (overId === "drop:view:upcoming") return { when: tomorrowISO() }; // nearest future day
-  if (overId === "drop:view:anytime") return { when: "" };             // clear date, keep project
+  if (overId === "drop:view:anytime") return { when: "anytime" };
   if (overId === "drop:view:someday") return { when: "someday" };
-  if (overId === "drop:view:inbox") return { project: "null", when: "" };
+  if (overId === "drop:view:inbox") return { project: "null", when: "inbox" };
   if (overId.startsWith("drop:proj:")) return { project: Number(overId.slice(10)) };
   return null;
 }
@@ -77,6 +77,7 @@ function taskToView(t: Task, label: (id: number) => string): Sel {
   if (t.project_id != null) return { kind: "project", key: "p", id: t.project_id, label: label(t.project_id) };
   if (t.when_date && t.when_date <= isoToday()) return { kind: "view", key: "today", label: tr("view_today") };
   if (t.when_date) return { kind: "view", key: "upcoming", label: tr("view_upcoming") };
+  if (t.triaged) return { kind: "view", key: "anytime", label: tr("view_anytime") };
   return { kind: "view", key: "inbox", label: tr("view_inbox") };
 }
 
