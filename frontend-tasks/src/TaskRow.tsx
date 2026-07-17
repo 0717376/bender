@@ -120,6 +120,18 @@ export default function TaskRow({
   const [editingHead, setEditingHead] = useState(false);
   useEffect(() => setTitle(task.title), [task.title]);
 
+  // The title saves on input blur, but a collapse can unmount the input with focus
+  // still inside (Escape, view switch) — no blur, edit silently lost. Flush any
+  // unsaved diff on collapse and unmount.
+  const flushRef = useRef<() => void>(() => {});
+  flushRef.current = () => {
+    if (title.trim() && title !== task.title) ops.patch(task.id, { title });
+  };
+  useEffect(() => {
+    if (!expanded) flushRef.current();
+  }, [expanded]);
+  useEffect(() => () => flushRef.current(), []);
+
   const liRef = useRef<HTMLLIElement | null>(null);
   useEffect(() => {
     if (focused) liRef.current?.scrollIntoView({ block: "nearest" });
