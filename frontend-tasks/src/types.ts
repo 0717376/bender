@@ -27,6 +27,9 @@ export interface Task {
   repeat?: RepeatRule | null;
   kind?: "task" | "heading";
   completed_at?: string | null;
+  created_at?: string;
+  // Slip count: how many times a due/overdue task was pushed to a later date.
+  moves?: number;
   // Present on list rows (aggregate); full array only on a single-task fetch.
   checklist_total?: number;
   checklist_done?: number;

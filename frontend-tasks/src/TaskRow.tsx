@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Calendar, Check, Flag, ListChecks, Repeat, X } from "lucide-react";
+import { Calendar, Check, Flag, History, ListChecks, Repeat, X } from "lucide-react";
 import TaskDetail from "./TaskDetail";
 import { repeatLabel } from "./RepeatPopover";
 import { projectColor } from "./colors";
@@ -14,11 +14,13 @@ const stop = (e: React.SyntheticEvent) => e.stopPropagation();
 /** Collapsed-row content (title + meta). Shared by the row and the drag overlay. */
 export function RowBody({ task, projects, onTag }: { task: Task; projects: Project[]; onTag?: (tag: string) => void }) {
   const overdue = task.when_date && task.when_date < isoToday();
+  const overdueDays = overdue ? Math.round((Date.parse(isoToday()) - Date.parse(task.when_date!)) / 86400000) : 0;
+  const stale = task.status === "open" && (task.moves ?? 0) >= 3;
   const checkTotal = task.checklist_total ?? 0;
   const proj = task.project_id != null ? projects.find((p) => p.id === task.project_id) : null;
   // In Today every row's when_date == today → suppress that chip; keep overdue/future.
   const showWhen = task.when_date && task.when_date !== isoToday();
-  const hasMeta = proj || showWhen || task.deadline || task.repeat || checkTotal > 0 || task.tags.length > 0;
+  const hasMeta = proj || showWhen || stale || task.deadline || task.repeat || checkTotal > 0 || task.tags.length > 0;
   return (
     <>
       <div className="title">{task.title}</div>
@@ -28,7 +30,15 @@ export function RowBody({ task, projects, onTag }: { task: Task; projects: Proje
             <span className="chip"><span className="pdot" style={{ background: projectColor(proj.id) }} />{proj.title}</span>
           )}
           {showWhen && (
-            <span className={"chip " + (overdue ? "overdue" : "due")}><Calendar size={13} strokeWidth={2} />{task.when_date}</span>
+            <span className={"chip " + (overdue ? "overdue" : "due")}>
+              <Calendar size={13} strokeWidth={2} />{task.when_date}
+              {overdueDays >= 3 && <span className="age">· {overdueDays} {t("days_short")}</span>}
+            </span>
+          )}
+          {stale && (
+            <span className="chip stale" title={`${t("postponed")}: ${task.moves}`}>
+              <History size={12} strokeWidth={2} />×{task.moves}
+            </span>
           )}
           {task.deadline && <span className="chip dl"><Flag size={12} strokeWidth={2} />{task.deadline}</span>}
           {task.repeat && <span className="chip"><Repeat size={12} strokeWidth={2} />{repeatLabel(task.repeat, true)}</span>}

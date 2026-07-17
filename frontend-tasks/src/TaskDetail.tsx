@@ -178,6 +178,12 @@ export default function TaskDetail({
         </div>
       </div>
 
+      {(task.moves ?? 0) > 0 && (
+        <div className="d-hist">
+          {t("postponed")}: {task.moves}{task.created_at && ` · ${t("created")} ${fmt(task.created_at)}`}
+        </div>
+      )}
+
       {datePop?.kind === "when" && (
         <DatePickerPopover
           anchor={datePop.anchor}
