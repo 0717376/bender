@@ -43,8 +43,12 @@ export default function TaskDetail({
 
   useEffect(() => setNotes(task.notes), [task.notes]);
   // Collapse can unmount the panel with focus still inside it (no blur fires) —
-  // release the edit guard so live-sync doesn't stay suppressed.
-  useEffect(() => () => ops.endEdit(), []);  // eslint-disable-line react-hooks/exhaustive-deps
+  // flush unsaved notes and release the edit guard so live-sync doesn't stay suppressed.
+  const flushRef = useRef<() => void>(() => {});
+  flushRef.current = () => {
+    if (notes !== task.notes) ops.patch(task.id, { notes });
+  };
+  useEffect(() => () => { flushRef.current(); ops.endEdit(); }, []);  // eslint-disable-line react-hooks/exhaustive-deps
   const grow = () => { const el = notesRef.current; if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } };
   // Layout effect (not effect) so the textarea reaches full height BEFORE the parent
   // TaskRow measures the panel for its open/close animation — otherwise it measures the
