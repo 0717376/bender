@@ -59,6 +59,13 @@ CREATE TABLE IF NOT EXISTS tasks (
   created_at TEXT NOT NULL,
   completed_at TEXT
 );
+CREATE TABLE IF NOT EXISTS task_moves (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  old_date TEXT NOT NULL,
+  new_date TEXT NOT NULL,
+  moved_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS checklist (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -66,6 +73,7 @@ CREATE TABLE IF NOT EXISTS checklist (
   done INTEGER NOT NULL DEFAULT 0,
   sort REAL NOT NULL DEFAULT 0
 );
+CREATE INDEX IF NOT EXISTS idx_moves_task ON task_moves(task_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_when ON tasks(when_date);
 CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
@@ -328,7 +336,8 @@ def list_tasks(view: str | None = None, project_id: int | None = None,
     sql = (
         "SELECT t.*, "
         "(SELECT COUNT(*) FROM checklist c WHERE c.task_id=t.id) AS checklist_total, "
-        "(SELECT COUNT(*) FROM checklist c WHERE c.task_id=t.id AND c.done=1) AS checklist_done "
+        "(SELECT COUNT(*) FROM checklist c WHERE c.task_id=t.id AND c.done=1) AS checklist_done, "
+        "(SELECT COUNT(*) FROM task_moves m WHERE m.task_id=t.id) AS moves "
         f"FROM tasks t WHERE {' AND '.join(where)} ORDER BY {order}"
     )
     return [task_dict(r, with_checklist=False) for r in _q(sql, params)]
@@ -357,7 +366,8 @@ def reorder_tasks(ids: list[int]) -> None:
 
 
 def get_task(task_id: int) -> dict | None:
-    rows = _q("SELECT * FROM tasks WHERE id=?", (task_id,))
+    rows = _q("SELECT t.*, (SELECT COUNT(*) FROM task_moves m WHERE m.task_id=t.id) AS moves "
+              "FROM tasks t WHERE t.id=?", (task_id,))
     return task_dict(rows[0]) if rows else None
 
 
@@ -411,8 +421,16 @@ def update_task(task_id: int, **fields) -> dict | None:
     sets = {k: v for k, v in fields.items() if k in allowed}
     if not sets:
         return get_task(task_id)
+    old = get_task(task_id) if "when_date" in sets else None
     cols = ",".join(f"{k}=?" for k in sets)
     _exec(f"UPDATE tasks SET {cols} WHERE id=?", (*sets.values(), task_id))
+    # Slip journal: a due/overdue task pushed to a later date. Planning moves of
+    # future tasks and triage to anytime/someday are decisions, not slips.
+    if old and old["status"] == "open" and old.get("kind") == "task":
+        ow, nw = old["when_date"], sets["when_date"]
+        if ow and nw and ow <= _today() and nw > ow:
+            _exec("INSERT INTO task_moves(task_id,old_date,new_date,moved_at) VALUES(?,?,?,?)",
+                  (task_id, ow, nw, _today()))
     return get_task(task_id)
 
 

@@ -376,6 +376,8 @@ button, input, textarea, select { font-family: inherit; -webkit-tap-highlight-co
 .chip.overdue { color: var(--danger); font-weight: 600; }
 .chip.dl { font-size: 11.5px; font-weight: 600; color: var(--danger); background: var(--danger-soft); padding: 1px 8px; border-radius: 6px; }
 .chip.tag { font-size: 11px; font-weight: 600; color: var(--accent-ink); background: var(--accent-soft); padding: 1px 8px; border-radius: 6px; }
+.chip .age { font-weight: 400; opacity: 0.75; }
+.chip.stale { font-size: 11px; font-weight: 600; color: var(--text-3); background: var(--bg-2); padding: 1px 7px; border-radius: 6px; }
 .empty { color: var(--text-4); padding: 40px 4px; font-size: 13.5px; text-align: center; }
 .list-loading { min-height: 40px; }
 
@@ -531,6 +533,7 @@ button, input, textarea, select { font-family: inherit; -webkit-tap-highlight-co
 
 /* Bottom bar: schedule pill (left) + ghost tools (right). */
 .d-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 2px; }
+.d-hist { font-size: 11.5px; color: var(--text-4); margin-top: -4px; }
 .when-pill { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; color: var(--text-3); background: transparent; border: 1px solid var(--border-3); border-radius: 9px; padding: 6px 12px; cursor: pointer; }
 .when-pill:hover { background: var(--bg-2); }
 .when-pill svg { color: var(--text-3); }
