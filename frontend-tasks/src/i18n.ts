@@ -86,7 +86,6 @@ const RU = {
   tag_placeholder: "＃ тег",
   someday_short: "Потом",
   when: "Когда",
-  days_short: "дн.",
   postponed: "Переносов",
   created: "создана",
   tags: "Теги",
@@ -231,7 +230,6 @@ const EN: Record<keyof typeof RU, string> = {
   tag_placeholder: "＃ tag",
   someday_short: "Someday",
   when: "When",
-  days_short: "d",
   postponed: "Postponed",
   created: "created",
   tags: "Tags",
@@ -333,6 +331,12 @@ const ruPlural = (n: number, [one, few, many]: [string, string, string]): string
   if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
   return many;
 };
+
+/** «вчера» / «5 дней назад» — how long a task has been overdue. */
+export const agoLabel = (days: number): string =>
+  lang === "ru"
+    ? days <= 1 ? "вчера" : `${days} ${ruPlural(days, ["день", "дня", "дней"])} назад`
+    : days <= 1 ? "yesterday" : `${days} days ago`;
 
 const RU_FORMS: Record<RepeatRule["unit"], [string, string, string]> = {
   day: ["день", "дня", "дней"],

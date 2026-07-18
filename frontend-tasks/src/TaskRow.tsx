@@ -5,7 +5,7 @@ import { Calendar, Check, Flag, History, ListChecks, Repeat, X } from "lucide-re
 import TaskDetail from "./TaskDetail";
 import { repeatLabel } from "./RepeatPopover";
 import { projectColor } from "./colors";
-import { t } from "./i18n";
+import { agoLabel, t } from "./i18n";
 import type { Project, Task } from "./types";
 
 const isoToday = () => new Date().toISOString().slice(0, 10);
@@ -31,8 +31,7 @@ export function RowBody({ task, projects, onTag }: { task: Task; projects: Proje
           )}
           {showWhen && (
             <span className={"chip " + (overdue ? "overdue" : "due")}>
-              <Calendar size={13} strokeWidth={2} />{task.when_date}
-              {overdueDays >= 3 && <span className="age">· {overdueDays} {t("days_short")}</span>}
+              <Calendar size={13} strokeWidth={2} />{overdue ? agoLabel(overdueDays) : task.when_date}
             </span>
           )}
           {stale && (
