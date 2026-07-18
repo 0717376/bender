@@ -298,10 +298,22 @@ async def notify(text: str) -> None:
             await tg_send(client, chat_id, text)
 
 
+BOT_COMMANDS = [
+    {"command": "status", "description": "Сессия, память, навыки, задания"},
+    {"command": "clear", "description": "Новая сессия (история остаётся в журнале)"},
+    {"command": "help", "description": "Что умеет бот"},
+]
+
+
 async def telegram_poller():
     """Long-poll Telegram for updates and dispatch them. One worker, sequential."""
     offset = None
     async with httpx.AsyncClient(timeout=httpx.Timeout(70.0)) as client:
+        try:
+            # The "/" menu button in clients — best-effort, once per start.
+            await tg_api(client, "setMyCommands", commands=BOT_COMMANDS)
+        except Exception as e:
+            logger.warning("setMyCommands failed: %s", e)
         try:
             init = await tg_api(client, "getUpdates", offset=-1, timeout=0)
             if init.get("ok") and init.get("result"):
