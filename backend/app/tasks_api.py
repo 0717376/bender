@@ -206,3 +206,17 @@ async def project_patch(project_id: int, req: ProjectPatch):
 @router.post("/areas")
 async def area_create(req: AreaIn):
     return {"id": store.create_area(req.title)}
+
+
+@router.patch("/areas/{area_id}")
+async def area_patch(area_id: int, req: AreaIn):
+    a = store.update_area(area_id, req.title)
+    if not a:
+        raise HTTPException(404, "Не найдено")
+    return a
+
+
+@router.delete("/areas/{area_id}")
+async def area_delete(area_id: int):
+    store.delete_area(area_id)
+    return {"ok": True}

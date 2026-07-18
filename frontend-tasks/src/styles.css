@@ -298,6 +298,16 @@ button, input, textarea, select { font-family: inherit; -webkit-tap-highlight-co
 
 .side-divider { height: 1px; background: var(--border-2); margin: 14px 8px 12px; }
 .section { padding: 14px 10px 7px; font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--text-3); font-weight: 700; }
+.section-btn { display: block; width: 100%; text-align: left; border: 0; background: none; cursor: pointer; border-radius: var(--r-sm); font-family: inherit; }
+.section-btn:hover { color: var(--text-1); }
+.section-btn.active { color: var(--accent-ink); }
+.section-btn.drop-over { background: var(--accent-soft); color: var(--accent-ink); }
+.newlist { padding: 2px 0; }
+.newlist-opt { display: flex; align-items: flex-start; gap: 10px; width: 100%; text-align: left; border: 0; background: none; cursor: pointer; padding: 7px 10px; border-radius: var(--r-sm); font-family: inherit; }
+.newlist-opt:hover { background: var(--accent-soft); }
+.newlist-opt .ic { color: var(--text-3); margin-top: 1px; }
+.nl-name { display: block; font-size: 13.5px; font-weight: 600; color: var(--text-1); }
+.nl-hint { display: block; font-size: 11.5px; color: var(--text-4); margin-top: 1px; }
 .proj-add { padding: 4px 11px; }
 .proj-add input { width: 100%; border: 1px solid var(--accent); border-radius: var(--r-sm); padding: 6px 9px; font-size: 13.5px; outline: none; background: var(--bg); color: var(--text); }
 .spacer { margin-top: auto; }
@@ -307,6 +317,7 @@ button, input, textarea, select { font-family: inherit; -webkit-tap-highlight-co
 .list-head .head-text { flex: 1; min-width: 0; }
 .kicker { font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--accent-ink); font-weight: 700; margin-bottom: 9px; }
 .list-head h1 { font-weight: 800; font-size: 36px; line-height: 1.05; letter-spacing: -.025em; color: var(--text); }
+.h1-edit { width: 100%; border: 0; outline: 0; background: transparent; padding: 0; font-family: inherit; font-weight: 800; font-size: 36px; line-height: 1.05; letter-spacing: -.025em; color: var(--text); }
 
 /* Floating "new task" button, bottom-right of the list pane */
 .fab { position: absolute; right: 28px; bottom: 28px; width: 54px; height: 54px; border: 0; border-radius: 50%; background: var(--accent-grad); color: #fff; display: grid; place-items: center; cursor: pointer; box-shadow: 0 12px 30px -8px rgba(192, 90, 57, .65); transition: transform .16s, filter .16s, box-shadow .16s; z-index: 5; }
@@ -657,6 +668,7 @@ button, input, textarea, select { font-family: inherit; -webkit-tap-highlight-co
   .fab { right: 18px; bottom: calc(20px + env(safe-area-inset-bottom)); }
   .modal-scrim { padding-top: 9vh; }
   .list-head h1 { font-size: 28px; }
+  .h1-edit { font-size: 28px; }
   .list-head { margin-bottom: 18px; }
   .detail-inline { padding-left: 16px; }
 

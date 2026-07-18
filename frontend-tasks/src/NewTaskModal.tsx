@@ -84,6 +84,7 @@ export default function NewTaskModal({ view, projects, onCreate, onClose }: {
       when: w ?? undefined,
       deadline: deadline ?? undefined,
       project: projectId ?? undefined,
+      area_id: view.kind === "area" && projectId == null ? view.id : undefined,
       repeat: rep ?? undefined,
     });
     onClose();

@@ -46,13 +46,14 @@ export async function transcribeAudio(blob: Blob): Promise<string | null> {
 
 export const api = {
   overview: () => req<Overview>("GET", "/tasks/overview"),
-  list: (view: string, projectId?: number, tag?: string) =>
+  list: (view: string, projectId?: number, tag?: string, areaId?: number) =>
     req<{ tasks: Task[] }>(
       "GET",
       `/tasks?` + new URLSearchParams({
         ...(view && { view }),
         ...(projectId && { project_id: String(projectId) }),
         ...(tag && { tag }),
+        ...(areaId && { area_id: String(areaId) }),
       }),
     ).then((r) => r.tasks),
   get: (id: number) => req<Task>("GET", `/tasks/${id}`),
@@ -70,6 +71,9 @@ export const api = {
   createProject: (title: string, area_id?: number | null) =>
     req<{ id: number }>("POST", "/tasks/projects", { title, area_id }),
   createArea: (title: string) => req<{ id: number }>("POST", "/tasks/areas", { title }),
+  updateArea: (id: number, title: string) =>
+    req<Record<string, unknown>>("PATCH", `/tasks/areas/${id}`, { title }),
+  removeArea: (id: number) => req<{ ok: boolean }>("DELETE", `/tasks/areas/${id}`),
   // Checklist
   checkAdd: (taskId: number, title: string) =>
     req<{ id: number }>("POST", `/tasks/${taskId}/checklist`, { title }),

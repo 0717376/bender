@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
-import { CalendarDays, Check, CheckCircle2, Inbox, Layers, Moon, Plus, Settings, Star, X } from "lucide-react";
+import { CalendarDays, Check, CheckCircle2, CircleDashed, Inbox, Layers, Moon, Plus, Settings, Star, X } from "lucide-react";
 import { projectColor } from "./colors";
 import { t } from "./i18n";
 import type { Overview } from "./types";
@@ -37,6 +37,21 @@ function NavView({ keyName, label, Icon, active, count, onPick }: {
       <span className="ic"><Icon size={16} strokeWidth={1.9} /></span>
       <span className="lbl">{label}</span>
       {count > 0 && <span className="count">{count}</span>}
+    </button>
+  );
+}
+
+function AreaBtn({ id, title, active, onPick }: {
+  id: number; title: string; active: boolean; onPick: () => void;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: `drop:area:${id}` });
+  return (
+    <button
+      ref={setNodeRef}
+      className={"section section-btn" + (active ? " active" : "") + (isOver ? " drop-over" : "")}
+      onClick={onPick}
+    >
+      {title}
     </button>
   );
 }
@@ -91,7 +106,7 @@ export default function Sidebar({
   onSettings: () => void;
   dragging?: boolean;
 }) {
-  const [adding, setAdding] = useState<"project" | "area" | null>(null);
+  const [adding, setAdding] = useState<"choose" | "project" | "area" | null>(null);
   const [name, setName] = useState("");
   const projects = ov?.projects ?? [];
   const areas = ov?.areas ?? [];
@@ -140,10 +155,13 @@ export default function Sidebar({
         const inArea = projects.filter((p) => p.area_id === a.id);
         return (
           <div key={a.id}>
-            <div className="section">{a.title}</div>
-            {inArea.length > 0
-              ? inArea.map(projBtn)
-              : <div className="section-empty">{t("no_projects_yet")}</div>}
+            <AreaBtn
+              id={a.id}
+              title={a.title}
+              active={view.kind === "area" && view.id === a.id}
+              onPick={() => pick({ kind: "area", key: "a", id: a.id, label: a.title })}
+            />
+            {inArea.map(projBtn)}
           </div>
         );
       })}
@@ -151,7 +169,7 @@ export default function Sidebar({
       {ungrouped.length > 0 && <div className="section">{t("projects")}</div>}
       {ungrouped.map(projBtn)}
 
-      {adding ? (
+      {adding === "project" || adding === "area" ? (
         <form
           className="proj-add"
           onSubmit={(e) => {
@@ -170,17 +188,28 @@ export default function Sidebar({
             onKeyDown={(e) => e.key === "Escape" && setAdding(null)}
           />
         </form>
-      ) : (
-        <>
-          <button className="nav muted" onClick={() => setAdding("project")}>
-            <span className="ic"><Plus size={16} strokeWidth={1.9} /></span>
-            <span className="lbl">{t("new_project")}</span>
+      ) : adding === "choose" ? (
+        <div className="newlist" onMouseLeave={() => setAdding(null)}>
+          <button className="newlist-opt" onClick={() => setAdding("project")}>
+            <span className="ic"><CircleDashed size={16} strokeWidth={1.9} /></span>
+            <span>
+              <span className="nl-name">{t("new_project")}</span>
+              <span className="nl-hint">{t("new_project_hint")}</span>
+            </span>
           </button>
-          <button className="nav muted" onClick={() => setAdding("area")}>
+          <button className="newlist-opt" onClick={() => setAdding("area")}>
             <span className="ic"><Layers size={16} strokeWidth={1.9} /></span>
-            <span className="lbl">{t("new_area")}</span>
+            <span>
+              <span className="nl-name">{t("new_area")}</span>
+              <span className="nl-hint">{t("new_area_hint")}</span>
+            </span>
           </button>
-        </>
+        </div>
+      ) : (
+        <button className="nav muted" onClick={() => setAdding("choose")}>
+          <span className="ic"><Plus size={16} strokeWidth={1.9} /></span>
+          <span className="lbl">{t("new_list")}</span>
+        </button>
       )}
 
       <div className="spacer" />
