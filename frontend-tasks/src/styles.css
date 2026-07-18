@@ -38,6 +38,8 @@
   --shadow-pop: 0 40px 90px -22px rgba(50, 40, 34, 0.40);
   --shadow-accent: 0 8px 20px -6px rgba(var(--accent-rgb), 0.55);
   --overlay: rgba(40, 32, 28, 0.30);
+  --sb-thumb: rgba(0, 0, 0, 0.18);
+  --sb-thumb-hover: rgba(0, 0, 0, 0.32);
 
   --r-card: 14px;
   --r: 11px;
@@ -81,6 +83,8 @@
   --shadow-card: 0 16px 40px -18px rgba(0, 0, 0, 0.6);
   --shadow-pop: 0 40px 90px -22px rgba(0, 0, 0, 0.7);
   --overlay: rgba(0, 0, 0, 0.6);
+  --sb-thumb: rgba(255, 255, 255, 0.20);
+  --sb-thumb-hover: rgba(255, 255, 255, 0.34);
 }
 
 /* ── Palettes (data-palette on :root; Halo = no attribute).
@@ -218,10 +222,15 @@ body {
 button, input, textarea, select { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 ::selection { background: var(--sel); }
 
-.scroll { overflow-y: auto; }
-.scroll::-webkit-scrollbar { width: 9px; height: 9px; }
-.scroll::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.12); border-radius: 20px; border: 2px solid transparent; background-clip: padding-box; }
-.scroll::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.22); background-clip: padding-box; }
+/* Overlay-style scrollbar: no track, slim thumb that shows only while the
+   cursor is over the pane (classic mac "always show" mode stays clean too). */
+.scroll { overflow-y: auto; scrollbar-width: thin; scrollbar-color: transparent transparent; }
+.scroll:hover { scrollbar-color: var(--sb-thumb) transparent; }
+.scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+.scroll::-webkit-scrollbar-track { background: transparent; }
+.scroll::-webkit-scrollbar-thumb { background: transparent; border-radius: 20px; border: 3px solid transparent; background-clip: padding-box; }
+.scroll:hover::-webkit-scrollbar-thumb { background: var(--sb-thumb); background-clip: padding-box; }
+.scroll::-webkit-scrollbar-thumb:hover { background: var(--sb-thumb-hover); background-clip: padding-box; }
 
 .icon-btn { border: 0; background: transparent; color: var(--text-2); cursor: pointer; display: grid; place-items: center; padding: 6px; border-radius: var(--r-sm); }
 .icon-btn:hover { background: var(--bg-2); color: var(--text); }
