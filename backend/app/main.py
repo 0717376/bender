@@ -6,7 +6,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from . import config, cron_store, skill_store, tasks_store
+from . import config, cron_store, session_log, skill_store, tasks_store
 from .asr import router as asr_router
 from .auth import require_auth
 from .chat import router as chat_router
@@ -26,6 +26,7 @@ logger = logging.getLogger("wiki")
 async def lifespan(_app: FastAPI):
     tasks_store.init()
     cron_store.init()
+    session_log.init()
     skill_store.init()  # scaffold learned-skills plugin + migrate legacy flat skills once
     tasks: list[asyncio.Task] = []
     if config.TELEGRAM_BOT_TOKEN:

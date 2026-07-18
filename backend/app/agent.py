@@ -25,11 +25,13 @@ from claude_agent_sdk import (
     query,
 )
 
-from . import clock, config, cron_outbox, memory_store, skill_store
+from . import clock, config, cron_outbox, memory_store, session_log, skill_store
 from .cron_tools import TOOL_NAMES as CRON_TOOL_NAMES
 from .cron_tools import server as cron_server
 from .memory_tools import TOOL_NAMES as MEMORY_TOOL_NAMES
 from .memory_tools import server as memory_server
+from .session_tools import TOOL_NAMES as SESSION_TOOL_NAMES
+from .session_tools import server as sessions_server
 from .skill_tools import TOOL_NAMES as SKILL_TOOL_NAMES
 from .skill_tools import server as skills_server
 from .tasks_tools import TOOL_NAMES as TASK_TOOL_NAMES
@@ -82,6 +84,7 @@ def load_session_state() -> tuple[str | None, bool]:
         try:
             if datetime.now() - datetime.fromisoformat(last) > timedelta(hours=config.SESSION_FRESH_HOURS):
                 logger.info("session %s expired (idle > %sh) — starting fresh", sid[:8], config.SESSION_FRESH_HOURS)
+                session_log.end(sid, "expired")
                 clear_session()
                 return None, True
         except ValueError:
@@ -124,6 +127,12 @@ def save_session(session_id: str | None) -> None:
 
 def clear_session() -> None:
     try:
+        with open(config.SESSION_FILE) as f:
+            sid = json.load(f).get("session_id")
+        session_log.end(sid, "clear")  # journal keeps the transcript; only the pointer dies
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+    try:
         os.remove(config.SESSION_FILE)
     except FileNotFoundError:
         pass
@@ -144,10 +153,51 @@ def _memory_snapshot(resume: str | None) -> str:
     return _mem_snapshot["text"]
 
 
+# Persona (SOUL.md-style): a wiki page the user edits like any note; injected as the
+# first prompt block. Frozen per session (same reason as the memory snapshot).
+_persona_snapshot: dict = {"key": "", "text": ""}  # key "" = never read (resume is None or a sid)
+
+DEFAULT_PERSONA = (
+    "# Персона ассистента\n\n"
+    "Эту страницу можно редактировать — она попадает в системный промпт ассистента "
+    "(перечитывается при старте новой сессии).\n\n"
+    "Ты — Бендер, личный ассистент. Спокойный, краткий, честный. Говоришь по-русски, "
+    "по делу, без канцелярита и восторгов. Не поддакиваешь: если пользователь неправ "
+    "или есть вариант лучше — говоришь об этом прямо и предлагаешь альтернативу.\n"
+)
+
+
+def _read_persona() -> str:
+    try:
+        with open(config.PERSONA_PATH, encoding="utf-8") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        try:
+            os.makedirs(os.path.dirname(config.PERSONA_PATH), exist_ok=True)
+            with open(config.PERSONA_PATH, "w", encoding="utf-8") as f:
+                f.write(DEFAULT_PERSONA)
+        except OSError:
+            logger.warning("cannot seed persona file at %s", config.PERSONA_PATH)
+        return DEFAULT_PERSONA
+    except OSError:
+        return ""
+
+
+def _persona(resume: str | None) -> str:
+    if resume != _persona_snapshot["key"]:
+        _persona_snapshot["key"] = resume
+        _persona_snapshot["text"] = _read_persona()
+    return _persona_snapshot["text"]
+
+
 def _compose_prompt(surface: str, resume: str | None) -> str:
     # Learned skills are no longer injected as an index — they're native Skills (loaded via
     # the learned plugin) and surface through progressive disclosure / the Skill tool.
-    parts = [config.system_prompt_for(surface)]
+    parts = []
+    persona = _persona(resume)
+    if persona:
+        parts.append(persona)
+    parts.append(config.system_prompt_for(surface))
     mem = _memory_snapshot(resume)
     if mem:
         parts.append(mem)
@@ -176,7 +226,7 @@ def build_options(resume: str | None, surface: str = "wiki", interactive: bool =
                   extra_context: str | None = None) -> ClaudeAgentOptions:
     # Tasks, skills (read+author), memory-read injection and subagents (Task) are always
     # available. Cron/memory WRITE tools are interactive-only (not inside scheduled runs).
-    tools = config.ALLOWED_TOOLS + TASK_TOOL_NAMES + SKILL_TOOL_NAMES
+    tools = config.ALLOWED_TOOLS + TASK_TOOL_NAMES + SKILL_TOOL_NAMES + SESSION_TOOL_NAMES
     if interactive:
         tools = tools + CRON_TOOL_NAMES + MEMORY_TOOL_NAMES
     append = _compose_prompt(surface, resume)
@@ -196,7 +246,8 @@ def build_options(resume: str | None, surface: str = "wiki", interactive: bool =
         model=config.CLAUDE_MODEL,
         system_prompt={"type": "preset", "preset": "claude_code", "append": append},
         allowed_tools=tools,
-        mcp_servers={"tasks": tasks_server, "cron": cron_server, "memory": memory_server, "skills": skills_server},
+        mcp_servers={"tasks": tasks_server, "cron": cron_server, "memory": memory_server,
+                     "skills": skills_server, "sessions": sessions_server},
         agents=SUBAGENTS,
         plugins=[
             {"type": "local", "path": config.SKILL_PLUGIN_DIR},      # domain skills (wiki/tasks)
@@ -233,14 +284,15 @@ def _is_stale_session(exc: Exception) -> bool:
 
 async def run_ws(emit: Emit, message: str, surface: str = "wiki") -> None:
     async with claude_lock:
+        raw = message
         message = f"{clock.stamp()}\n{message}"  # live clock: the session's system-prompt date goes stale
         pending = cron_outbox.drain_as_prompt()
         try:
-            await _run_ws(emit, message, surface, pending)
+            await _run_ws(emit, message, surface, pending, raw)
         except _StaleSession:
             logger.warning("stale session in run_ws; cleared, retrying fresh")
             clear_session()
-            await _run_ws(emit, message, surface, pending)
+            await _run_ws(emit, message, surface, pending, raw)
 
 
 EXPIRED_NOTE = (
@@ -249,7 +301,7 @@ EXPIRED_NOTE = (
 )
 
 
-async def _run_ws(emit: Emit, message: str, surface: str, pending: str) -> None:
+async def _run_ws(emit: Emit, message: str, surface: str, pending: str, raw: str) -> None:
     sid, expired = load_session_state()
     if expired:
         message = EXPIRED_NOTE + message
@@ -310,6 +362,7 @@ async def _run_ws(emit: Emit, message: str, surface: str, pending: str) -> None:
                     await emit({"t": "error", "text": _error_text(m)})
 
         save_session(final_sid)
+        session_log.log_turn(final_sid, surface, raw, "\n\n".join(reply_parts))
         await emit({"t": "done", "sid": final_sid})
         from . import reviewer
         reviewer.spawn(message, "\n\n".join(reply_parts))
@@ -330,6 +383,7 @@ async def run_collect(message: str, on_tool: Callable[[str, str], Awaitable[None
     """Run one turn and return the full reply. `on_delta` (if given) receives the
     accumulated reply text as it streams — used for Telegram draft previews."""
     async with claude_lock:
+        raw = message
         message = f"{clock.stamp()}\n{message}"  # live clock: the session's system-prompt date goes stale
         pending = cron_outbox.drain_as_prompt()
         for attempt in (1, 2):  # attempt 2 only runs after a stale-session reset
@@ -381,6 +435,7 @@ async def run_collect(message: str, on_tool: Callable[[str, str], Awaitable[None
             if had_error:
                 return "Ошибка Claude. Попробуйте /clear."
             reply = (result_text or "\n\n".join(texts)).strip()
+            session_log.log_turn(final_sid, surface, raw, reply)
             if reply:
                 from . import reviewer
                 reviewer.spawn(message, reply)
