@@ -19,7 +19,7 @@ TG_WELCOME = (
     "Пиши текстом или надиктовывай голосовые — отвечу на вопросы по заметкам, создам и отредактирую страницы. "
     "Контекст общий с веб-версией: что обсудили здесь, помню и там.\n\n"
     "Команды:\n"
-    "/clear — очистить контекст (новая сессия)\n"
+    "/clear — очистить контекст (новая сессия; история остаётся в журнале)\n"
     "/compact — сжать историю, сохранив суть\n"
     "/status — сессия, память, навыки, задания\n"
     "/help — это сообщение"
@@ -260,13 +260,15 @@ async def tg_handle(client: httpx.AsyncClient, update: dict):
 
 def build_status() -> str:
     """Snapshot for /status: session, memory, skills, scheduled jobs."""
-    from . import cron_store, memory_store, skill_store
+    from . import cron_store, memory_store, session_log, skill_store
     from .agent import load_session_state, session_age
 
     sid, _ = load_session_state()
     lines = []
     lines.append(f"Сессия: {sid[:8]}…, длится {session_age() or '?'}" if sid
                  else "Сессия: новая (контекст пуст)")
+    s_n, m_n = session_log.stats()
+    lines.append(f"Журнал: {s_n} сессий, {m_n} сообщений (поиск: session_search)")
     mem = memory_store.all_entries()
     by_cat = {c: sum(1 for e in mem if e["category"] == c) for c in memory_store.CATEGORIES}
     lines.append(f"Память: {len(mem)} записей (профиль {by_cat['profile']}, "

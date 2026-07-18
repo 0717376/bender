@@ -5,6 +5,9 @@ import os
 WIKI_DIR = os.path.abspath(os.environ.get("WIKI_DIR", "/app/content"))
 DATA_DIR = os.path.abspath(os.environ.get("DATA_DIR", "/app/data"))
 SESSION_FILE = os.path.join(DATA_DIR, "session.json")
+# Agent persona (SOUL.md-style) — an ordinary wiki page the user can edit;
+# re-read on each new session.
+PERSONA_PATH = os.environ.get("PERSONA_PATH", os.path.join(WIKI_DIR, "Персона ассистента.md"))
 TG_MEDIA_DIR = os.path.join(DATA_DIR, "tg_media")
 
 # --- Auth ---
@@ -69,6 +72,10 @@ BASE_PROMPT = (
     "повторяемую задачу или нашёл рабочий приём — сохрани его навыком через mcp__skills__save "
     "(name латиницей kebab-case, description = когда применять, body = шаги). В следующий раз "
     "он появится среди навыков и его можно будет вызвать.\n"
+    "Прошлые разговоры: полный журнал всех сессий (веб и Telegram) доступен через "
+    "mcp__sessions__session_search. Если пользователь ссылается на прошлый разговор или "
+    "спрашивает то, что могло уже обсуждаться, — сначала поищи в журнале (query='слова'), "
+    "не переспрашивай и не выдумывай. Сброс контекста не теряет историю: она вся в журнале.\n"
     "Время: каждое сообщение пользователя начинается служебной строкой [Сейчас: …] с "
     "актуальными датой и временем. Ориентируйся на неё — дата из начала сессии могла устареть "
     "на дни. Саму строку пользователю не показывай и не цитируй.\n"
