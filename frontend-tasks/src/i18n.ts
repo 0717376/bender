@@ -80,13 +80,12 @@ const RU = {
   new_list: "Новый список",
   new_project_hint: "Цель с финишем и шагами",
   new_area_hint: "Сфера жизни: Работа, Дом…",
-  empty_area: "Проекты области — в сайдбаре, задачи без проекта — здесь",
+  empty_area: "Пока пусто. Перетащи сюда проекты и задачи этой сферы",
   confirm_delete_heading: "Удалить раздел?",
   remove_tag: "Убрать тег",
   tag_placeholder: "＃ тег",
   someday_short: "Потом",
   when: "Когда",
-  days_short: "дн.",
   postponed: "Переносов",
   created: "создана",
   tags: "Теги",
@@ -225,13 +224,12 @@ const EN: Record<keyof typeof RU, string> = {
   new_list: "New list",
   new_project_hint: "A goal with an end and steps",
   new_area_hint: "A sphere of life: Work, Home…",
-  empty_area: "The area's projects live in the sidebar; loose tasks show here",
+  empty_area: "Nothing here yet. Drag this sphere's projects and tasks in",
   confirm_delete_heading: "Delete heading?",
   remove_tag: "Remove tag",
   tag_placeholder: "＃ tag",
   someday_short: "Someday",
   when: "When",
-  days_short: "d",
   postponed: "Postponed",
   created: "created",
   tags: "Tags",
@@ -333,6 +331,12 @@ const ruPlural = (n: number, [one, few, many]: [string, string, string]): string
   if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
   return many;
 };
+
+/** «вчера» / «5 дней назад» — how long a task has been overdue. */
+export const agoLabel = (days: number): string =>
+  lang === "ru"
+    ? days <= 1 ? "вчера" : `${days} ${ruPlural(days, ["день", "дня", "дней"])} назад`
+    : days <= 1 ? "yesterday" : `${days} days ago`;
 
 const RU_FORMS: Record<RepeatRule["unit"], [string, string, string]> = {
   day: ["день", "дня", "дней"],

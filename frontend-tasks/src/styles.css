@@ -319,6 +319,15 @@ button, input, textarea, select { font-family: inherit; -webkit-tap-highlight-co
 .list-head h1 { font-weight: 800; font-size: 36px; line-height: 1.05; letter-spacing: -.025em; color: var(--text); }
 .h1-edit { width: 100%; border: 0; outline: 0; background: transparent; padding: 0; font-family: inherit; font-weight: 800; font-size: 36px; line-height: 1.05; letter-spacing: -.025em; color: var(--text); }
 
+/* Area home: the area's projects as clickable rows above its loose tasks. */
+.area-projects { list-style: none; margin: 0 0 20px; padding: 0; }
+.ap-row { display: flex; align-items: center; gap: 12px; width: 100%; border: 0; background: none; cursor: pointer; padding: 10px 12px; border-radius: var(--r); font-family: inherit; font-size: 15px; font-weight: 650; color: var(--text-1); text-align: left; }
+.ap-row:hover { background: var(--bg-2); }
+.ap-dot { width: 9px; height: 9px; border-radius: 50%; margin: 0 4.5px; }
+.ap-count { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--text-4); }
+.proj-drag-card { padding: 8px 14px; background: var(--panel); border: 1px solid var(--border-3); border-radius: var(--r); box-shadow: var(--shadow-card); font-size: 14px; font-weight: 650; color: var(--text-1); }
+.nav.drag-src { opacity: 0.45; }
+
 /* Floating "new task" button, bottom-right of the list pane */
 .fab { position: absolute; right: 28px; bottom: 28px; width: 54px; height: 54px; border: 0; border-radius: 50%; background: var(--accent-grad); color: #fff; display: grid; place-items: center; cursor: pointer; box-shadow: 0 12px 30px -8px rgba(192, 90, 57, .65); transition: transform .16s, filter .16s, box-shadow .16s; z-index: 5; }
 .fab:hover { filter: brightness(1.06); transform: translateY(-2px); box-shadow: 0 16px 36px -8px rgba(192, 90, 57, .7); }
@@ -368,7 +377,8 @@ button, input, textarea, select { font-family: inherit; -webkit-tap-highlight-co
 /* ── Tasks ── */
 .tasks { list-style: none; }
 .task { border-radius: var(--r-card); margin: 4px 0; border: 1px solid transparent; transition: background .2s, box-shadow .24s, border-color .2s; }
-.task-head { display: flex; gap: 13px; align-items: flex-start; padding: 12px 14px; cursor: pointer; touch-action: manipulation; }
+.task-head { display: flex; gap: 13px; align-items: flex-start; padding: 12px 14px; cursor: pointer; touch-action: manipulation; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.task-head input, .task-head textarea { -webkit-user-select: text; user-select: text; }
 .task:not(.expanded) .task-head:hover { background: rgba(0, 0, 0, 0.025); border-radius: var(--r-card); }
 .task.expanded { background: var(--card-grad); border-color: var(--border); box-shadow: var(--shadow-card); }
 .task.placeholder { opacity: 0.35; }
@@ -396,7 +406,6 @@ button, input, textarea, select { font-family: inherit; -webkit-tap-highlight-co
 .chip.overdue { color: var(--danger); font-weight: 600; }
 .chip.dl { font-size: 11.5px; font-weight: 600; color: var(--danger); background: var(--danger-soft); padding: 1px 8px; border-radius: 6px; }
 .chip.tag { font-size: 11px; font-weight: 600; color: var(--accent-ink); background: var(--accent-soft); padding: 1px 8px; border-radius: 6px; }
-.chip .age { font-weight: 400; opacity: 0.75; }
 .chip.stale { font-size: 11px; font-weight: 600; color: var(--text-3); background: var(--bg-2); padding: 1px 7px; border-radius: 6px; }
 .empty { color: var(--text-4); padding: 40px 4px; font-size: 13.5px; text-align: center; }
 .list-loading { min-height: 40px; }

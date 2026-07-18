@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useDroppable } from "@dnd-kit/core";
+import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { CalendarDays, Check, CheckCircle2, CircleDashed, Inbox, Layers, Moon, Plus, Settings, Star, X } from "lucide-react";
 import { projectColor } from "./colors";
 import { t } from "./i18n";
@@ -60,13 +60,18 @@ function ProjectBtn({ id, title, active, open, total, onPick }: {
   id: number; title: string; active: boolean; open: number; total: number; onPick: () => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `drop:proj:${id}` });
+  // Projects are also drag sources: drop one onto an area header to file it there.
+  const drag = useDraggable({ id: `proj:${id}` });
+  const setRefs = (el: HTMLElement | null) => { setNodeRef(el); drag.setNodeRef(el); };
   const color = projectColor(id);
   const r = 5, c = 2 * Math.PI * r;
   const done = Math.max(0, total - open);
   return (
     <button
-      ref={setNodeRef}
-      className={"nav" + (active ? " active" : "") + (isOver ? " drop-over" : "")}
+      ref={setRefs}
+      {...drag.attributes}
+      {...drag.listeners}
+      className={"nav" + (active ? " active" : "") + (isOver ? " drop-over" : "") + (drag.isDragging ? " drag-src" : "")}
       onClick={onPick}
     >
       {total > 0 ? (

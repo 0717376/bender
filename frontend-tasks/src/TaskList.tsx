@@ -3,6 +3,7 @@ import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable"
 import { ChevronDown, ChevronRight, Layers, ListPlus, Plus, Trash2 } from "lucide-react";
 import { MenuPopover } from "./Popover";
 import TaskRow from "./TaskRow";
+import { projectColor } from "./colors";
 import { MONTHS, doneOfTotal, locale, logbookStats, t } from "./i18n";
 import type { Area, Project, Task } from "./types";
 import { isOverdue, type Sel } from "./useTasks";
@@ -125,6 +126,8 @@ export default function TaskList({
   onSetArea,
   onRenameView,
   onDeleteArea,
+  onOpenProject,
+  progress,
   onTag,
   activeId,
   previewTodayId,
@@ -146,6 +149,8 @@ export default function TaskList({
   onSetArea: (areaId: number | null) => void;
   onRenameView: (title: string) => void;
   onDeleteArea: () => void;
+  onOpenProject: (id: number) => void;
+  progress: Record<number, { open: number; total: number }>;
   onTag: (tag: string) => void;
   activeId: number | null;
   previewTodayId: number | null;
@@ -191,6 +196,7 @@ export default function TaskList({
 
   const project = isProject ? projects.find((p) => p.id === view.id) : null;
   const projArea = project?.area_id != null ? areas.find((a) => a.id === project.area_id) : null;
+  const areaProjects = isArea ? projects.filter((p) => p.area_id === view.id) : [];
 
   const today = isoToday();
   // A task mid-drag from Overdue previews as a member of the Today group.
@@ -251,8 +257,36 @@ export default function TaskList({
           )}
         </div>
 
+        {areaProjects.length > 0 && (
+          <ul className="area-projects">
+            {areaProjects.map((p) => {
+              const pr = progress[p.id] ?? { open: 0, total: 0 };
+              const color = projectColor(p.id);
+              const r = 6.5, c = 2 * Math.PI * r;
+              const done = Math.max(0, pr.total - pr.open);
+              return (
+                <li key={p.id}>
+                  <button className="ap-row" onClick={() => onOpenProject(p.id)}>
+                    {pr.total > 0 ? (
+                      <svg width="18" height="18" viewBox="0 0 18 18">
+                        <circle cx="9" cy="9" r={r} fill="none" stroke={color} strokeOpacity="0.28" strokeWidth="2.6" />
+                        <circle cx="9" cy="9" r={r} fill="none" stroke={color} strokeWidth="2.6" strokeLinecap="round"
+                          strokeDasharray={`${(done / pr.total) * c} ${c}`} transform="rotate(-90 9 9)" />
+                      </svg>
+                    ) : (
+                      <span className="ap-dot" style={{ background: color }} />
+                    )}
+                    <span className="ap-title">{p.title}</span>
+                    {pr.open > 0 && <span className="ap-count">{pr.open}</span>}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
         {tasks.length === 0 && !addingHead ? (
-          loading ? <div className="list-loading" /> : <div className="empty">{emptyMsg}</div>
+          loading ? <div className="list-loading" /> : areaProjects.length === 0 && <div className="empty">{emptyMsg}</div>
         ) : (
           <ul className="tasks">
             {isToday ? (
