@@ -2,6 +2,7 @@
 
 import asyncio
 import html as html_lib
+from datetime import datetime
 import logging
 import os
 import re
@@ -15,12 +16,18 @@ from .agent import clear_session, run_collect
 logger = logging.getLogger("wiki.tg")
 
 TG_WELCOME = (
-    "Привет! Я ассистент твоей вики.\n\n"
-    "Пиши текстом или надиктовывай голосовые — отвечу на вопросы по заметкам, создам и отредактирую страницы. "
-    "Контекст общий с веб-версией: что обсудили здесь, помню и там.\n\n"
-    "Команды:\n"
-    "/clear — очистить контекст (новая сессия; история остаётся в журнале)\n"
-    "/compact — сжать историю, сохранив суть\n"
+    "Привет! Я Bender — личный ассистент.\n\n"
+    "**Что умею**\n"
+    "• Вики: отвечаю по твоим заметкам, создаю и правлю страницы\n"
+    "• Задачи: создаю, переношу, подсказываю план на день\n"
+    "• Веб: ищу актуальную информацию в интернете\n"
+    "• Расписание: напоминания и регулярные сводки («каждый день в 9 пришли задачи»)\n"
+    "• Журнал: помню все прошлые разговоры и ищу по ним\n"
+    "• Самообучение: запоминаю факты и предпочтения, выучиваю навыки из решённых "
+    "задач, а в тихие часы консолидирую выученное\n\n"
+    "Пиши текстом или надиктовывай голосовые. Контекст общий с веб-версией.\n\n"
+    "**Команды**\n"
+    "/new — новая сессия (история сохраняется в журнале)\n"
     "/status — сессия, память, навыки, задания\n"
     "/help — это сообщение"
 )
@@ -211,14 +218,15 @@ async def tg_handle(client: httpx.AsyncClient, update: dict):
         return
 
     if text in ("/start", "/help"):
-        await tg_api(client, "sendMessage", chat_id=chat_id, text=TG_WELCOME)
+        await tg_send(client, chat_id, TG_WELCOME)
         return
-    if text == "/clear":
+    if text in ("/new", "/clear"):
         clear_session()
-        await tg_api(client, "sendMessage", chat_id=chat_id, text="Контекст очищен — начинаю новую сессию.")
+        await tg_api(client, "sendMessage", chat_id=chat_id,
+                     text="Начал новую сессию. Прошлый разговор сохранён в журнале — найду по запросу.")
         return
     if text == "/status":
-        await tg_api(client, "sendMessage", chat_id=chat_id, text=build_status())
+        await tg_send(client, chat_id, build_status())
         return
 
     stop = asyncio.Event()
@@ -258,33 +266,58 @@ async def tg_handle(client: httpx.AsyncClient, update: dict):
     await tg_send(client, chat_id, reply)
 
 
+def _plural(n: int, one: str, few: str, many: str) -> str:
+    m10, m100 = n % 10, n % 100
+    if m10 == 1 and m100 != 11:
+        return f"{n} {one}"
+    if 2 <= m10 <= 4 and not 12 <= m100 <= 14:
+        return f"{n} {few}"
+    return f"{n} {many}"
+
+
+_WD = ("пн", "вт", "ср", "чт", "пт", "сб", "вс")
+
+
+def _when(iso: str | None) -> str:
+    """'2026-07-20T08:30' → 'пн 20.07 08:30'."""
+    if not iso:
+        return "—"
+    try:
+        d = datetime.fromisoformat(iso)
+        return f"{_WD[d.weekday()]} {d.day:02d}.{d.month:02d} {d:%H:%M}"
+    except ValueError:
+        return iso.replace("T", " ")[:16]
+
+
 def build_status() -> str:
-    """Snapshot for /status: session, memory, skills, scheduled jobs."""
+    """Snapshot for /status: session, memory, skills, scheduled jobs. Markdown → tg_send."""
     from . import cron_store, memory_store, session_log, skill_store
     from .agent import load_session_state, session_age
 
     sid, _ = load_session_state()
     lines = []
-    lines.append(f"Сессия: {sid[:8]}…, длится {session_age() or '?'}" if sid
-                 else "Сессия: новая (контекст пуст)")
+    lines.append(f"**Сессия** {session_age() or '?'} · {sid[:8]}" if sid
+                 else "**Сессия** новая, контекст пуст")
     s_n, m_n = session_log.stats()
-    lines.append(f"Журнал: {s_n} сессий, {m_n} сообщений (поиск: session_search)")
+    lines.append(f"**Журнал** {_plural(s_n, 'сессия', 'сессии', 'сессий')} · "
+                 f"{_plural(m_n, 'сообщение', 'сообщения', 'сообщений')}")
     mem = memory_store.all_entries()
     by_cat = {c: sum(1 for e in mem if e["category"] == c) for c in memory_store.CATEGORIES}
-    lines.append(f"Память: {len(mem)} записей (профиль {by_cat['profile']}, "
-                 f"заметки {by_cat['note']}, предпочтения {by_cat['pref']})")
-    lines.append(f"Выученные навыки: {len(skill_store.list_skills())}")
+    lines.append(f"**Память** {_plural(len(mem), 'запись', 'записи', 'записей')}: "
+                 f"профиль {by_cat['profile']} · заметки {by_cat['note']} · предпочтения {by_cat['pref']}")
+    lines.append(f"**Навыки** выучено {len(skill_store.list_skills())}")
     jobs = cron_store.list_jobs()
     if jobs:
-        lines.append("Задания:")
+        lines.append("\n**Задания**")
         for j in jobs:
             log = cron_store.run_log(j)
             last = log[-1] if log else None
-            tail = (f"; посл. запуск {last['at']}: " + ("отправлено" if last["sent"] else "молчание")) if last else ""
-            nxt = (j.get("next_run") or "—").replace("T", " ")[:16]
-            lines.append(f"• #{j['id']} {j['name']} — {j['schedule']}, следующий {nxt}{tail}")
+            tail = ""
+            if last:
+                tail = f" · посл.: {_when(last['at'])}, " + ("отправлено" if last["sent"] else "молчание")
+            lines.append(f"• #{j['id']} {j['name']}\n  следующий: {_when(j.get('next_run'))}{tail}")
     else:
-        lines.append("Заданий по расписанию нет")
+        lines.append("\n**Задания** нет")
     return "\n".join(lines)
 
 
@@ -300,7 +333,7 @@ async def notify(text: str) -> None:
 
 BOT_COMMANDS = [
     {"command": "status", "description": "Сессия, память, навыки, задания"},
-    {"command": "clear", "description": "Новая сессия (история остаётся в журнале)"},
+    {"command": "new", "description": "Новая сессия (история остаётся в журнале)"},
     {"command": "help", "description": "Что умеет бот"},
 ]
 

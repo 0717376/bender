@@ -53,9 +53,9 @@ async def chat_ws(ws: WebSocket, token: str = "", surface: str = "wiki"):
             curator.mark_activity()
 
             # Session control handled by the backend.
-            if message == "/clear":
+            if message in ("/clear", "/new"):
                 agent.clear_session()
-                await emit({"t": "text", "id": "sys", "text": "Контекст очищен — начинаю новую сессию."})
+                await emit({"t": "text", "id": "sys", "text": "Начал новую сессию. Прошлый разговор сохранён в журнале."})
                 await emit({"t": "done", "sid": None})
                 continue
 
