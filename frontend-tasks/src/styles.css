@@ -319,6 +319,15 @@ button, input, textarea, select { font-family: inherit; -webkit-tap-highlight-co
 .list-head h1 { font-weight: 800; font-size: 36px; line-height: 1.05; letter-spacing: -.025em; color: var(--text); }
 .h1-edit { width: 100%; border: 0; outline: 0; background: transparent; padding: 0; font-family: inherit; font-weight: 800; font-size: 36px; line-height: 1.05; letter-spacing: -.025em; color: var(--text); }
 
+/* Area home: the area's projects as clickable rows above its loose tasks. */
+.area-projects { list-style: none; margin: 0 0 20px; padding: 0; }
+.ap-row { display: flex; align-items: center; gap: 12px; width: 100%; border: 0; background: none; cursor: pointer; padding: 10px 12px; border-radius: var(--r); font-family: inherit; font-size: 15px; font-weight: 650; color: var(--text-1); text-align: left; }
+.ap-row:hover { background: var(--bg-2); }
+.ap-dot { width: 9px; height: 9px; border-radius: 50%; margin: 0 4.5px; }
+.ap-count { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--text-4); }
+.proj-drag-card { padding: 8px 14px; background: var(--panel); border: 1px solid var(--border-3); border-radius: var(--r); box-shadow: var(--shadow-card); font-size: 14px; font-weight: 650; color: var(--text-1); }
+.nav.drag-src { opacity: 0.45; }
+
 /* Floating "new task" button, bottom-right of the list pane */
 .fab { position: absolute; right: 28px; bottom: 28px; width: 54px; height: 54px; border: 0; border-radius: 50%; background: var(--accent-grad); color: #fff; display: grid; place-items: center; cursor: pointer; box-shadow: 0 12px 30px -8px rgba(192, 90, 57, .65); transition: transform .16s, filter .16s, box-shadow .16s; z-index: 5; }
 .fab:hover { filter: brightness(1.06); transform: translateY(-2px); box-shadow: 0 16px 36px -8px rgba(192, 90, 57, .7); }

@@ -136,9 +136,20 @@ function Board() {
     return hits.length ? hits : closestCenter(args);
   }, [isTodayView, activeTask, T.tasks]);
 
-  const onDragStart = (e: DragStartEvent) => { setActiveId(Number(e.active.id)); T.setDragging(true); };
+  // A sidebar project being dragged (id "proj:N") — its target is an area header.
+  const [dragProjId, setDragProjId] = useState<number | null>(null);
+
+  const onDragStart = (e: DragStartEvent) => {
+    if (typeof e.active.id === "string" && e.active.id.startsWith("proj:")) {
+      setDragProjId(Number(e.active.id.slice(5)));
+      return;
+    }
+    setActiveId(Number(e.active.id));
+    T.setDragging(true);
+  };
   const onDragCancel = () => {
     setActiveId(null);
+    setDragProjId(null);
     T.setDragging(false);
     if (previewTodayId != null) { setPreviewTodayId(null); void T.reload(); }
   };
@@ -168,6 +179,14 @@ function Board() {
   };
 
   const onDragEnd = (e: DragEndEvent) => {
+    if (dragProjId != null) {
+      setDragProjId(null);
+      const over = e.over?.id;
+      if (typeof over === "string" && over.startsWith("drop:area:")) {
+        api.updateProject(dragProjId, { area_id: Number(over.slice(10)) }).then(T.reload).catch(() => {});
+      }
+      return;
+    }
     setActiveId(null);
     T.setDragging(false);
     const preview = previewTodayId;
@@ -373,7 +392,7 @@ function Board() {
           onCreateArea={async (title) => { await api.createArea(title); T.reload(); }}
           onClose={navOpen ? () => setNavOpen(false) : undefined}
           onSettings={() => setSettingsOpen(true)}
-          dragging={activeId != null}
+          dragging={activeId != null || dragProjId != null}
         />
 
         <TaskList
@@ -399,6 +418,8 @@ function Board() {
           onDeleteArea={() => {
             if (T.view.kind === "area" && T.view.id != null) setConfirmArea({ id: T.view.id, title: T.view.label });
           }}
+          onOpenProject={(id) => T.setView({ kind: "project", key: "p", id, label: projectLabel(id) })}
+          progress={T.overview?.progress ?? {}}
           onTag={(tag) => T.setView({ kind: "tag", key: tag, label: `#${tag}` })}
           activeId={activeId}
           previewTodayId={previewTodayId}
@@ -406,7 +427,8 @@ function Board() {
         />
 
         <DragOverlay dropAnimation={{ duration: 180, easing: "cubic-bezier(0.2,0,0,1)" }}>
-          {activeTask ? <DragCard task={activeTask} projects={T.overview?.projects ?? []} /> : null}
+          {activeTask ? <DragCard task={activeTask} projects={T.overview?.projects ?? []} />
+            : dragProjId != null ? <div className="proj-drag-card">{projectLabel(dragProjId)}</div> : null}
         </DragOverlay>
       </DndContext>
 
