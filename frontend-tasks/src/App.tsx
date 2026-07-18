@@ -469,6 +469,7 @@ function Board() {
         <SettingsModal
           mode={themeMode}
           palette={palette}
+          todayCount={T.overview?.counts.today ?? 0}
           onMode={setThemeMode}
           onPalette={setPalette}
           onClose={() => setSettingsOpen(false)}

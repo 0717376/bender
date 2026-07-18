@@ -372,6 +372,7 @@ button, input, textarea, select { font-family: inherit; -webkit-tap-highlight-co
 .pal-sw { width: 26px; height: 26px; border-radius: 50%; border: 1px solid rgba(0, 0, 0, .10); }
 .pal-nm { font-size: 10.5px; font-weight: 600; color: var(--text-2); line-height: 1.2; }
 .pal-tile.on .pal-nm { color: var(--accent-ink); }
+.stm-note { font-size: 12.5px; color: var(--text-3); padding: 2px 2px 0; }
 .stm-ver { font-size: 11px; color: var(--text-4); text-align: center; margin-top: 2px; }
 
 /* ── Tasks ── */
