@@ -377,7 +377,8 @@ button, input, textarea, select { font-family: inherit; -webkit-tap-highlight-co
 /* ── Tasks ── */
 .tasks { list-style: none; }
 .task { border-radius: var(--r-card); margin: 4px 0; border: 1px solid transparent; transition: background .2s, box-shadow .24s, border-color .2s; }
-.task-head { display: flex; gap: 13px; align-items: flex-start; padding: 12px 14px; cursor: pointer; touch-action: manipulation; }
+.task-head { display: flex; gap: 13px; align-items: flex-start; padding: 12px 14px; cursor: pointer; touch-action: manipulation; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.task-head input, .task-head textarea { -webkit-user-select: text; user-select: text; }
 .task:not(.expanded) .task-head:hover { background: rgba(0, 0, 0, 0.025); border-radius: var(--r-card); }
 .task.expanded { background: var(--card-grad); border-color: var(--border); box-shadow: var(--shadow-card); }
 .task.placeholder { opacity: 0.35; }

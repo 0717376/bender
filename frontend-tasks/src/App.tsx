@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Menu, Search, Sparkles } from "lucide-react";
 import {
   DndContext, DragEndEvent, DragOverEvent, DragStartEvent, DragOverlay,
-  KeyboardSensor, PointerSensor, pointerWithin, closestCenter, useSensor, useSensors,
+  KeyboardSensor, MouseSensor, TouchSensor, pointerWithin, closestCenter, useSensor, useSensors,
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import type { CollisionDetection } from "@dnd-kit/core";
@@ -112,8 +112,11 @@ function Board() {
   const [focusId, setFocusId] = useState<number | null>(null); // keyboard-focused row
   const pendingExpand = useRef<number | null>(null);
 
+  // Mouse drags on slight movement; touch requires a long-press so list scrolling
+  // on phones never turns into an accidental reorder.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
