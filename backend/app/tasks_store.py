@@ -172,6 +172,17 @@ def create_area(title: str) -> int:
     return _exec("INSERT INTO areas(title,created_at) VALUES(?,?)", (title, _today()))
 
 
+def update_area(area_id: int, title: str) -> dict | None:
+    _exec("UPDATE areas SET title=? WHERE id=?", (title, area_id))
+    rows = _q("SELECT * FROM areas WHERE id=?", (area_id,))
+    return dict(rows[0]) if rows else None
+
+
+def delete_area(area_id: int) -> None:
+    """Projects and tasks survive: FK ON DELETE SET NULL detaches them."""
+    _exec("DELETE FROM areas WHERE id=?", (area_id,))
+
+
 # --- Projects ---
 
 def list_projects(include_done: bool = False) -> list[dict]:

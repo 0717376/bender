@@ -36,6 +36,7 @@ function dropBody(overId: string): Record<string, unknown> | null {
   if (overId === "drop:view:someday") return { when: "someday" };
   if (overId === "drop:view:inbox") return { project: "null", when: "inbox" };
   if (overId.startsWith("drop:proj:")) return { project: Number(overId.slice(10)) };
+  if (overId.startsWith("drop:area:")) return { area_id: Number(overId.slice(10)), project: "null" };
   return null;
 }
 
@@ -71,12 +72,13 @@ function Auth({ onOk }: { onOk: () => void }) {
   );
 }
 
-function taskToView(t: Task, label: (id: number) => string): Sel {
+function taskToView(t: Task, projLabel: (id: number) => string, areaLabel: (id: number) => string): Sel {
   if (t.status === "completed") return { kind: "view", key: "logbook", label: tr("view_logbook") };
   if (t.someday) return { kind: "view", key: "someday", label: tr("view_someday") };
-  if (t.project_id != null) return { kind: "project", key: "p", id: t.project_id, label: label(t.project_id) };
+  if (t.project_id != null) return { kind: "project", key: "p", id: t.project_id, label: projLabel(t.project_id) };
   if (t.when_date && t.when_date <= isoToday()) return { kind: "view", key: "today", label: tr("view_today") };
   if (t.when_date) return { kind: "view", key: "upcoming", label: tr("view_upcoming") };
+  if (t.area_id != null) return { kind: "area", key: "a", id: t.area_id, label: areaLabel(t.area_id) };
   if (t.triaged) return { kind: "view", key: "anytime", label: tr("view_anytime") };
   return { kind: "view", key: "inbox", label: tr("view_inbox") };
 }
@@ -250,11 +252,31 @@ function Board() {
     (id: number) => T.overview?.projects.find((p) => p.id === id)?.title ?? t("project"),
     [T.overview],
   );
+  const areaLabel = useCallback(
+    (id: number) => T.overview?.areas.find((a) => a.id === id)?.title ?? t("area"),
+    [T.overview],
+  );
 
   const pickFromPalette = (t: Task) => {
     setPaletteOpen(false);
     pendingExpand.current = t.id;
-    T.setView(taskToView(t, projectLabel));
+    T.setView(taskToView(t, projectLabel, areaLabel));
+  };
+
+  const renameView = (title: string) => {
+    const v = T.view;
+    if (v.id == null) return;
+    const call = v.kind === "project" ? api.updateProject(v.id, { title }) : api.updateArea(v.id, title);
+    call.then(() => { T.setView({ ...v, label: title }); T.reload(); }).catch(() => {});
+  };
+
+  const [confirmArea, setConfirmArea] = useState<{ id: number; title: string } | null>(null);
+  const deleteArea = () => {
+    if (!confirmArea) return;
+    api.removeArea(confirmArea.id)
+      .then(() => { T.setView({ kind: "view", key: "today", label: t("view_today") }); T.reload(); })
+      .catch(() => {});
+    setConfirmArea(null);
   };
 
   // Global keyboard shortcuts.
@@ -373,6 +395,10 @@ function Board() {
               api.updateProject(T.view.id, { area_id: areaId ?? -1 }).then(T.reload).catch(() => {});
             }
           }}
+          onRenameView={renameView}
+          onDeleteArea={() => {
+            if (T.view.kind === "area" && T.view.id != null) setConfirmArea({ id: T.view.id, title: T.view.label });
+          }}
           onTag={(tag) => T.setView({ kind: "tag", key: tag, label: `#${tag}` })}
           activeId={activeId}
           previewTodayId={previewTodayId}
@@ -405,6 +431,14 @@ function Board() {
             setConfirmDel(null);
           }}
           onClose={() => setConfirmDel(null)}
+        />
+      )}
+      {confirmArea && (
+        <ConfirmModal
+          question={t("confirm_delete_area")}
+          detail={confirmArea.title}
+          onConfirm={deleteArea}
+          onClose={() => setConfirmArea(null)}
         />
       )}
       {paletteOpen && <CommandPalette onPick={pickFromPalette} onClose={() => setPaletteOpen(false)} />}

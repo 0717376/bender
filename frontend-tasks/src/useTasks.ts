@@ -3,8 +3,8 @@ import { api, subscribeTasks } from "./api";
 import { t } from "./i18n";
 import type { Overview, Task } from "./types";
 
-// view = built-in list, project = one project, tag = all open tasks carrying a tag (key = tag name)
-export type Sel = { kind: "view" | "project" | "tag"; key: string; id?: number; label: string };
+// view = built-in list, project/area = one container, tag = all open tasks carrying a tag (key = tag name)
+export type Sel = { kind: "view" | "project" | "area" | "tag"; key: string; id?: number; label: string };
 
 const VIEW_LABELS: Record<string, string> = {
   today: t("view_today"), inbox: t("view_inbox"), upcoming: t("view_upcoming"),
@@ -13,7 +13,9 @@ const VIEW_LABELS: Record<string, string> = {
 
 // Selection ⇄ URL hash (#today, #project/5, #tag/дом): refresh restores the list, back/forward navigate.
 const hashOf = (v: Sel) =>
-  v.kind === "project" ? `#project/${v.id}` : v.kind === "tag" ? `#tag/${encodeURIComponent(v.key)}` : `#${v.key}`;
+  v.kind === "project" ? `#project/${v.id}`
+  : v.kind === "area" ? `#area/${v.id}`
+  : v.kind === "tag" ? `#tag/${encodeURIComponent(v.key)}` : `#${v.key}`;
 
 function parseHash(): Sel | null {
   let h: string;
@@ -22,6 +24,10 @@ function parseHash(): Sel | null {
     const id = Number(h.slice(8));
     // label resolves from the overview once it loads
     return Number.isFinite(id) ? { kind: "project", key: "p", id, label: "" } : null;
+  }
+  if (h.startsWith("area/")) {
+    const id = Number(h.slice(5));
+    return Number.isFinite(id) ? { kind: "area", key: "a", id, label: "" } : null;
   }
   if (h.startsWith("tag/")) {
     const t = h.slice(4);
@@ -79,6 +85,7 @@ export function useTasks(pushToast: (t: ToastMsg) => void) {
       let fresh =
         v.kind === "view" ? await api.list(v.key)
         : v.kind === "tag" ? await api.list("", undefined, v.key)
+        : v.kind === "area" ? await api.list("", undefined, undefined, v.id)
         : await api.list("", v.id);
       if (v.kind === "view" && v.key === "today") fresh = todayOrder(fresh);
       if (v.kind === "view" && v.key === "today") {
@@ -119,13 +126,15 @@ export function useTasks(pushToast: (t: ToastMsg) => void) {
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
-  // A project restored from the hash has no title yet — resolve it from the overview
-  // (or bounce to Today if the project no longer exists).
+  // A project/area restored from the hash has no title yet — resolve it from the overview
+  // (or bounce to Today if it no longer exists).
   useEffect(() => {
     const v = viewRef.current;
-    if (!overview || v.kind !== "project" || v.label) return;
-    const p = overview.projects.find((x) => x.id === v.id);
-    setView(p ? { ...v, label: p.title } : { kind: "view", key: "today", label: t("view_today") });
+    if (!overview || (v.kind !== "project" && v.kind !== "area") || v.label) return;
+    const c = v.kind === "project"
+      ? overview.projects.find((x) => x.id === v.id)
+      : overview.areas.find((x) => x.id === v.id);
+    setView(c ? { ...v, label: c.title } : { kind: "view", key: "today", label: t("view_today") });
   }, [overview]);
 
   // On view switch: clear immediately so the previous view's rows never flash, then load.
@@ -185,6 +194,7 @@ export function useTasks(pushToast: (t: ToastMsg) => void) {
       const body = extra ?? {
         when: v.kind === "view" && ["today", "someday", "anytime"].includes(v.key) ? v.key : undefined,
         project: v.kind === "project" ? v.id : undefined,
+        area_id: v.kind === "area" ? v.id : undefined,
       };
       const created = await api.create({ title: t, ...body });
       await reload();

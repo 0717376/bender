@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { ChevronDown, ChevronRight, Layers, ListPlus, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, Layers, ListPlus, Plus, Trash2 } from "lucide-react";
 import { MenuPopover } from "./Popover";
 import TaskRow from "./TaskRow";
 import { MONTHS, doneOfTotal, locale, logbookStats, t } from "./i18n";
@@ -75,6 +75,24 @@ function sections(tasks: Task[], labelOf: (t: Task) => string): { label: string;
   return out;
 }
 
+/** In-place rename for project/area view headers: an input styled as the h1. */
+function TitleEdit({ value, onSave }: { value: string; onSave: (title: string) => void }) {
+  const [v, setV] = useState(value);
+  const commit = () => { const s = v.trim(); if (s && s !== value) onSave(s); else setV(value); };
+  return (
+    <input
+      className="h1-edit"
+      value={v}
+      onChange={(e) => setV(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        if (e.key === "Escape") { setV(value); (e.target as HTMLInputElement).blur(); }
+      }}
+    />
+  );
+}
+
 function Ring({ done, open }: { done: number; open: number }) {
   const total = done + open;
   if (!total) return null;
@@ -105,6 +123,8 @@ export default function TaskList({
   onNewTask,
   onAddHeading,
   onSetArea,
+  onRenameView,
+  onDeleteArea,
   onTag,
   activeId,
   previewTodayId,
@@ -124,6 +144,8 @@ export default function TaskList({
   onNewTask: () => void;
   onAddHeading: (title: string) => void;
   onSetArea: (areaId: number | null) => void;
+  onRenameView: (title: string) => void;
+  onDeleteArea: () => void;
   onTag: (tag: string) => void;
   activeId: number | null;
   previewTodayId: number | null;
@@ -139,12 +161,14 @@ export default function TaskList({
   const [areaPop, setAreaPop] = useState<DOMRect | null>(null);
 
   const isProject = view.kind === "project";
+  const isArea = view.kind === "area";
   const isToday = view.kind === "view" && view.key === "today";
   const isUpcoming = view.kind === "view" && view.key === "upcoming";
   const isLogbook = view.kind === "view" && view.key === "logbook";
-  const draggable = isProject || (view.kind === "view" && DRAGGABLE_VIEWS.has(view.key));
+  const draggable = isProject || isArea || (view.kind === "view" && DRAGGABLE_VIEWS.has(view.key));
 
-  const emptyMsg = isProject ? EMPTY.project : view.kind === "tag" ? EMPTY.tag : EMPTY[view.key] ?? t("empty_generic");
+  const emptyMsg = isProject ? EMPTY.project : isArea ? t("empty_area")
+    : view.kind === "tag" ? EMPTY.tag : EMPTY[view.key] ?? t("empty_generic");
 
   // Weekly/monthly stats for the logbook kicker.
   const logStats = useMemo(() => {
@@ -159,6 +183,7 @@ export default function TaskList({
   }, [isLogbook, tasks]);
 
   const kicker = isProject ? t("project")
+    : isArea ? t("area")
     : view.kind === "tag" ? t("tag")
     : isToday ? todayLabel()
     : isLogbook ? (logStats || t("kicker_logbook"))
@@ -202,7 +227,9 @@ export default function TaskList({
         <div className="list-head">
           <div className="head-text">
             {kicker && <div className="kicker">{kicker}</div>}
-            <h1>{view.label}</h1>
+            {isProject || isArea
+              ? <TitleEdit key={`${view.kind}:${view.id}:${view.label}`} value={view.label} onSave={onRenameView} />
+              : <h1>{view.label}</h1>}
           </div>
           {(isToday || isProject) && <Ring done={doneTasks.length} open={tasks.filter((t) => t.kind !== "heading").length} />}
           {isProject && (
@@ -212,6 +239,13 @@ export default function TaskList({
               </button>
               <button className="head-btn" onClick={() => setAddingHead(true)}>
                 <ListPlus size={13} strokeWidth={2} />{t("add_heading")}
+              </button>
+            </div>
+          )}
+          {isArea && (
+            <div className="head-actions">
+              <button className="head-btn" onClick={onDeleteArea}>
+                <Trash2 size={13} strokeWidth={2} />{t("delete")}
               </button>
             </div>
           )}
