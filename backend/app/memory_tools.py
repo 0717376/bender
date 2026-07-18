@@ -26,7 +26,28 @@ def _text(obj) -> dict:
     },
 )
 async def remember(args):
-    return _text(store.add(args["text"], args.get("category", "note")))
+    try:
+        return _text(store.add(args["text"], args.get("category", "note")))
+    except store.MemoryFull as e:
+        return _text({"error": str(e)})
+
+
+@tool(
+    "update_memory",
+    "Обновить текст записи памяти по id (вместо добавления новой поверх старой). "
+    "Используй для уточнений и слияния пересекающихся записей.",
+    {
+        "type": "object",
+        "properties": {"id": {"type": "integer"}, "text": {"type": "string"}},
+        "required": ["id", "text"],
+    },
+)
+async def update_memory(args):
+    try:
+        entry = store.update(args["id"], args["text"])
+        return _text(entry or {"error": f"записи #{args['id']} нет"})
+    except store.MemoryFull as e:
+        return _text({"error": str(e)})
 
 
 @tool("list_memory", "Показать всё, что сохранено в долговременной памяти.",
@@ -41,7 +62,7 @@ async def forget(args):
     return _text({"ok": store.remove(args["id"])})
 
 
-TOOLS = [remember, list_memory, forget]
+TOOLS = [remember, update_memory, list_memory, forget]
 TOOL_NAMES = [f"mcp__memory__{t.name}" for t in TOOLS]
 
 server = create_sdk_mcp_server("memory", version="1.0.0", tools=TOOLS)

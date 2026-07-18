@@ -15,7 +15,11 @@ from . import config
 
 _lock = threading.Lock()
 CATEGORIES = ("profile", "note", "pref")
-MAX_ENTRIES = 200
+MAX_CHARS = 4000
+
+# Bumped on every successful write; the reviewer uses it to skip turns where the
+# main agent already saved memory itself (Hermes-style nudge reset).
+write_seq = 0
 
 _TITLES = {"profile": "Профиль", "note": "Заметки", "pref": "Предпочтения (как со мной работать)"}
 
@@ -45,24 +49,61 @@ def all_entries() -> list[dict]:
         return _read()
 
 
+def _used(entries: list[dict]) -> int:
+    return sum(len(e["text"]) for e in entries)
+
+
+class MemoryFull(Exception):
+    def __init__(self, used: int, need: int):
+        self.used, self.need = used, need
+        super().__init__(
+            f"Память переполнена: занято {used} из {MAX_CHARS} символов, нужно ещё {need}. "
+            "Сконсолидируй сейчас: обнови пересекающиеся записи через update (слей в одну "
+            "короткую), удали устаревшие через forget — и повтори сохранение."
+        )
+
+
 def add(text: str, category: str = "note") -> dict:
+    global write_seq
     category = category if category in CATEGORIES else "note"
+    text = text.strip()
     with _lock:
         entries = _read()
+        if _used(entries) + len(text) > MAX_CHARS:
+            raise MemoryFull(_used(entries), len(text))
         next_id = max((e["id"] for e in entries), default=0) + 1
-        entry = {"id": next_id, "category": category, "text": text.strip()}
+        entry = {"id": next_id, "category": category, "text": text}
         entries.append(entry)
-        _write(entries[-MAX_ENTRIES:])
+        _write(entries)
+        write_seq += 1
         return entry
 
 
+def update(entry_id: int, text: str) -> dict | None:
+    global write_seq
+    text = text.strip()
+    with _lock:
+        entries = _read()
+        for e in entries:
+            if e["id"] == entry_id:
+                if _used(entries) - len(e["text"]) + len(text) > MAX_CHARS:
+                    raise MemoryFull(_used(entries), len(text) - len(e["text"]))
+                e["text"] = text
+                _write(entries)
+                write_seq += 1
+                return e
+        return None
+
+
 def remove(entry_id: int) -> bool:
+    global write_seq
     with _lock:
         entries = _read()
         kept = [e for e in entries if e["id"] != entry_id]
         if len(kept) == len(entries):
             return False
         _write(kept)
+        write_seq += 1
         return True
 
 

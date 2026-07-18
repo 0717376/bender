@@ -23,9 +23,11 @@ CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "sonnet")
 # zombie context dragged for days causes stale dates and bloat. 0 disables.
 SESSION_FRESH_HOURS = float(os.environ.get("SESSION_FRESH_HOURS", "6"))
 
-# Post-turn background self-review (memory/skill capture). Model kept cheap.
+# Background self-review (memory/skill capture). Fires every N turns, not every
+# turn; the counter resets when the main agent saves memory itself. Model kept cheap.
 REVIEWER_ENABLED = os.environ.get("REVIEWER_ENABLED", "1") not in ("0", "false", "")
 REVIEWER_MODEL = os.environ.get("REVIEWER_MODEL", "sonnet")
+REVIEWER_EVERY_TURNS = max(1, int(os.environ.get("REVIEWER_EVERY_TURNS", "10")))
 
 # Tools pre-approved so they run headless without prompts (mirrors the old
 # --allowedTools list). Anything outside this set is denied, not prompted.
@@ -54,9 +56,11 @@ BASE_PROMPT = (
     "Не переспрашивай то, что уже есть в долговременной памяти ниже.\n"
     "Правила памяти: личные факты и предпочтения — в память (remember), знания и документы — "
     "в вики, процедуры — в навыки. Записывай декларативные факты («предпочитает краткие "
-    "ответы»), а не команды себе («всегда отвечай кратко»). Не сохраняй протухающее: номера, "
-    "даты разовых событий, «сделал X» — для этого есть вики и задачи. НИКОГДА не говори "
-    "«запомнил», если не вызвал remember в этом же ходе.\n"
+    "ответы»), а не команды себе («всегда отвечай кратко»). Уточнение существующей записи — "
+    "через mcp__memory__update_memory, не новой записью поверх. Память мала: не сохраняй "
+    "протухающее (номера, реквизиты, даты разовых событий, «сделал X») и не дублируй то, "
+    "что записано в вики или задачах, — для истории разговоров есть журнал сессий. "
+    "НИКОГДА не говори «запомнил», если не вызвал remember в этом же ходе.\n"
     "Честность: если источники в вебе противоречат друг другу — скажи об этом и дай варианты, "
     "не выбирай один как факт и не досочиняй детали (имена, цифры, события), которых нет в "
     "источнике. Пересказывая результат инструмента, не добавляй полей, которых в нём нет.\n"
