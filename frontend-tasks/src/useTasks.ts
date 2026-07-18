@@ -79,6 +79,16 @@ export function useTasks(pushToast: (t: ToastMsg) => void) {
 
   const loadOverview = useCallback(() => api.overview().then(setOverview).catch(() => {}), []);
 
+  // PWA icon badge = today's count (dock on macOS; iOS shows it once notifications are allowed).
+  useEffect(() => {
+    const n = overview?.counts.today ?? 0;
+    const nav = navigator as Navigator & {
+      setAppBadge?: (n: number) => Promise<void>;
+      clearAppBadge?: () => Promise<void>;
+    };
+    (n > 0 ? nav.setAppBadge?.(n) : nav.clearAppBadge?.())?.catch(() => {});
+  }, [overview]);
+
   const loadTasks = useCallback(async () => {
     const v = viewRef.current;
     try {
