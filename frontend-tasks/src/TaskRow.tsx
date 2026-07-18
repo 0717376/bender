@@ -1,26 +1,27 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Calendar, Check, Flag, History, ListChecks, Repeat, X } from "lucide-react";
+import { Calendar, Check, Flag, History, Layers, ListChecks, Repeat, X } from "lucide-react";
 import TaskDetail from "./TaskDetail";
 import { repeatLabel } from "./RepeatPopover";
 import { projectColor } from "./colors";
 import { agoLabel, t } from "./i18n";
-import type { Project, Task } from "./types";
+import type { Area, Project, Task } from "./types";
 
 const isoToday = () => new Date().toISOString().slice(0, 10);
 const stop = (e: React.SyntheticEvent) => e.stopPropagation();
 
 /** Collapsed-row content (title + meta). Shared by the row and the drag overlay. */
-export function RowBody({ task, projects, onTag }: { task: Task; projects: Project[]; onTag?: (tag: string) => void }) {
+export function RowBody({ task, projects, areas, onTag }: { task: Task; projects: Project[]; areas: Area[]; onTag?: (tag: string) => void }) {
   const overdue = task.when_date && task.when_date < isoToday();
   const overdueDays = overdue ? Math.round((Date.parse(isoToday()) - Date.parse(task.when_date!)) / 86400000) : 0;
   const stale = task.status === "open" && (task.moves ?? 0) >= 3;
   const checkTotal = task.checklist_total ?? 0;
   const proj = task.project_id != null ? projects.find((p) => p.id === task.project_id) : null;
+  const area = !proj && task.area_id != null ? areas.find((a) => a.id === task.area_id) : null;
   // In Today every row's when_date == today → suppress that chip; keep overdue/future.
   const showWhen = task.when_date && task.when_date !== isoToday();
-  const hasMeta = proj || showWhen || stale || task.deadline || task.repeat || checkTotal > 0 || task.tags.length > 0;
+  const hasMeta = proj || area || showWhen || stale || task.deadline || task.repeat || checkTotal > 0 || task.tags.length > 0;
   return (
     <>
       <div className="title">{task.title}</div>
@@ -28,6 +29,9 @@ export function RowBody({ task, projects, onTag }: { task: Task; projects: Proje
         <div className="meta">
           {proj && (
             <span className="chip"><span className="pdot" style={{ background: projectColor(proj.id) }} />{proj.title}</span>
+          )}
+          {area && (
+            <span className="chip"><Layers size={12} strokeWidth={2} />{area.title}</span>
           )}
           {showWhen && (
             <span className={"chip " + (overdue ? "overdue" : "due")}>
@@ -60,13 +64,13 @@ export function RowBody({ task, projects, onTag }: { task: Task; projects: Proje
 }
 
 /** Static lifted card shown under the cursor while dragging (rendered in DragOverlay). */
-export function DragCard({ task, projects }: { task: Task; projects: Project[] }) {
+export function DragCard({ task, projects, areas }: { task: Task; projects: Project[]; areas: Area[] }) {
   const done = task.status === "completed";
   return (
     <div className="task task-overlay">
       <div className="task-head">
         <span className={"check" + (done ? " done" : "")}>{done && <Check size={13} strokeWidth={3.2} />}</span>
-        <div className="body"><RowBody task={task} projects={projects} /></div>
+        <div className="body"><RowBody task={task} projects={projects} areas={areas} /></div>
       </div>
     </div>
   );
@@ -92,6 +96,7 @@ export default function TaskRow({
   draggable,
   focused,
   projects,
+  areas,
   ops,
   onExpand,
   onTag,
@@ -104,6 +109,7 @@ export default function TaskRow({
   draggable: boolean;
   focused?: boolean;
   projects: Project[];
+  areas: Area[];
   ops: Ops;
   onExpand: (id: number | null) => void;
   onTag?: (tag: string) => void;
@@ -238,13 +244,13 @@ export default function TaskRow({
             }}
           />
         ) : (
-          <div className="body"><RowBody task={task} projects={projects} onTag={onTag} /></div>
+          <div className="body"><RowBody task={task} projects={projects} areas={areas} onTag={onTag} /></div>
         )}
       </div>
 
       {render && (
         <div ref={wrapRef} className={"detail-wrap" + (opening ? " opening" : "")}>
-          <TaskDetail task={task} projects={projects} ops={ops} />
+          <TaskDetail task={task} projects={projects} areas={areas} ops={ops} />
         </div>
       )}
     </li>

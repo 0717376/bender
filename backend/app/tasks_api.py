@@ -39,6 +39,7 @@ class TaskPatch(BaseModel):
     status: str | None = None
     sort: float | None = None
     repeat: dict | None = None  # {} clears the rule (None = field untouched)
+    # area_id: -1 detaches the task from its area (None = field untouched)
 
 
 class ProjectIn(BaseModel):
@@ -138,6 +139,8 @@ async def task_create(req: TaskIn):
 @router.patch("/{task_id}")
 async def task_patch(task_id: int, req: TaskPatch):
     fields = {k: v for k, v in req.model_dump().items() if v is not None}
+    if fields.get("area_id") == -1:
+        fields["area_id"] = None
     t = store.update_task(task_id, **fields)
     if not t:
         raise HTTPException(404, "Не найдено")

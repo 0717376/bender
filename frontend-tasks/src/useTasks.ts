@@ -262,7 +262,7 @@ export function useTasks(pushToast: (t: ToastMsg) => void) {
         setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...server } : t)));
         loadOverview();
         // when/project reconcile even mid-edit — the row must leave the view right away
-        const affectsMembership = "when" in body || "project" in body;
+        const affectsMembership = "when" in body || "project" in body || "area_id" in body;
         if (affectsMembership || !fieldFocused.current) void loadTasks();
       } catch {
         void reload();

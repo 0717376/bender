@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Check, Flag, Folder, Hash, ListChecks, Moon, Plus, Repeat, Star, Trash2, X } from "lucide-react";
+import { Check, Flag, Folder, Hash, Layers, ListChecks, Moon, Plus, Repeat, Star, Trash2, X } from "lucide-react";
 import { DatePickerPopover } from "./DatePicker";
-import { MenuPopover } from "./Popover";
+import { MovePopover, type MoveDest } from "./Popover";
 import { RepeatPopover, repeatLabel } from "./RepeatPopover";
 import { projectColor } from "./colors";
 import { t } from "./i18n";
-import type { Project, Task } from "./types";
+import type { Area, Project, Task } from "./types";
 
 const isoToday = () => new Date().toISOString().slice(0, 10);
 const fmt = (iso: string) => { const [, m, d] = iso.split("-"); return `${d}.${m}`; };
@@ -25,10 +25,12 @@ interface Ops {
 export default function TaskDetail({
   task,
   projects,
+  areas,
   ops,
 }: {
   task: Task;
   projects: Project[];
+  areas: Area[];
   ops: Ops;
 }) {
   const [notes, setNotes] = useState(task.notes);
@@ -88,6 +90,13 @@ export default function TaskDetail({
   const pct = checklist.length ? Math.round((cdone / checklist.length) * 100) : 0;
 
   const proj = task.project_id != null ? projects.find((p) => p.id === task.project_id) : null;
+  const area = !proj && task.area_id != null ? areas.find((a) => a.id === task.area_id) : null;
+  const move = (d: MoveDest) => {
+    if (d.kind === "inbox") ops.patch(task.id, { project: "null", area_id: -1, when: "inbox" });
+    else if (d.kind === "area") ops.patch(task.id, { project: "null", area_id: d.id });
+    else ops.patch(task.id, { project: d.id, area_id: -1 });
+    setProjPop(null);
+  };
   const isTodayWhen = task.when_date === isoToday();
   const scheduled = task.someday || !!task.when_date;
   const whenLabel = task.someday ? t("someday_short") : isTodayWhen ? t("view_today") : task.when_date ? fmt(task.when_date) : t("when");
@@ -128,11 +137,16 @@ export default function TaskDetail({
         </form>
       )}
 
-      {(proj || task.deadline || task.repeat || task.tags.length > 0) && (
+      {(proj || area || task.deadline || task.repeat || task.tags.length > 0) && (
         <div className="d-chiprow">
           {proj && (
             <button className="vchip" onClick={openProj}>
               <span className="pdot" style={{ background: projectColor(proj.id) }} />{proj.title}
+            </button>
+          )}
+          {area && (
+            <button className="vchip" onClick={openProj}>
+              <Layers size={12} strokeWidth={2} />{area.title}
             </button>
           )}
           {task.deadline && (
@@ -177,7 +191,7 @@ export default function TaskDetail({
           <button className={"d-tool" + (editor === "checklist" || checklist.length ? " on" : "")} onClick={() => toggle("checklist")} aria-label={t("checklist")}><ListChecks size={16} strokeWidth={2} /></button>
           <button className={"d-tool" + (task.deadline ? " on" : "")} onClick={(e) => openDate(e, "deadline")} aria-label={t("deadline")}><Flag size={16} strokeWidth={2} /></button>
           <button className={"d-tool" + (task.repeat ? " on" : "")} onClick={openRep} aria-label={t("repeat")}><Repeat size={16} strokeWidth={2} /></button>
-          <button className={"d-tool" + (proj ? " on" : "")} onClick={openProj} aria-label={t("project")}><Folder size={16} strokeWidth={2} /></button>
+          <button className={"d-tool" + (proj || area ? " on" : "")} onClick={openProj} aria-label={t("move_to")}><Folder size={16} strokeWidth={2} /></button>
           <button className="d-tool del" onClick={() => ops.remove(task.id, task.title)} aria-label={t("delete")}><Trash2 size={16} strokeWidth={2} /></button>
         </div>
       </div>
@@ -220,14 +234,13 @@ export default function TaskDetail({
         />
       )}
       {projPop && (
-        <MenuPopover
+        <MovePopover
           anchor={projPop}
-          value={task.project_id ?? null}
-          items={[
-            { value: null, label: t("no_project") },
-            ...projects.map((p) => ({ value: p.id, label: p.title, dot: projectColor(p.id) })),
-          ]}
-          onPick={(v) => { ops.patch(task.id, { project: v === null ? "null" : v }); setProjPop(null); }}
+          projects={projects.map((p) => ({ id: p.id, title: p.title, color: projectColor(p.id) }))}
+          areas={areas}
+          projectId={task.project_id ?? null}
+          areaId={task.area_id ?? null}
+          onPick={move}
           onClose={() => setProjPop(null)}
         />
       )}
