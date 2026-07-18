@@ -339,7 +339,11 @@ button, input, textarea {
     overflow-x: auto;
 }
 
-.scroll::-webkit-scrollbar { width: 9px; height: 9px; }
+/* Overlay-style scrollbar: no track, slim thumb only while hovering the pane. */
+.scroll { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+.scroll:hover { scrollbar-color: var(--border-light) transparent; }
+.scroll::-webkit-scrollbar { width: 10px; height: 10px; }
 .scroll::-webkit-scrollbar-track { background: transparent; }
-.scroll::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 20px; border: 2px solid transparent; background-clip: padding-box; }
+.scroll::-webkit-scrollbar-thumb { background: transparent; border-radius: 20px; border: 3px solid transparent; background-clip: padding-box; }
+.scroll:hover::-webkit-scrollbar-thumb { background: var(--border-light); background-clip: padding-box; }
 .scroll::-webkit-scrollbar-thumb:hover { background: var(--text-3); background-clip: padding-box; }
