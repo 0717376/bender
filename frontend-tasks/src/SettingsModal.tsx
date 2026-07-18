@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { Moon, MonitorSmartphone, Sun, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { BellRing, Moon, MonitorSmartphone, Sun, X } from "lucide-react";
 import { lang, setLang, t, type Lang } from "./i18n";
 
 export type ThemeMode = "light" | "dark" | "auto";
@@ -28,9 +28,10 @@ const LANGS: { key: Lang; label: string }[] = [
   { key: "en", label: t("lang_en") },
 ];
 
-export default function SettingsModal({ mode, palette, onMode, onPalette, onClose }: {
+export default function SettingsModal({ mode, palette, todayCount, onMode, onPalette, onClose }: {
   mode: ThemeMode;
   palette: string;
+  todayCount: number;
   onMode: (m: ThemeMode) => void;
   onPalette: (p: string) => void;
   onClose: () => void;
@@ -40,6 +41,19 @@ export default function SettingsModal({ mode, palette, onMode, onPalette, onClos
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  // iOS shows the icon badge only after notifications are granted, and the system
+  // prompt must come from an in-app gesture — this button is that gesture.
+  const [notifPerm, setNotifPerm] = useState<NotificationPermission | null>(
+    "Notification" in window ? Notification.permission : null,
+  );
+  const askBadge = async () => {
+    const p = await Notification.requestPermission();
+    setNotifPerm(p);
+    if (p === "granted" && todayCount > 0) {
+      (navigator as Navigator & { setAppBadge?: (n: number) => Promise<void> }).setAppBadge?.(todayCount).catch(() => {});
+    }
+  };
 
   return (
     <div className="modal-scrim" onMouseDown={onClose}>
@@ -80,6 +94,21 @@ export default function SettingsModal({ mode, palette, onMode, onPalette, onClos
             </button>
           ))}
         </div>
+
+        {notifPerm != null && (
+          <>
+            <div className="stm-label">{t("badge_title")}</div>
+            {notifPerm === "granted" ? (
+              <div className="stm-note">{t("badge_on")}</div>
+            ) : notifPerm === "denied" ? (
+              <div className="stm-note">{t("badge_denied")}</div>
+            ) : (
+              <div className="seg">
+                <button onClick={askBadge}><BellRing size={14} strokeWidth={2} />{t("badge_allow")}</button>
+              </div>
+            )}
+          </>
+        )}
 
         <div className="stm-ver">{t("app_title")} · v{__APP_VERSION__}</div>
       </div>
