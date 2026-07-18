@@ -41,6 +41,19 @@ function NavView({ keyName, label, Icon, active, count, onPick }: {
   );
 }
 
+/** «Проекты» header doubles as the detach target while a project is being dragged. */
+function NoAreaTarget({ highlight }: { highlight: boolean }) {
+  const { setNodeRef, isOver } = useDroppable({ id: "drop:noarea" });
+  return (
+    <div
+      ref={setNodeRef}
+      className={"section" + (isOver && highlight ? " section-btn drop-over" : "")}
+    >
+      {t("projects")}
+    </div>
+  );
+}
+
 function AreaBtn({ id, title, active, onPick }: {
   id: number; title: string; active: boolean; onPick: () => void;
 }) {
@@ -101,6 +114,7 @@ export default function Sidebar({
   onClose,
   onSettings,
   dragging,
+  draggingProject,
 }: {
   ov: Overview | null;
   view: Sel;
@@ -110,6 +124,7 @@ export default function Sidebar({
   onClose?: () => void;
   onSettings: () => void;
   dragging?: boolean;
+  draggingProject?: boolean;
 }) {
   const [adding, setAdding] = useState<"choose" | "project" | "area" | null>(null);
   const [name, setName] = useState("");
@@ -171,7 +186,7 @@ export default function Sidebar({
         );
       })}
 
-      {ungrouped.length > 0 && <div className="section">{t("projects")}</div>}
+      {(ungrouped.length > 0 || draggingProject) && <NoAreaTarget highlight={!!draggingProject} />}
       {ungrouped.map(projBtn)}
 
       {adding === "project" || adding === "area" ? (

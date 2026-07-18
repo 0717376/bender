@@ -187,6 +187,8 @@ function Board() {
       const over = e.over?.id;
       if (typeof over === "string" && over.startsWith("drop:area:")) {
         api.updateProject(dragProjId, { area_id: Number(over.slice(10)) }).then(T.reload).catch(() => {});
+      } else if (over === "drop:noarea") {
+        api.updateProject(dragProjId, { area_id: -1 }).then(T.reload).catch(() => {});
       }
       return;
     }
@@ -396,6 +398,7 @@ function Board() {
           onClose={navOpen ? () => setNavOpen(false) : undefined}
           onSettings={() => setSettingsOpen(true)}
           dragging={activeId != null || dragProjId != null}
+          draggingProject={dragProjId != null}
         />
 
         <TaskList
@@ -412,11 +415,6 @@ function Board() {
           onExpand={onExpand}
           onNewTask={() => setNewTaskOpen(true)}
           onAddHeading={(title) => void T.add(title, { project: T.view.id, kind: "heading" })}
-          onSetArea={(areaId) => {
-            if (T.view.kind === "project" && T.view.id != null) {
-              api.updateProject(T.view.id, { area_id: areaId ?? -1 }).then(T.reload).catch(() => {});
-            }
-          }}
           onRenameView={renameView}
           onDeleteArea={() => {
             if (T.view.kind === "area" && T.view.id != null) setConfirmArea({ id: T.view.id, title: T.view.label });
@@ -430,7 +428,7 @@ function Board() {
         />
 
         <DragOverlay dropAnimation={{ duration: 180, easing: "cubic-bezier(0.2,0,0,1)" }}>
-          {activeTask ? <DragCard task={activeTask} projects={T.overview?.projects ?? []} />
+          {activeTask ? <DragCard task={activeTask} projects={T.overview?.projects ?? []} areas={T.overview?.areas ?? []} />
             : dragProjId != null ? <div className="proj-drag-card">{projectLabel(dragProjId)}</div> : null}
         </DragOverlay>
       </DndContext>

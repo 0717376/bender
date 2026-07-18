@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { ChevronDown, ChevronRight, Layers, ListPlus, Plus, Trash2 } from "lucide-react";
-import { MenuPopover } from "./Popover";
+import { ChevronDown, ChevronRight, ListPlus, Plus, Trash2 } from "lucide-react";
 import TaskRow from "./TaskRow";
 import { projectColor } from "./colors";
 import { MONTHS, doneOfTotal, locale, logbookStats, t } from "./i18n";
@@ -123,7 +122,6 @@ export default function TaskList({
   onExpand,
   onNewTask,
   onAddHeading,
-  onSetArea,
   onRenameView,
   onDeleteArea,
   onOpenProject,
@@ -146,7 +144,6 @@ export default function TaskList({
   onExpand: (id: number | null) => void;
   onNewTask: () => void;
   onAddHeading: (title: string) => void;
-  onSetArea: (areaId: number | null) => void;
   onRenameView: (title: string) => void;
   onDeleteArea: () => void;
   onOpenProject: (id: number) => void;
@@ -163,7 +160,6 @@ export default function TaskList({
   });
   const [addingHead, setAddingHead] = useState(false);
   const [headTitle, setHeadTitle] = useState("");
-  const [areaPop, setAreaPop] = useState<DOMRect | null>(null);
 
   const isProject = view.kind === "project";
   const isArea = view.kind === "area";
@@ -187,16 +183,16 @@ export default function TaskList({
     return logbookStats(week, month);
   }, [isLogbook, tasks]);
 
-  const kicker = isProject ? t("project")
+  const project = isProject ? projects.find((p) => p.id === view.id) : null;
+  const projArea = project?.area_id != null ? areas.find((a) => a.id === project.area_id) : null;
+  const areaProjects = isArea ? projects.filter((p) => p.area_id === view.id) : [];
+
+  const kicker = isProject ? (projArea ? `${t("project")} · ${projArea.title}` : t("project"))
     : isArea ? t("area")
     : view.kind === "tag" ? t("tag")
     : isToday ? todayLabel()
     : isLogbook ? (logStats || t("kicker_logbook"))
     : KICKERS[view.key] ?? "";
-
-  const project = isProject ? projects.find((p) => p.id === view.id) : null;
-  const projArea = project?.area_id != null ? areas.find((a) => a.id === project.area_id) : null;
-  const areaProjects = isArea ? projects.filter((p) => p.area_id === view.id) : [];
 
   const today = isoToday();
   // A task mid-drag from Overdue previews as a member of the Today group.
@@ -214,6 +210,7 @@ export default function TaskList({
       draggable={drag}
       focused={focusId === t.id}
       projects={projects}
+      areas={areas}
       ops={ops}
       onExpand={onExpand}
       onTag={onTag}
@@ -240,9 +237,6 @@ export default function TaskList({
           {(isToday || isProject) && <Ring done={doneTasks.length} open={tasks.filter((t) => t.kind !== "heading").length} />}
           {isProject && (
             <div className="head-actions">
-              <button className="head-btn" onClick={(e) => { const rect = e.currentTarget.getBoundingClientRect(); setAreaPop((c) => (c ? null : rect)); }}>
-                <Layers size={13} strokeWidth={2} />{projArea ? projArea.title : t("area")}
-              </button>
               <button className="head-btn" onClick={() => setAddingHead(true)}>
                 <ListPlus size={13} strokeWidth={2} />{t("add_heading")}
               </button>
@@ -359,15 +353,6 @@ export default function TaskList({
         </button>
       )}
 
-      {areaPop && (
-        <MenuPopover
-          anchor={areaPop}
-          value={project?.area_id ?? null}
-          items={[{ value: null, label: t("no_area") }, ...areas.map((a) => ({ value: a.id, label: a.title }))]}
-          onPick={(v) => { onSetArea(v as number | null); setAreaPop(null); }}
-          onClose={() => setAreaPop(null)}
-        />
-      )}
     </main>
   );
 }
