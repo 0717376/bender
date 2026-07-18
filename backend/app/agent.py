@@ -267,8 +267,8 @@ def build_options(resume: str | None, surface: str = "wiki", interactive: bool =
 def _error_text(m: ResultMessage) -> str:
     blob = " ".join(str(x) for x in (m.result, m.errors, m.api_error_status) if x).lower()
     if "context" in blob or "too long" in blob or "max tokens" in blob:
-        return "Контекст сессии переполнен. Очистите его командой /clear или /compact."
-    return "Ошибка Claude. Попробуйте /clear."
+        return "Контекст сессии переполнен. Начните новую: /new в боте или «Очистить» в чате."
+    return "Ошибка Claude. Попробуйте начать новую сессию (/new)."
 
 
 class _StaleSession(Exception):
@@ -433,7 +433,7 @@ async def run_collect(message: str, on_tool: Callable[[str, str], Awaitable[None
 
             save_session(final_sid)
             if had_error:
-                return "Ошибка Claude. Попробуйте /clear."
+                return "Ошибка Claude. Попробуйте начать новую сессию (/new)."
             reply = (result_text or "\n\n".join(texts)).strip()
             session_log.log_turn(final_sid, surface, raw, reply)
             if reply:
