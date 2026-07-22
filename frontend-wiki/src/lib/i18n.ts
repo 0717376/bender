@@ -83,6 +83,8 @@ const RU = {
   collapseChat: 'Свернуть',
   emptyFolder: 'Папка пуста',
   uploadHint: 'Перетащите файлы сюда или загрузите с устройства',
+  back: 'Назад',
+  open: 'Открыть',
 } as const
 
 const EN: Record<keyof typeof RU, string> = {
@@ -155,6 +157,8 @@ const EN: Record<keyof typeof RU, string> = {
   collapseChat: 'Collapse',
   emptyFolder: 'Empty folder',
   uploadHint: 'Drop files here or upload from your device',
+  back: 'Back',
+  open: 'Open',
 }
 
 export const t = (k: keyof typeof RU): string => (ru ? RU : EN)[k]

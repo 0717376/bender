@@ -190,6 +190,7 @@ export function WikiApp({ onLogout }: WikiAppProps) {
             reloadSignal={reloadSignal}
             onSelectionChange={setSelText}
             onNavigate={selectPath}
+            onBack={() => setPane('tree')}
           />
         ) : (
           <StorageView
@@ -201,6 +202,7 @@ export function WikiApp({ onLogout }: WikiAppProps) {
             onSelect={selectStorage}
             onChanged={reloadStorage}
             onMissing={storageMissing}
+            onBack={() => setPane('tree')}
           />
         )}
       </main>
@@ -231,7 +233,7 @@ export function WikiApp({ onLogout }: WikiAppProps) {
       <nav className={styles.tabbar}>
         <button data-active={pane === 'tree'} onClick={() => setPane('tree')}>
           <FolderTree size={20} strokeWidth={1.75} />
-          <span>{t('tabFiles')}</span>
+          <span>{section === 'wiki' ? t('wiki') : t('storage')}</span>
         </button>
         <button data-active={pane === 'content'} onClick={() => setPane('content')}>
           <FileText size={20} strokeWidth={1.75} />
