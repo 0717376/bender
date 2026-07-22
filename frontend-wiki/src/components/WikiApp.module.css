@@ -29,6 +29,39 @@
     min-height: 0;
 }
 
+/* Wiki / Files section switch (rendered inside the tree toolbar) */
+.sections {
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    background: var(--surface);
+    border-radius: var(--r-pill);
+}
+
+.sections button {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border: none;
+    border-radius: var(--r-pill);
+    background: transparent;
+    color: var(--text-3);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.sections button[data-active="true"] {
+    background: var(--bg);
+    color: var(--text);
+    box-shadow: var(--shadow-soft);
+}
+
 /* Bottom tab bar — mobile only */
 .tabbar {
     display: none;

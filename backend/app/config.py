@@ -4,6 +4,11 @@ import os
 # --- Paths ---
 WIKI_DIR = os.path.abspath(os.environ.get("WIKI_DIR", "/app/content"))
 DATA_DIR = os.path.abspath(os.environ.get("DATA_DIR", "/app/data"))
+# Personal file storage: plain folders on disk, independent of the wiki.
+FILES_DIR = os.path.abspath(os.environ.get("FILES_DIR", "/app/files"))
+FILES_INBOX = "Входящие"
+FILES_TRASH = ".trash"
+FILES_MAX_UPLOAD = int(os.environ.get("FILES_MAX_UPLOAD", str(500 * 1024 * 1024)))
 SESSION_FILE = os.path.join(DATA_DIR, "session.json")
 # Agent persona (SOUL.md-style) — an ordinary wiki page the user can edit;
 # re-read on each new session.
@@ -76,6 +81,16 @@ BASE_PROMPT = (
     "повторяемую задачу или нашёл рабочий приём — сохрани его навыком через mcp__skills__save "
     "(name латиницей kebab-case, description = когда применять, body = шаги). В следующий раз "
     "он появится среди навыков и его можно будет вызвать.\n"
+    "Файлы: у пользователя есть личное файловое хранилище — обычные папки и файлы в "
+    f"{FILES_DIR} (отдельно от вики). Работай с ним напрямую: Read (умеет картинки и PDF), "
+    "Glob, Bash (mkdir/mv/cp). Правила: файл без явного адреса клади в папку "
+    f"«{FILES_INBOX}»; имена давай человеческие и говорящие (загран-лена-до-2030.jpg, а не "
+    "scan_0217.jpg); папки — по сферам жизни (Документы, Авто, Здоровье, Финансы…), не "
+    "глубже двух уровней; новые папки создавай по мере надобности. Ничего не удаляй без "
+    f"явной просьбы — и тогда перемещай в {FILES_DIR}/{FILES_TRASH}/, а не стирай. "
+    "Отправить файл пользователю в Telegram — mcp__tg__send_file (путь относительно "
+    "хранилища или абсолютный). Из вики-страницы на файл ссылаются так: "
+    "[имя](storage:Папка/файл.pdf) или ![подпись](storage:Папка/скан.jpg) для картинок.\n"
     "Прошлые разговоры: полный журнал всех сессий (веб и Telegram) доступен через "
     "mcp__sessions__session_search. Если пользователь ссылается на прошлый разговор или "
     "спрашивает то, что могло уже обсуждаться, — сначала поищи в журнале (query='слова'), "

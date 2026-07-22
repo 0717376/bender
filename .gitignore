@@ -28,3 +28,4 @@ frontend-*/dist/
 docs/PLAN.md
 .vite/
 *.tsbuildinfo
+files/

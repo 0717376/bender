@@ -1,27 +1,25 @@
 import { useState, useRef, useEffect } from 'react'
 import {
-  BookOpen, ChevronRight, Folder, FolderOpen, FileText,
-  FilePlus2, FolderPlus, RotateCw, Pencil, Trash2, FolderUp, Settings,
+  HardDrive, ChevronRight, Folder, FolderOpen, FolderPlus, RotateCw,
+  Pencil, Trash2, FolderUp, Settings, Upload, File as FileIcon,
+  FileText, Image as ImageIcon, FileAudio, FileVideo, FileArchive,
 } from 'lucide-react'
 import type { FileNode } from '../lib/types'
-import { createNode, renameNode, deleteNode } from '../lib/api'
+import { storageUpload, storageMkdir, storageMove, storageDelete } from '../lib/api'
 import styles from './FileTree.module.css'
 import { t, confirmDelete } from '../lib/i18n'
-
-type Creating = { parent: string; type: 'file' | 'dir' } | null
 
 interface TreeCtx {
   selectedPath: string | null
   onSelect: (path: string) => void
-  creating: Creating
+  creating: string | null
   renaming: string | null
-  startCreate: (parent: string, type: 'file' | 'dir') => void
+  startCreate: (parent: string) => void
   startRename: (path: string) => void
   submitCreate: (name: string) => void
   submitRename: (node: FileNode, name: string) => void
   cancel: () => void
   remove: (path: string) => void
-  // drag & drop
   dropTarget: string | null
   onDragStart: (e: React.DragEvent, path: string) => void
   onDragOverDir: (e: React.DragEvent, dest: string) => void
@@ -29,7 +27,7 @@ interface TreeCtx {
   onDragEnd: () => void
 }
 
-interface FileTreeProps {
+interface StorageTreeProps {
   tree: FileNode[]
   selectedPath: string | null
   onSelect: (path: string) => void
@@ -42,33 +40,39 @@ const parentOf = (p: string) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')
 const baseOf = (p: string) => (p.includes('/') ? p.slice(p.lastIndexOf('/') + 1) : p)
 const join = (parent: string, name: string) => (parent ? `${parent}/${name}` : name)
 
-export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings, header }: FileTreeProps) {
-  const [creating, setCreating] = useState<Creating>(null)
+const EXT_ICONS: [RegExp, React.ComponentType<{ size?: number }>][] = [
+  [/\.(png|jpe?g|gif|webp|heic|svg|bmp)$/i, ImageIcon],
+  [/\.(mp3|ogg|wav|m4a|flac)$/i, FileAudio],
+  [/\.(mp4|mov|mkv|webm|avi)$/i, FileVideo],
+  [/\.(zip|rar|7z|tar|gz)$/i, FileArchive],
+  [/\.(md|txt|pdf|docx?|xlsx?|pptx?|csv)$/i, FileText],
+]
+
+function fileIcon(name: string, size = 15) {
+  const Ico = EXT_ICONS.find(([re]) => re.test(name))?.[1] ?? FileIcon
+  return <Ico size={size} />
+}
+
+export function StorageTree({ tree, selectedPath, onSelect, onChanged, onSettings, header }: StorageTreeProps) {
+  const [creating, setCreating] = useState<string | null>(null)   // parent dir of the new folder
   const [renaming, setRenaming] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const dragPathRef = useRef<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const uploadDirRef = useRef('')
 
-  const startCreate = (parent: string, type: 'file' | 'dir') => {
-    setRenaming(null)
-    setCreating({ parent, type })
-  }
-  const startRename = (path: string) => {
-    setCreating(null)
-    setRenaming(path)
-  }
+  const startCreate = (parent: string) => { setRenaming(null); setCreating(parent) }
+  const startRename = (path: string) => { setCreating(null); setRenaming(path) }
   const cancel = () => { setCreating(null); setRenaming(null) }
 
   const submitCreate = async (name: string) => {
-    if (!creating || !name) { cancel(); return }
-    let leaf = name
-    if (creating.type === 'file' && !leaf.endsWith('.md')) leaf += '.md'
-    const path = join(creating.parent, leaf)
+    if (creating == null || !name) { cancel(); return }
+    const path = join(creating, name)
     cancel()
     try {
-      await createNode(path, creating.type)
+      await storageMkdir(path)
       onChanged()
-      if (creating.type === 'file') onSelect(path)
     } catch (e) {
       alert((e as Error).message)
     }
@@ -79,7 +83,7 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings, 
     cancel()
     if (!name || dst === node.path) return
     try {
-      await renameNode(node.path, dst)
+      await storageMove(node.path, dst)
       onChanged()
       fixSelection(node.path, dst)
     } catch (e) {
@@ -90,23 +94,41 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings, 
   const remove = async (path: string) => {
     if (!confirm(confirmDelete(path))) return
     try {
-      await deleteNode(path)
+      await storageDelete(path)
+      if (selectedPath === path || selectedPath?.startsWith(path + '/')) onSelect('')
       onChanged()
     } catch (e) {
       alert((e as Error).message)
     }
   }
 
-  // Keep the open page selected after it (or its parent folder) is moved/renamed.
   const fixSelection = (src: string, dst: string) => {
     if (selectedPath === src) onSelect(dst)
     else if (selectedPath && selectedPath.startsWith(src + '/')) onSelect(dst + selectedPath.slice(src.length))
   }
 
+  const uploadTo = async (dir: string, files: FileList | File[]) => {
+    for (const f of Array.from(files)) {
+      try {
+        await storageUpload(dir, f)
+      } catch (e) {
+        alert(`${f.name}: ${(e as Error).message}`)
+      }
+    }
+    onChanged()
+  }
+
+  const pickUpload = (dir: string) => {
+    uploadDirRef.current = dir
+    fileInputRef.current?.click()
+  }
+
+  const isFileDrag = (e: React.DragEvent) => Array.from(e.dataTransfer.types).includes('Files')
+
   const canDrop = (src: string | null, dest: string) => {
     if (src == null) return false
-    if (dest === parentOf(src)) return false               // already there
-    if (dest === src || dest.startsWith(src + '/')) return false  // into itself / descendant
+    if (dest === parentOf(src)) return false
+    if (dest === src || dest.startsWith(src + '/')) return false
     return true
   }
 
@@ -118,6 +140,13 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings, 
   }
 
   const onDragOverDir = (e: React.DragEvent, dest: string) => {
+    if (isFileDrag(e)) {
+      e.preventDefault()
+      e.stopPropagation()
+      e.dataTransfer.dropEffect = 'copy'
+      if (dropTarget !== dest) setDropTarget(dest)
+      return
+    }
     if (!canDrop(dragPathRef.current, dest)) return
     e.preventDefault()
     e.stopPropagation()
@@ -128,14 +157,18 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings, 
   const onDropDir = async (e: React.DragEvent, dest: string) => {
     e.preventDefault()
     e.stopPropagation()
+    setDropTarget(null)
+    if (isFileDrag(e)) {
+      await uploadTo(dest, e.dataTransfer.files)
+      return
+    }
     const src = dragPathRef.current
     dragPathRef.current = null
     setDragging(false)
-    setDropTarget(null)
     if (!canDrop(src, dest) || src == null) return
     const dst = join(dest, baseOf(src))
     try {
-      await renameNode(src, dst)
+      await storageMove(src, dst)
       onChanged()
       fixSelection(src, dst)
     } catch (err) {
@@ -155,16 +188,26 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings, 
 
   return (
     <div className={styles.tree}>
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        hidden
+        onChange={(e) => {
+          if (e.target.files?.length) uploadTo(uploadDirRef.current, e.target.files)
+          e.target.value = ''
+        }}
+      />
       <div className={styles.toolbar}>
         {header ?? (
           <span className={styles.brand}>
-            <span className={styles.logo}><BookOpen size={14} strokeWidth={2.4} /></span>
-            <span className={styles.heading}>{t('wiki')}</span>
+            <span className={styles.logo}><HardDrive size={14} strokeWidth={2.4} /></span>
+            <span className={styles.heading}>{t('storage')}</span>
           </span>
         )}
         <div className={styles.actions}>
-          <button title={t('newPage')} onClick={() => startCreate(toolbarParent, 'file')}><FilePlus2 size={15} /></button>
-          <button title={t('newFolder')} onClick={() => startCreate(toolbarParent, 'dir')}><FolderPlus size={15} /></button>
+          <button title={t('upload')} onClick={() => pickUpload(toolbarParent)}><Upload size={15} /></button>
+          <button title={t('newFolder')} onClick={() => startCreate(toolbarParent)}><FolderPlus size={15} /></button>
           <button title={t('refresh')} onClick={onChanged}><RotateCw size={14} /></button>
         </div>
       </div>
@@ -173,15 +216,10 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings, 
         onDragOver={(e) => onDragOverDir(e, '')}
         onDrop={(e) => onDropDir(e, '')}
       >
-        {creating?.parent === '' && (
-          <InlineInput
-            type={creating.type}
-            icon={creating.type === 'dir' ? <Folder size={15} /> : <FileText size={15} />}
-            onSubmit={submitCreate}
-            onCancel={cancel}
-          />
+        {creating === '' && (
+          <InlineInput icon={<Folder size={15} />} onSubmit={submitCreate} onCancel={cancel} />
         )}
-        {tree.length === 0 && !creating && <div className={styles.emptyHint}>{t('emptyTree')}</div>}
+        {tree.length === 0 && creating == null && <div className={styles.emptyHint}>{t('emptyStorage')}</div>}
         {tree.map(node => (
           <TreeNode key={node.path} node={node} ctx={ctx} />
         ))}
@@ -206,29 +244,21 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings, 
 }
 
 function TreeNode({ node, ctx }: { node: FileNode; ctx: TreeCtx }) {
-  const [open, setOpen] = useState(false) // folders start collapsed
+  const [open, setOpen] = useState(false)
   const isDir = node.type === 'dir'
   const isSelected = !isDir && node.path === ctx.selectedPath
-
-  const beginCreate = (e: React.MouseEvent, type: 'file' | 'dir') => {
-    e.stopPropagation()
-    setOpen(true)
-    ctx.startCreate(node.path, type)
-  }
 
   if (ctx.renaming === node.path) {
     return (
       <InlineInput
-        type={node.type}
         initial={baseOf(node.path)}
-        icon={isDir ? <Folder size={15} /> : <FileText size={15} />}
+        icon={isDir ? <Folder size={15} /> : fileIcon(node.name)}
         onSubmit={(name) => ctx.submitRename(node, name)}
         onCancel={ctx.cancel}
       />
     )
   }
 
-  // Folders are drop targets (the whole node region routes into this folder).
   const dirDnd = isDir
     ? {
         onDragOver: (e: React.DragEvent) => ctx.onDragOverDir(e, node.path),
@@ -254,27 +284,23 @@ function TreeNode({ node, ctx }: { node: FileNode; ctx: TreeCtx }) {
           )}
         </span>
         <span className={styles.fileIcon}>
-          {isDir ? (open ? <FolderOpen size={15} /> : <Folder size={15} />) : <FileText size={15} />}
+          {isDir ? (open ? <FolderOpen size={15} /> : <Folder size={15} />) : fileIcon(node.name)}
         </span>
         <span className={styles.name}>{node.name}</span>
         <span className={styles.rowActions}>
-          {isDir && <>
-            <button title={t('newPageHere')} onClick={(e) => beginCreate(e, 'file')}><FilePlus2 size={13} /></button>
-            <button title={t('newFolderHere')} onClick={(e) => beginCreate(e, 'dir')}><FolderPlus size={13} /></button>
-          </>}
+          {isDir && (
+            <button title={t('newFolderHere')} onClick={(e) => { e.stopPropagation(); setOpen(true); ctx.startCreate(node.path) }}>
+              <FolderPlus size={13} />
+            </button>
+          )}
           <button title={t('rename')} onClick={(e) => { e.stopPropagation(); ctx.startRename(node.path) }}><Pencil size={13} /></button>
           <button title={t('delete')} onClick={(e) => { e.stopPropagation(); ctx.remove(node.path) }}><Trash2 size={13} /></button>
         </span>
       </div>
       {isDir && open && (
         <div className={styles.children}>
-          {ctx.creating?.parent === node.path && (
-            <InlineInput
-              type={ctx.creating.type}
-              icon={ctx.creating.type === 'dir' ? <Folder size={15} /> : <FileText size={15} />}
-              onSubmit={ctx.submitCreate}
-              onCancel={ctx.cancel}
-            />
+          {ctx.creating === node.path && (
+            <InlineInput icon={<Folder size={15} />} onSubmit={ctx.submitCreate} onCancel={ctx.cancel} />
           )}
           {node.children?.map(child => (
             <TreeNode key={child.path} node={child} ctx={ctx} />
@@ -286,14 +312,13 @@ function TreeNode({ node, ctx }: { node: FileNode; ctx: TreeCtx }) {
 }
 
 interface InlineInputProps {
-  type: 'file' | 'dir'
   initial?: string
   icon: React.ReactNode
   onSubmit: (name: string) => void
   onCancel: () => void
 }
 
-function InlineInput({ type, initial = '', icon, onSubmit, onCancel }: InlineInputProps) {
+function InlineInput({ initial = '', icon, onSubmit, onCancel }: InlineInputProps) {
   const [value, setValue] = useState(initial)
   const doneRef = useRef(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -324,7 +349,7 @@ function InlineInput({ type, initial = '', icon, onSubmit, onCancel }: InlineInp
         className={styles.inlineInput}
         value={value}
         spellCheck={false}
-        placeholder={type === 'dir' ? t('folderName') : t('pageName')}
+        placeholder={t('folderName')}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter') { e.preventDefault(); finish(true) }

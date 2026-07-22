@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { FolderTree, FileText, Sparkles } from 'lucide-react'
+import { FolderTree, FileText, Sparkles, BookOpen, HardDrive } from 'lucide-react'
 import type { FileNode } from '../lib/types'
 import type { ChatContext } from '../hooks/useWebSocket'
-import { fetchTree } from '../lib/api'
+import { fetchTree, storageTree } from '../lib/api'
 import { clearToken } from '../lib/auth'
 import { FileTree } from './FileTree'
+import { StorageTree } from './StorageTree'
+import { StorageView } from './StorageView'
 import { ContentPane, type ContentPaneHandle } from './ContentPane'
 import { ChatPane } from './ChatPane'
 import { SettingsModal, type ThemeMode } from './SettingsModal'
@@ -16,10 +18,25 @@ interface WikiAppProps {
 }
 
 type Pane = 'tree' | 'content' | 'chat'
+type Section = 'wiki' | 'files'
+
+function findNode(nodes: FileNode[], path: string): FileNode | null {
+  for (const n of nodes) {
+    if (n.path === path) return n
+    if (n.children && path.startsWith(n.path + '/')) {
+      const hit = findNode(n.children, path)
+      if (hit) return hit
+    }
+  }
+  return null
+}
 
 export function WikiApp({ onLogout }: WikiAppProps) {
   const [tree, setTree] = useState<FileNode[]>([])
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
+  const [section, setSection] = useState<Section>('wiki')
+  const [storage, setStorage] = useState<FileNode[]>([])
+  const [storagePath, setStoragePath] = useState<string | null>(null)
   const [reloadSignal, setReloadSignal] = useState(0)
   const [selText, setSelText] = useState('')
   // Which pane is visible on mobile (single-pane layout). Ignored on desktop.
@@ -67,40 +84,81 @@ export function WikiApp({ onLogout }: WikiAppProps) {
     fetchTree().then(setTree).catch(() => {})
   }, [])
 
+  const reloadStorage = useCallback(() => {
+    storageTree().then(setStorage).catch(() => {})
+  }, [])
+
   useEffect(() => {
     reloadTree()
-  }, [reloadTree])
+    reloadStorage()
+  }, [reloadTree, reloadStorage])
+
+  const selectStorage = useCallback((p: string | null) => {
+    setStoragePath(p || null)
+    if (p) setPane('content')
+  }, [])
 
   const logout = useCallback(() => {
     clearToken()
     onLogout()
   }, [onLogout])
 
-  // After the assistant finishes, files may have changed: refresh tree + open file.
+  // After the assistant finishes, files may have changed: refresh trees + open file.
   const onAssistantDone = useCallback(() => {
     reloadTree()
+    reloadStorage()
     setReloadSignal(s => s + 1)
-  }, [reloadTree])
+  }, [reloadTree, reloadStorage])
+
+  const sections = (
+    <div className={styles.sections}>
+      <button data-active={section === 'wiki'} onClick={() => setSection('wiki')}>
+        <BookOpen size={13} strokeWidth={2.2} /> {t('wiki')}
+      </button>
+      <button data-active={section === 'files'} onClick={() => setSection('files')}>
+        <HardDrive size={13} strokeWidth={2.2} /> {t('storage')}
+      </button>
+    </div>
+  )
 
   return (
     <div className={styles.wrapper} data-pane={pane}>
       <aside className={styles.left}>
-        <FileTree
-          tree={tree}
-          selectedPath={selectedPath}
-          onSelect={selectPath}
-          onChanged={reloadTree}
-          onSettings={() => setSettingsOpen(true)}
-        />
+        {section === 'wiki' ? (
+          <FileTree
+            tree={tree}
+            selectedPath={selectedPath}
+            onSelect={selectPath}
+            onChanged={reloadTree}
+            onSettings={() => setSettingsOpen(true)}
+            header={sections}
+          />
+        ) : (
+          <StorageTree
+            tree={storage}
+            selectedPath={storagePath}
+            onSelect={selectStorage}
+            onChanged={reloadStorage}
+            onSettings={() => setSettingsOpen(true)}
+            header={sections}
+          />
+        )}
       </aside>
       <main className={styles.center}>
-        <ContentPane
-          ref={contentRef}
-          path={selectedPath}
-          reloadSignal={reloadSignal}
-          onSelectionChange={setSelText}
-          onNavigate={selectPath}
-        />
+        {section === 'wiki' ? (
+          <ContentPane
+            ref={contentRef}
+            path={selectedPath}
+            reloadSignal={reloadSignal}
+            onSelectionChange={setSelText}
+            onNavigate={selectPath}
+          />
+        ) : (
+          <StorageView
+            path={storagePath}
+            size={storagePath ? findNode(storage, storagePath)?.size : undefined}
+          />
+        )}
       </main>
       <aside className={styles.right}>
         <ChatPane
