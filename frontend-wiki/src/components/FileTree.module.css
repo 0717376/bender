@@ -7,22 +7,6 @@
     isolation: isolate;
 }
 
-/* Soft drifting aura behind the sidebar top */
-.tree::before {
-    content: "";
-    position: absolute;
-    top: -90px;
-    left: -40px;
-    width: 240px;
-    height: 240px;
-    border-radius: 50%;
-    background: radial-gradient(circle, var(--aura), transparent 70%);
-    filter: blur(8px);
-    pointer-events: none;
-    z-index: -1;
-    animation: auraDrift 14s ease-in-out infinite;
-}
-
 .toolbar {
     display: flex;
     align-items: center;
@@ -122,17 +106,17 @@
     background: rgba(0, 0, 0, 0.04);
 }
 
+/* Спокойное выделение в духе сайдбара Tasks: мягкая заливка, без градиента и тени */
 .selected,
 .selected:hover {
-    background: var(--accent-grad);
-    color: #fff;
-    font-weight: 700;
-    box-shadow: var(--shadow-accent);
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+    font-weight: 600;
 }
 
 .selected .fileIcon,
 .selected .chevron {
-    color: rgba(255, 255, 255, 0.92);
+    color: var(--accent-ink);
 }
 
 .dropTarget {
@@ -240,31 +224,10 @@
     color: var(--text-3);
 }
 
-.rowActions {
-    position: absolute;
-    right: 4px;
-    top: 0;
-    bottom: 0;
-    display: flex;
-    align-items: center;
-    gap: 1px;
-    padding-left: 20px;
-    opacity: 0;
-    pointer-events: none;
-    background: linear-gradient(to right, transparent, var(--sidebar-bg) 45%);
-    transition: opacity 0.12s ease;
-}
-
-.row:hover .rowActions {
-    opacity: 1;
-    pointer-events: auto;
-}
-
-.selected .rowActions {
-    background: none;
-}
-
-.rowActions button {
+/* Единственная кнопка «⋯» в конце строки — обычный flex-сосед,
+   поэтому никогда не перекрывает имя (имя обрезается многоточием). */
+.dots {
+    flex-shrink: 0;
     width: 22px;
     height: 22px;
     border: none;
@@ -275,20 +238,23 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    opacity: 0;
+    transition: opacity 0.12s ease, background 0.12s ease;
 }
 
-.rowActions button:hover {
+.row:hover .dots,
+.dots[data-open] {
+    opacity: 1;
+}
+
+.dots:hover,
+.dots[data-open] {
     background: var(--border);
     color: var(--text);
 }
 
-.selected .rowActions button {
-    color: rgba(255, 255, 255, 0.85);
-}
-
-.selected .rowActions button:hover {
-    background: rgba(255, 255, 255, 0.2);
-    color: #fff;
+.selected .dots {
+    color: var(--accent-ink);
 }
 
 @media (max-width: 760px) {
@@ -303,16 +269,8 @@
         gap: 5px;
     }
 
-    /* No hover on touch — keep rename/delete reachable inline on every row */
-    .rowActions {
-        position: static;
-        opacity: 1;
-        pointer-events: auto;
-        padding-left: 6px;
-        background: none;
-    }
-    .selected .rowActions { background: none; }
-    .rowActions button { width: 32px; height: 32px; }
+    /* No hover on touch — keep the row menu reachable on every row */
+    .dots { opacity: 1; width: 32px; height: 32px; }
 
     .inlineInput { font-size: 16px; padding: 5px 8px; }
     .rootDrop { display: none; }

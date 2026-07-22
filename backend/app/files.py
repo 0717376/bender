@@ -20,6 +20,21 @@ def safe_path(rel: str) -> str:
     return abs_path
 
 
+def page_title(abs_path: str) -> str | None:
+    """Первый заголовок `# ...` из начала файла — человеческое имя страницы."""
+    try:
+        with open(abs_path, encoding="utf-8", errors="ignore") as f:
+            for line in f.read(4096).splitlines():
+                s = line.strip()
+                if s.startswith("# "):
+                    return s[2:].strip() or None
+                if s and not s.startswith(("#", "---", "<!--")):
+                    break
+    except OSError:
+        pass
+    return None
+
+
 def build_tree(abs_dir: str, rel_prefix: str) -> list[dict]:
     nodes: list[dict] = []
     try:
@@ -36,7 +51,10 @@ def build_tree(abs_dir: str, rel_prefix: str) -> list[dict]:
                 "children": build_tree(entry.path, rel + "/"),
             })
         elif entry.name.endswith(".md"):
-            nodes.append({"name": entry.name, "path": rel, "type": "file"})
+            nodes.append({
+                "name": entry.name, "path": rel, "type": "file",
+                "title": page_title(entry.path), "mtime": int(entry.stat().st_mtime),
+            })
     return nodes
 
 

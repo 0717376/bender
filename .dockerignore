@@ -1,0 +1,12 @@
+# Контекст корневых сборок (фронтенды): не тащить данные и мусор в docker build
+.git
+content
+data
+files
+tg-bot-api
+docs
+backups
+**/node_modules
+**/dist
+*.log
+.env*

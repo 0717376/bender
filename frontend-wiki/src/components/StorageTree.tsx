@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect } from 'react'
 import {
-  HardDrive, ChevronRight, Folder, FolderOpen, FolderPlus, RotateCw,
-  Pencil, Trash2, FolderUp, Settings, Upload, File as FileIcon,
-  FileText, Image as ImageIcon, FileAudio, FileVideo, FileArchive,
+  HardDrive, ChevronRight, Folder, FolderOpen, FolderPlus,
+  Pencil, Trash2, FolderUp, Settings, Upload,
 } from 'lucide-react'
 import type { FileNode } from '../lib/types'
 import { storageUpload, storageMkdir, storageMove, storageDelete } from '../lib/api'
+import { fileIcon } from '../lib/fileIcons'
+import { RowMenu, type MenuItem } from './RowMenu'
 import styles from './FileTree.module.css'
 import { t, confirmDelete } from '../lib/i18n'
 
@@ -39,19 +40,6 @@ interface StorageTreeProps {
 const parentOf = (p: string) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '')
 const baseOf = (p: string) => (p.includes('/') ? p.slice(p.lastIndexOf('/') + 1) : p)
 const join = (parent: string, name: string) => (parent ? `${parent}/${name}` : name)
-
-const EXT_ICONS: [RegExp, React.ComponentType<{ size?: number }>][] = [
-  [/\.(png|jpe?g|gif|webp|heic|svg|bmp)$/i, ImageIcon],
-  [/\.(mp3|ogg|wav|m4a|flac)$/i, FileAudio],
-  [/\.(mp4|mov|mkv|webm|avi)$/i, FileVideo],
-  [/\.(zip|rar|7z|tar|gz)$/i, FileArchive],
-  [/\.(md|txt|pdf|docx?|xlsx?|pptx?|csv)$/i, FileText],
-]
-
-function fileIcon(name: string, size = 15) {
-  const Ico = EXT_ICONS.find(([re]) => re.test(name))?.[1] ?? FileIcon
-  return <Ico size={size} />
-}
 
 export function StorageTree({ tree, selectedPath, onSelect, onChanged, onSettings, header }: StorageTreeProps) {
   const [creating, setCreating] = useState<string | null>(null)   // parent dir of the new folder
@@ -208,7 +196,6 @@ export function StorageTree({ tree, selectedPath, onSelect, onChanged, onSetting
         <div className={styles.actions}>
           <button title={t('upload')} onClick={() => pickUpload(toolbarParent)}><Upload size={15} /></button>
           <button title={t('newFolder')} onClick={() => startCreate(toolbarParent)}><FolderPlus size={15} /></button>
-          <button title={t('refresh')} onClick={onChanged}><RotateCw size={14} /></button>
         </div>
       </div>
       <div
@@ -246,7 +233,7 @@ export function StorageTree({ tree, selectedPath, onSelect, onChanged, onSetting
 function TreeNode({ node, ctx }: { node: FileNode; ctx: TreeCtx }) {
   const [open, setOpen] = useState(false)
   const isDir = node.type === 'dir'
-  const isSelected = !isDir && node.path === ctx.selectedPath
+  const isSelected = node.path === ctx.selectedPath
 
   if (ctx.renaming === node.path) {
     return (
@@ -266,6 +253,14 @@ function TreeNode({ node, ctx }: { node: FileNode; ctx: TreeCtx }) {
       }
     : {}
 
+  const menu: MenuItem[] = [
+    ...(isDir ? [
+      { icon: <FolderPlus size={14} />, label: t('newFolderHere'), onClick: () => { setOpen(true); ctx.startCreate(node.path) } },
+    ] : []),
+    { icon: <Pencil size={14} />, label: t('rename'), onClick: () => ctx.startRename(node.path) },
+    { icon: <Trash2 size={14} />, label: t('delete'), danger: true, onClick: () => ctx.remove(node.path) },
+  ]
+
   return (
     <div className={styles.node} {...dirDnd}>
       <div
@@ -273,7 +268,7 @@ function TreeNode({ node, ctx }: { node: FileNode; ctx: TreeCtx }) {
         draggable
         onDragStart={(e) => ctx.onDragStart(e, node.path)}
         onDragEnd={ctx.onDragEnd}
-        onClick={() => (isDir ? setOpen(o => !o) : ctx.onSelect(node.path))}
+        onClick={() => { if (isDir) setOpen(o => !o); ctx.onSelect(node.path) }}
       >
         <span className={styles.chevron}>
           {isDir && (
@@ -287,15 +282,7 @@ function TreeNode({ node, ctx }: { node: FileNode; ctx: TreeCtx }) {
           {isDir ? (open ? <FolderOpen size={15} /> : <Folder size={15} />) : fileIcon(node.name)}
         </span>
         <span className={styles.name}>{node.name}</span>
-        <span className={styles.rowActions}>
-          {isDir && (
-            <button title={t('newFolderHere')} onClick={(e) => { e.stopPropagation(); setOpen(true); ctx.startCreate(node.path) }}>
-              <FolderPlus size={13} />
-            </button>
-          )}
-          <button title={t('rename')} onClick={(e) => { e.stopPropagation(); ctx.startRename(node.path) }}><Pencil size={13} /></button>
-          <button title={t('delete')} onClick={(e) => { e.stopPropagation(); ctx.remove(node.path) }}><Trash2 size={13} /></button>
-        </span>
+        <RowMenu items={menu} className={styles.dots} />
       </div>
       {isDir && open && (
         <div className={styles.children}>
