@@ -45,14 +45,42 @@
     flex-shrink: 0;
 }
 
-.path {
-    font-family: var(--mono);
-    font-size: 12px;
+/* Человеческие хлебные крошки вместо mono-пути */
+.crumbs {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    font-size: 13px;
     color: var(--text-3);
+    white-space: nowrap;
+}
+
+.crumb {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.crumbSep {
+    margin: 0 7px;
+    color: var(--text-3);
+    opacity: 0.6;
+}
+
+.crumbLeaf {
+    color: var(--text);
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.meta {
+    font-size: 12px;
+    color: var(--text-3);
     white-space: nowrap;
-    letter-spacing: 0.01em;
 }
 
 .barActions {
@@ -134,9 +162,11 @@
 .view :global(p) { margin: 0 0 15px; }
 .view :global(ul), .view :global(ol) { padding-left: 26px; margin: 13px 0; }
 .view :global(li) { margin: 6px 0; }
-.view :global(li::marker) { color: var(--accent); }
-.view :global(a) { color: var(--accent); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); }
-.view :global(a:hover) { border-bottom-color: var(--accent); }
+.view :global(li::marker) { color: var(--text-3); }
+/* Ссылки читаются как текст, акцент проявляется на hover — страница-оглавление
+   не превращается в море акцентного цвета. */
+.view :global(a) { color: inherit; text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); transition: color 0.12s ease, border-color 0.12s ease; }
+.view :global(a:hover) { color: var(--accent-ink); border-bottom-color: var(--accent); }
 .view :global(strong) { font-weight: 700; }
 .view :global(blockquote) {
     border-left: 3px solid var(--accent);
@@ -183,7 +213,8 @@
 
 @media (max-width: 760px) {
     .bar { padding: 11px 16px; }
-    .path { font-size: 11px; }
+    .crumbs { font-size: 12.5px; }
+    .meta { display: none; }
     .view, .editor { padding: 22px 18px 48px; }
     .view { font-size: 16.5px; line-height: 1.7; }
     .view :global(h1) { font-size: 25px; }

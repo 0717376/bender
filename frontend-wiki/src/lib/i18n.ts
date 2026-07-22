@@ -78,6 +78,11 @@ const RU = {
   download: 'Скачать',
   openInTab: 'Открыть в новой вкладке',
   fileMissing: 'Файл не найден — возможно, его переместили или удалили. Список обновлён.',
+  actions: 'Действия',
+  openAssistant: 'Открыть ассистента',
+  collapseChat: 'Свернуть',
+  emptyFolder: 'Папка пуста',
+  uploadHint: 'Перетащите файлы сюда или загрузите с устройства',
 } as const
 
 const EN: Record<keyof typeof RU, string> = {
@@ -145,6 +150,11 @@ const EN: Record<keyof typeof RU, string> = {
   download: 'Download',
   openInTab: 'Open in a new tab',
   fileMissing: 'File not found — it may have been moved or deleted. The list has been refreshed.',
+  actions: 'Actions',
+  openAssistant: 'Open assistant',
+  collapseChat: 'Collapse',
+  emptyFolder: 'Empty folder',
+  uploadHint: 'Drop files here or upload from your device',
 }
 
 export const t = (k: keyof typeof RU): string => (ru ? RU : EN)[k]
@@ -155,4 +165,22 @@ export function confirmDelete(path: string): string {
 
 export function selectedChars(n: number): string {
   return ru ? `выделено ${n}` : `${n} chars selected`
+}
+
+// «изменено сегодня / вчера / 5 дн. назад / 12 мар. 2026»
+export function updatedAgo(mtime: number): string {
+  const then = new Date(mtime * 1000)
+  const now = new Date()
+  const startOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  const days = Math.round((startOf(now) - startOf(then)) / 86400000)
+  let when: string
+  if (days <= 0) when = ru ? 'сегодня' : 'today'
+  else if (days === 1) when = ru ? 'вчера' : 'yesterday'
+  else if (days < 7) when = ru ? `${days} дн. назад` : `${days} d ago`
+  else when = then.toLocaleDateString(ru ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'short', year: 'numeric' })
+  return (ru ? 'изменено ' : 'updated ') + when
+}
+
+export function formatDay(mtime: number): string {
+  return new Date(mtime * 1000).toLocaleDateString(ru ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'short', year: 'numeric' })
 }

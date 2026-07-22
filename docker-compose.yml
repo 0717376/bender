@@ -39,8 +39,11 @@ services:
       - ./tg-bot-api:/var/lib/telegram-bot-api
     restart: unless-stopped
 
+  # Контекст — корень репо: фронтендам нужен общий design/tokens.css
   frontend-wiki:
-    build: ./frontend-wiki
+    build:
+      context: .
+      dockerfile: frontend-wiki/Dockerfile
     ports:
       - "${WIKI_PORT:-8842}:80"
     depends_on:
@@ -48,7 +51,9 @@ services:
     restart: unless-stopped
 
   frontend-tasks:
-    build: ./frontend-tasks
+    build:
+      context: .
+      dockerfile: frontend-tasks/Dockerfile
     ports:
       - "${TASKS_PORT:-8851}:80"
     depends_on:

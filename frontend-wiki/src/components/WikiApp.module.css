@@ -29,6 +29,10 @@
     min-height: 0;
 }
 
+.rightCollapsed {
+    width: auto;
+}
+
 /* Wiki / Files section switch (rendered inside the tree toolbar) */
 .sections {
     display: flex;

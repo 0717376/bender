@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { FileText, Plus, Sparkles } from 'lucide-react'
+import { ChevronRight, FileText, Plus, Sparkles } from 'lucide-react'
 import type { ChatMessage } from '../lib/types'
 import type { ChatContext } from '../hooks/useWebSocket'
 import { renderMarkdown } from '../lib/markdown'
@@ -15,15 +15,18 @@ interface ChatPaneProps {
   onAssistantDone: () => void
   onLogout: () => void
   currentPath: string | null
+  currentTitle?: string | null
   getContext: () => ChatContext
   pinnedSel: string
   onClearSelection: () => void
+  collapsed: boolean
+  onToggle: () => void
 }
 
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`
 const baseOf = (p: string) => (p.includes('/') ? p.slice(p.lastIndexOf('/') + 1) : p)
 
-export function ChatPane({ onAssistantDone, onLogout, currentPath, getContext, pinnedSel, onClearSelection }: ChatPaneProps) {
+export function ChatPane({ onAssistantDone, onLogout, currentPath, currentTitle, getContext, pinnedSel, onClearSelection, collapsed, onToggle }: ChatPaneProps) {
   // Whether the open page is attached to the context. Re-enabled when you navigate to another page.
   const [pageOff, setPageOff] = useState(false)
   useEffect(() => { setPageOff(false) }, [currentPath])
@@ -98,6 +101,14 @@ export function ChatPane({ onAssistantDone, onLogout, currentPath, getContext, p
     onClearSelection()
   }, [send, getContext, onClearSelection, pageOff])
 
+  if (collapsed) {
+    return (
+      <button className={styles.rail} onClick={onToggle} aria-label={t('openAssistant')} title={t('openAssistant')}>
+        <span className={styles.logo}><Sparkles size={14} strokeWidth={2.4} /></span>
+      </button>
+    )
+  }
+
   return (
     <div className={styles.pane}>
       <div className={styles.header}>
@@ -107,6 +118,9 @@ export function ChatPane({ onAssistantDone, onLogout, currentPath, getContext, p
         </span>
         <div className={styles.headerActions}>
           <button title={t('clearTitle')} onClick={() => handleSend('/clear')}>{t('clear')}</button>
+          <button className={styles.collapseBtn} title={t('collapseChat')} aria-label={t('collapseChat')} onClick={onToggle}>
+            <ChevronRight size={16} strokeWidth={2} />
+          </button>
         </div>
       </div>
       <MessageList
@@ -125,7 +139,7 @@ export function ChatPane({ onAssistantDone, onLogout, currentPath, getContext, p
           ) : (
             <>
               <FileText size={13} />
-              <span className={styles.contextPath}>{baseOf(currentPath)}</span>
+              <span className={styles.contextPath}>{currentTitle || baseOf(currentPath).replace(/\.md$/, '')}</span>
               <button className={styles.detach} title={t('detachPage')} onClick={() => setPageOff(true)}>×</button>
               {pinnedSel && (
                 <span className={styles.contextSel}>

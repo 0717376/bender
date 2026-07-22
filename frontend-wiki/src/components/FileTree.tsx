@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
 import {
   BookOpen, ChevronRight, Folder, FolderOpen, FileText,
-  FilePlus2, FolderPlus, RotateCw, Pencil, Trash2, FolderUp, Settings,
+  FilePlus2, FolderPlus, Pencil, Trash2, FolderUp, Settings,
 } from 'lucide-react'
 import type { FileNode } from '../lib/types'
 import { createNode, renameNode, deleteNode } from '../lib/api'
+import { RowMenu, type MenuItem } from './RowMenu'
 import styles from './FileTree.module.css'
 import { t, confirmDelete } from '../lib/i18n'
 
@@ -165,7 +166,6 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings, 
         <div className={styles.actions}>
           <button title={t('newPage')} onClick={() => startCreate(toolbarParent, 'file')}><FilePlus2 size={15} /></button>
           <button title={t('newFolder')} onClick={() => startCreate(toolbarParent, 'dir')}><FolderPlus size={15} /></button>
-          <button title={t('refresh')} onClick={onChanged}><RotateCw size={14} /></button>
         </div>
       </div>
       <div
@@ -210,11 +210,19 @@ function TreeNode({ node, ctx }: { node: FileNode; ctx: TreeCtx }) {
   const isDir = node.type === 'dir'
   const isSelected = !isDir && node.path === ctx.selectedPath
 
-  const beginCreate = (e: React.MouseEvent, type: 'file' | 'dir') => {
-    e.stopPropagation()
+  const beginCreate = (type: 'file' | 'dir') => {
     setOpen(true)
     ctx.startCreate(node.path, type)
   }
+
+  const menu: MenuItem[] = [
+    ...(isDir ? [
+      { icon: <FilePlus2 size={14} />, label: t('newPageHere'), onClick: () => beginCreate('file') },
+      { icon: <FolderPlus size={14} />, label: t('newFolderHere'), onClick: () => beginCreate('dir') },
+    ] : []),
+    { icon: <Pencil size={14} />, label: t('rename'), onClick: () => ctx.startRename(node.path) },
+    { icon: <Trash2 size={14} />, label: t('delete'), danger: true, onClick: () => ctx.remove(node.path) },
+  ]
 
   if (ctx.renaming === node.path) {
     return (
@@ -256,15 +264,8 @@ function TreeNode({ node, ctx }: { node: FileNode; ctx: TreeCtx }) {
         <span className={styles.fileIcon}>
           {isDir ? (open ? <FolderOpen size={15} /> : <Folder size={15} />) : <FileText size={15} />}
         </span>
-        <span className={styles.name}>{node.name}</span>
-        <span className={styles.rowActions}>
-          {isDir && <>
-            <button title={t('newPageHere')} onClick={(e) => beginCreate(e, 'file')}><FilePlus2 size={13} /></button>
-            <button title={t('newFolderHere')} onClick={(e) => beginCreate(e, 'dir')}><FolderPlus size={13} /></button>
-          </>}
-          <button title={t('rename')} onClick={(e) => { e.stopPropagation(); ctx.startRename(node.path) }}><Pencil size={13} /></button>
-          <button title={t('delete')} onClick={(e) => { e.stopPropagation(); ctx.remove(node.path) }}><Trash2 size={13} /></button>
-        </span>
+        <span className={styles.name}>{isDir ? node.name : node.title || node.name.replace(/\.md$/, '')}</span>
+        <RowMenu items={menu} className={styles.dots} />
       </div>
       {isDir && open && (
         <div className={styles.children}>

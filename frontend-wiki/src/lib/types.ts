@@ -15,6 +15,7 @@ export interface FileNode {
   name: string
   path: string
   type: 'dir' | 'file'
+  title?: string | null
   children?: FileNode[]
   size?: number
   mtime?: number

@@ -3,10 +3,12 @@ import { Eye, Pencil } from 'lucide-react'
 import { fetchFile, saveFile, storageFileUrl } from '../lib/api'
 import { renderMarkdown, enhanceCodeBlocks, resolveWikiPath } from '../lib/markdown'
 import styles from './ContentPane.module.css'
-import { t } from '../lib/i18n'
+import { t, updatedAgo } from '../lib/i18n'
 
 interface ContentPaneProps {
   path: string | null
+  title?: string | null
+  mtime?: number
   reloadSignal: number
   onSelectionChange: (text: string) => void
   onNavigate: (path: string) => void
@@ -21,7 +23,7 @@ const HL = 'wiki-sel'
 const SAVE_DELAY = 600
 
 export const ContentPane = forwardRef<ContentPaneHandle, ContentPaneProps>(
-  function ContentPane({ path, reloadSignal, onSelectionChange, onNavigate }, ref) {
+  function ContentPane({ path, title, mtime, reloadSignal, onSelectionChange, onNavigate }, ref) {
     const [text, setText] = useState('')
     const [mode, setMode] = useState<'view' | 'edit'>('view')
     const [dirty, setDirty] = useState(false)
@@ -185,13 +187,24 @@ export const ContentPane = forwardRef<ContentPaneHandle, ContentPaneProps>(
       return <div className={styles.pane}><div className={styles.empty}>{t('pickPage')}</div></div>
     }
 
+    const segments = path.split('/')
+    const leaf = title || segments[segments.length - 1].replace(/\.md$/, '')
+    const folders = segments.slice(0, -1)
+
     return (
       <div className={styles.pane}>
         <div className={styles.bar}>
-          <span className={styles.path}>{path}</span>
+          <span className={styles.crumbs}>
+            {folders.map((f, i) => (
+              <span key={i} className={styles.crumb}>{f}<span className={styles.crumbSep}>›</span></span>
+            ))}
+            <span className={styles.crumbLeaf}>{leaf}</span>
+          </span>
           <div className={styles.barActions}>
-            {mode === 'edit' && (
+            {mode === 'edit' ? (
               <span className={styles.status}>{saving || dirty ? t('saving') : t('saved')}</span>
+            ) : (
+              mtime != null && <span className={styles.meta}>{updatedAgo(mtime)}</span>
             )}
             <button
               className={styles.toggle}

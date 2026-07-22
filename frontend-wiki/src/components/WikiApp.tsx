@@ -47,7 +47,24 @@ export function WikiApp({ onLogout }: WikiAppProps) {
     return s === 'light' || s === 'dark' ? s : 'auto'
   })
   const [palette, setPalette] = useState(() => localStorage.getItem('wiki_palette') ?? 'halo')
+  const [chatCollapsed, setChatCollapsed] = useState(() => localStorage.getItem('wiki_chat') === 'collapsed')
+  // На узких экранах чат живёт в таб-баре — сворачивание в рейку только для десктопа.
+  const [narrow, setNarrow] = useState(() => window.matchMedia('(max-width: 760px)').matches)
   const contentRef = useRef<ContentPaneHandle>(null)
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 760px)')
+    const apply = () => setNarrow(mq.matches)
+    mq.addEventListener('change', apply)
+    return () => mq.removeEventListener('change', apply)
+  }, [])
+
+  const toggleChat = useCallback(() => {
+    setChatCollapsed(c => {
+      localStorage.setItem('wiki_chat', c ? 'open' : 'collapsed')
+      return !c
+    })
+  }, [])
 
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
@@ -111,10 +128,11 @@ export function WikiApp({ onLogout }: WikiAppProps) {
     reloadStorage()
   }, [reloadStorage])
 
+  // Папка открывает обзор в центре, не дёргая мобильную панель; файл — превью.
   const selectStorage = useCallback((p: string | null) => {
     setStoragePath(p || null)
-    if (p) setPane('content')
-  }, [])
+    if (p && findNode(storage, p)?.type === 'file') setPane('content')
+  }, [storage])
 
   const logout = useCallback(() => {
     clearToken()
@@ -167,6 +185,8 @@ export function WikiApp({ onLogout }: WikiAppProps) {
           <ContentPane
             ref={contentRef}
             path={selectedPath}
+            title={selectedPath ? findNode(tree, selectedPath)?.title : undefined}
+            mtime={selectedPath ? findNode(tree, selectedPath)?.mtime : undefined}
             reloadSignal={reloadSignal}
             onSelectionChange={setSelText}
             onNavigate={selectPath}
@@ -174,19 +194,27 @@ export function WikiApp({ onLogout }: WikiAppProps) {
         ) : (
           <StorageView
             path={storagePath}
-            size={storagePath ? findNode(storage, storagePath)?.size : undefined}
+            node={storagePath ? findNode(storage, storagePath) : null}
+            entries={storagePath
+              ? findNode(storage, storagePath)?.children ?? []
+              : storage}
+            onSelect={selectStorage}
+            onChanged={reloadStorage}
             onMissing={storageMissing}
           />
         )}
       </main>
-      <aside className={styles.right}>
+      <aside className={`${styles.right} ${chatCollapsed && !narrow ? styles.rightCollapsed : ''}`}>
         <ChatPane
           onAssistantDone={onAssistantDone}
           onLogout={logout}
           currentPath={selectedPath}
+          currentTitle={selectedPath ? findNode(tree, selectedPath)?.title : undefined}
           getContext={getContext}
           pinnedSel={selText}
           onClearSelection={clearSelection}
+          collapsed={chatCollapsed && !narrow}
+          onToggle={toggleChat}
         />
       </aside>
 
