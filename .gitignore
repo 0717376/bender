@@ -29,3 +29,4 @@ docs/PLAN.md
 .vite/
 *.tsbuildinfo
 files/
+tg-bot-api/

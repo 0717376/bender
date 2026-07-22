@@ -149,7 +149,12 @@ TELEGRAM_ALLOWED_IDS = {
     int(x) for x in os.environ.get("TELEGRAM_ALLOWED_IDS", "").replace(" ", "").split(",")
     if x.lstrip("-").isdigit()
 }
-TG_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
+# Self-hosted telegram-bot-api server (e.g. http://tgapi:8081) lifts the cloud
+# limits (20 MB down / 50 MB up → 2 GB) and hands files over via a shared volume.
+TG_API_BASE = os.environ.get("TG_API_BASE", "https://api.telegram.org").rstrip("/")
+TG_LOCAL = TG_API_BASE != "https://api.telegram.org"
+TG_API = f"{TG_API_BASE}/bot{TELEGRAM_BOT_TOKEN}"
+TG_FILE_API = f"{TG_API_BASE}/file/bot{TELEGRAM_BOT_TOKEN}"
 
 # --- ASR (speech-to-text proxy) ---
 ASR_UPSTREAM = os.environ.get("ASR_UPSTREAM", "")

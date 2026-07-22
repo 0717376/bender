@@ -13,7 +13,8 @@ from claude_agent_sdk import create_sdk_mcp_server, tool
 
 from . import config
 
-TG_FILE_CAP = 50 * 1024 * 1024  # Bot API sendDocument limit
+# Cloud Bot API caps sendDocument at 50 MB; a local bot-api server lifts it to 2 GB.
+TG_FILE_CAP = (2000 * 1024 * 1024) if config.TG_LOCAL else (50 * 1024 * 1024)
 
 
 def _resolve(path: str) -> str | None:
@@ -48,7 +49,8 @@ async def send_file(args):
         return _text({"error": f"файл не найден: {args['path']}"})
     size = os.path.getsize(abs_path)
     if size > TG_FILE_CAP:
-        return _text({"error": f"файл больше лимита Telegram (50 МБ): {size} байт"})
+        cap = "2 ГБ" if config.TG_LOCAL else "50 МБ"
+        return _text({"error": f"файл больше лимита Telegram ({cap}): {size} байт"})
     sent = 0
     async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
         for chat_id in config.TELEGRAM_ALLOWED_IDS:
