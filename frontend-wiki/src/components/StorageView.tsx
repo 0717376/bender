@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Download, ExternalLink, File as FileIcon, FileQuestion, Folder, HardDrive, Upload } from 'lucide-react'
+import { ChevronLeft, Download, ExternalLink, File as FileIcon, FileQuestion, FileText, Folder, HardDrive, Upload } from 'lucide-react'
 import type { FileNode } from '../lib/types'
 import { storageFileUrl, storageUpload } from '../lib/api'
 import { fileIcon } from '../lib/fileIcons'
@@ -13,6 +13,7 @@ interface StorageViewProps {
   onSelect: (path: string) => void
   onChanged: () => void
   onMissing?: () => void
+  onBack: () => void
 }
 
 const isImage = (p: string) => /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(p)
@@ -53,29 +54,46 @@ function Crumbs({ path, onSelect }: { path: string | null; onSelect: (p: string)
   )
 }
 
-export function StorageView({ path, node, entries, onSelect, onChanged, onMissing }: StorageViewProps) {
+export function StorageView({ path, node, entries, onSelect, onChanged, onMissing, onBack }: StorageViewProps) {
   const [missing, setMissing] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [narrow, setNarrow] = useState(() => window.matchMedia('(max-width: 760px)').matches)
   const isFile = !!path && node?.type === 'file'
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 760px)')
+    const apply = () => setNarrow(mq.matches)
+    mq.addEventListener('change', apply)
+    return () => mq.removeEventListener('change', apply)
+  }, [])
+
+  // iOS не умеет листать PDF внутри iframe (рисует первую страницу «в упор»),
+  // поэтому на узких экранах вместо встраивания — карточка с «Открыть».
+  const embedPdf = !narrow
 
   // A stale tree can point at a file the agent has already moved (e.g. out of
   // the inbox via Telegram) — probe first instead of iframing a JSON 404.
   useEffect(() => {
     setMissing(false)
-    if (!path || !isFile) return
+    if (!path || !isFile) { setLoading(false); return }
+    setLoading(isImage(path) || isText(path) || (isPdf(path) && !window.matchMedia('(max-width: 760px)').matches))
     let alive = true
     fetch(storageFileUrl(path), { method: 'HEAD' })
-      .then(r => { if (alive && r.status === 404) { setMissing(true); onMissing?.() } })
+      .then(r => { if (alive && r.status === 404) { setMissing(true); setLoading(false); onMissing?.() } })
       .catch(() => {})
     return () => { alive = false }
   }, [path, isFile, onMissing])
 
   if (!isFile) {
-    return <FolderView path={path} entries={entries} onSelect={onSelect} onChanged={onChanged} />
+    return <FolderView path={path} entries={entries} onSelect={onSelect} onChanged={onChanged} onBack={onBack} />
   }
   if (missing) {
     return (
       <div className={styles.pane}>
-        <div className={styles.bar}><Crumbs path={path} onSelect={onSelect} /></div>
+        <div className={styles.bar}>
+          <BackBtn onBack={onBack} />
+          <Crumbs path={path} onSelect={onSelect} />
+        </div>
         <div className={styles.fallback}>
           <FileQuestion size={40} strokeWidth={1.2} />
           <div className={styles.fname}>{path}</div>
@@ -87,12 +105,29 @@ export function StorageView({ path, node, entries, onSelect, onChanged, onMissin
   const url = storageFileUrl(path!)
   const name = node!.name
   const size = node!.size
+  const done = () => setLoading(false)
 
   let body: React.ReactNode
   if (isImage(path!)) {
-    body = <div className={`${styles.media} scroll`}><img src={url} alt={name} /></div>
+    body = <div className={`${styles.media} scroll`}><img src={url} alt={name} onLoad={done} onError={done} /></div>
+  } else if (isPdf(path!) && !embedPdf) {
+    body = (
+      <div className={styles.fallback}>
+        <FileText size={40} strokeWidth={1.2} />
+        <div className={styles.fname}>{name}</div>
+        {size != null && <div className={styles.fsize}>{formatSize(size)}</div>}
+        <div className={styles.btnRow}>
+          <a className={styles.dl} href={url} target="_blank" rel="noopener noreferrer">
+            <ExternalLink size={14} /> {t('open')}
+          </a>
+          <a className={styles.dlAlt} href={url} download={name}>
+            <Download size={14} /> {t('download')}
+          </a>
+        </div>
+      </div>
+    )
   } else if (isPdf(path!) || isText(path!)) {
-    body = <iframe className={styles.frame} src={url} title={name} />
+    body = <iframe className={styles.frame} src={url} title={name} onLoad={done} />
   } else if (isVideo(path!)) {
     body = <div className={styles.media}><video src={url} controls /></div>
   } else if (isAudio(path!)) {
@@ -113,6 +148,7 @@ export function StorageView({ path, node, entries, onSelect, onChanged, onMissin
   return (
     <div className={styles.pane}>
       <div className={styles.bar}>
+        <BackBtn onBack={onBack} />
         <Crumbs path={path} onSelect={onSelect} />
         <div className={styles.barActions}>
           {size != null && <span className={styles.meta}>{formatSize(size)}</span>}
@@ -121,16 +157,31 @@ export function StorageView({ path, node, entries, onSelect, onChanged, onMissin
         </div>
       </div>
       {body}
+      {loading && (
+        <div className={styles.loader}>
+          <span className={styles.spin} />
+        </div>
+      )}
     </div>
   )
 }
 
+// «‹ Назад» к списку — виден только на телефоне (CSS)
+function BackBtn({ onBack }: { onBack: () => void }) {
+  return (
+    <button className={styles.backBtn} onClick={onBack} aria-label={t('back')}>
+      <ChevronLeft size={19} strokeWidth={2.2} />
+    </button>
+  )
+}
+
 // Обзор папки: список содержимого в центре вместо пустого «выберите файл»
-function FolderView({ path, entries, onSelect, onChanged }: {
+function FolderView({ path, entries, onSelect, onChanged, onBack }: {
   path: string | null
   entries: FileNode[]
   onSelect: (p: string) => void
   onChanged: () => void
+  onBack: () => void
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragOver, setDragOver] = useState(false)
@@ -166,6 +217,7 @@ function FolderView({ path, entries, onSelect, onChanged }: {
         }}
       />
       <div className={styles.bar}>
+        <BackBtn onBack={onBack} />
         <Crumbs path={path} onSelect={onSelect} />
         <div className={styles.barActions}>
           <button className={styles.uploadBtn} onClick={() => inputRef.current?.click()}>

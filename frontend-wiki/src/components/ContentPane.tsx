@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react'
-import { Eye, Pencil } from 'lucide-react'
+import { ChevronLeft, Eye, Pencil } from 'lucide-react'
 import { fetchFile, saveFile, storageFileUrl } from '../lib/api'
 import { renderMarkdown, enhanceCodeBlocks, resolveWikiPath } from '../lib/markdown'
 import styles from './ContentPane.module.css'
@@ -12,6 +12,7 @@ interface ContentPaneProps {
   reloadSignal: number
   onSelectionChange: (text: string) => void
   onNavigate: (path: string) => void
+  onBack: () => void
 }
 
 export interface ContentPaneHandle {
@@ -23,7 +24,7 @@ const HL = 'wiki-sel'
 const SAVE_DELAY = 600
 
 export const ContentPane = forwardRef<ContentPaneHandle, ContentPaneProps>(
-  function ContentPane({ path, title, mtime, reloadSignal, onSelectionChange, onNavigate }, ref) {
+  function ContentPane({ path, title, mtime, reloadSignal, onSelectionChange, onNavigate, onBack }, ref) {
     const [text, setText] = useState('')
     const [mode, setMode] = useState<'view' | 'edit'>('view')
     const [dirty, setDirty] = useState(false)
@@ -194,6 +195,9 @@ export const ContentPane = forwardRef<ContentPaneHandle, ContentPaneProps>(
     return (
       <div className={styles.pane}>
         <div className={styles.bar}>
+          <button className={styles.backBtn} onClick={onBack} aria-label={t('back')}>
+            <ChevronLeft size={19} strokeWidth={2.2} />
+          </button>
           <span className={styles.crumbs}>
             {folders.map((f, i) => (
               <span key={i} className={styles.crumb}>{f}<span className={styles.crumbSep}>›</span></span>

@@ -18,9 +18,30 @@
     flex-shrink: 0;
 }
 
+/* «‹ Назад» — только на телефоне (iOS nav bar) */
+.backBtn {
+    display: none;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    margin-left: -8px;
+    border: none;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--accent-ink);
+    cursor: pointer;
+}
+
+.backBtn:active {
+    background: var(--bg-3);
+}
+
 .crumbs {
     display: flex;
     align-items: center;
+    flex: 1;
     min-width: 0;
     font-size: 13px;
     color: var(--text-3);
@@ -249,6 +270,7 @@
     color: #fff;
     font-size: 13px;
     font-weight: 600;
+    text-decoration: none;
     transition: opacity 0.15s ease;
 }
 
@@ -256,9 +278,67 @@
     opacity: 0.9;
 }
 
+.btnRow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 8px;
+}
+
+.btnRow .dl {
+    margin-top: 0;
+}
+
+.dlAlt {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 16px;
+    border: 1px solid var(--border-light);
+    border-radius: var(--r-pill);
+    background: var(--panel);
+    color: var(--text-2);
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.dlAlt:active {
+    background: var(--bg-2);
+}
+
+/* Спиннер на время загрузки превью */
+.loader {
+    position: absolute;
+    inset: 49px 0 0;
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+}
+
+.spin {
+    width: 28px;
+    height: 28px;
+    border: 3px solid var(--border-light);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spinner 0.8s linear infinite;
+}
+
+@keyframes spinner {
+    to { transform: rotate(360deg); }
+}
+
 @media (max-width: 760px) {
-    .bar { padding: 11px 16px; }
-    .crumbs { font-size: 12.5px; }
+    .bar { padding: 9px 16px 9px 12px; }
+    /* Только «‹ Назад» и текущее имя — цепочка папок на узком экране не помещается */
+    .backBtn { display: flex; }
+    .crumbs > :not(:last-child) { display: none; }
+    .crumbSep { display: none; }
+    .crumbs { font-size: 15px; }
+    .crumbBtn { font-size: 15px; font-weight: 650; color: var(--text); }
+    .crumbLeaf { font-weight: 650; }
+    .meta { display: none; }
     .listing { padding: 10px 10px 40px; }
     .item { padding: 12px 10px; }
     .itemDate { display: none; }

@@ -45,6 +45,26 @@
     flex-shrink: 0;
 }
 
+/* «‹ Назад» — только на телефоне, вместо крошек (iOS nav bar) */
+.backBtn {
+    display: none;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    margin-left: -8px;
+    border: none;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--accent-ink);
+    cursor: pointer;
+}
+
+.backBtn:active {
+    background: var(--bg-3);
+}
+
 /* Человеческие хлебные крошки вместо mono-пути */
 .crumbs {
     display: flex;
@@ -212,8 +232,12 @@
 }
 
 @media (max-width: 760px) {
-    .bar { padding: 11px 16px; }
-    .crumbs { font-size: 12.5px; }
+    .bar { padding: 9px 16px 9px 12px; }
+    /* Только «‹ Назад» и заголовок — папки пути на узком экране не помещаются */
+    .backBtn { display: flex; }
+    .crumb { display: none; }
+    .crumbs { font-size: 15px; }
+    .crumbLeaf { font-weight: 650; }
     .meta { display: none; }
     .view, .editor { padding: 22px 18px 48px; }
     .view { font-size: 16.5px; line-height: 1.7; }
