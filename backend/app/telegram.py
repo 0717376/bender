@@ -150,7 +150,8 @@ async def tg_save_document(client: httpx.AsyncClient, doc: dict) -> str | None:
     if not res:
         return None
     content, remote = res
-    name = os.path.basename(doc.get("file_name") or remote) or "файл"
+    from .storage_api import clean_name
+    name = clean_name(os.path.basename(doc.get("file_name") or remote) or "файл")
     inbox = os.path.join(config.FILES_DIR, config.FILES_INBOX)
     os.makedirs(inbox, exist_ok=True)
     dest = os.path.join(inbox, name)
