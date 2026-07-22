@@ -7,6 +7,7 @@ services:
       - ./content:/app/content        # md-страницы вики (видны на хосте)
       - ./data:/app/data              # session, tasks.db, cron.db, memory, навыки
       - ./files:/app/files            # файловое хранилище (документы пользователя)
+      - ./tg-bot-api:/var/lib/telegram-bot-api:ro  # файлы локального bot-api (пути из getFile)
       - ${CLAUDE_DIR:-~/.claude}:/root/.claude          # креды Claude CLI (рефреш токена сюда)
       - ${CLAUDE_JSON:-~/.claude.json}:/seed/.claude.json:ro  # конфиг-seed (копируется в HOME при старте)
     environment:
@@ -14,6 +15,7 @@ services:
       - CLAUDE_MODEL=${CLAUDE_MODEL:-opus}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_ALLOWED_IDS=${TELEGRAM_ALLOWED_IDS:-}
+      - TG_API_BASE=${TG_API_BASE:-https://api.telegram.org}
       - ASR_UPSTREAM=${ASR_UPSTREAM:-}
       - ASR_MODEL=${ASR_MODEL:-gigaam-rnnt}
       - TZ=${TZ:-Europe/Moscow}
@@ -23,6 +25,18 @@ services:
       - SESSION_FRESH_HOURS=${SESSION_FRESH_HOURS:-6}
       - REVIEWER_ENABLED=${REVIEWER_ENABLED:-1}
       - REVIEWER_MODEL=${REVIEWER_MODEL:-sonnet}
+    restart: unless-stopped
+
+  # Локальный Bot API: лимиты файлов 2 ГБ вместо 20/50 МБ. Включается, когда в .env
+  # заданы TELEGRAM_API_ID/TELEGRAM_API_HASH (my.telegram.org) и TG_API_BASE=http://tgapi:8081.
+  tgapi:
+    image: aiogram/telegram-bot-api:latest
+    environment:
+      - TELEGRAM_API_ID=${TELEGRAM_API_ID:-}
+      - TELEGRAM_API_HASH=${TELEGRAM_API_HASH:-}
+      - TELEGRAM_LOCAL=true
+    volumes:
+      - ./tg-bot-api:/var/lib/telegram-bot-api
     restart: unless-stopped
 
   frontend-wiki:

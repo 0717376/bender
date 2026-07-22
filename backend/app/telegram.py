@@ -120,8 +120,16 @@ async def tg_download(client: httpx.AsyncClient, file_id: str) -> tuple[bytes, s
     file_path = info["result"].get("file_path")
     if not file_path:
         return None
+    # Local bot-api server returns an absolute path on the shared volume.
+    if os.path.isabs(file_path):
+        try:
+            with open(file_path, "rb") as f:
+                return f.read(), file_path
+        except OSError as e:
+            logger.warning("tg local file read error: %s", e)
+            return None
     try:
-        dl = await client.get(f"https://api.telegram.org/file/bot{config.TELEGRAM_BOT_TOKEN}/{file_path}")
+        dl = await client.get(f"{config.TG_FILE_API}/{file_path}")
         if dl.status_code != 200:
             return None
         return dl.content, file_path
@@ -229,8 +237,10 @@ async def tg_handle(client: httpx.AsyncClient, update: dict):
         await tg_api(client, "sendChatAction", chat_id=chat_id, action="typing")
         doc_path = await tg_save_document(client, doc)
         if not doc_path:
+            hint = "" if config.TG_LOCAL else \
+                " Файлы больше 20 МБ (лимит облачного Telegram) загружай через веб — раздел «Файлы» в вики."
             await tg_api(client, "sendMessage", chat_id=chat_id,
-                         text="Не удалось получить файл — попробуй ещё раз (лимит Telegram для ботов — 20 МБ).")
+                         text="Не удалось получить файл — попробуй ещё раз." + hint)
             return
         instr = (f"[Пользователь прислал файл «{os.path.basename(doc_path)}», он сохранён в {doc_path}. "
                  f"Если из сообщения ясно, куда его положить или как назвать, — перенеси и переименуй; "
