@@ -151,7 +151,7 @@ button, input, textarea, select { font-family: inherit; -webkit-tap-highlight-co
 .qbtn.confirm-del:hover { color: #fff; background: var(--danger); filter: brightness(1.08); }
 
 /* Settings modal */
-.stm { width: 460px; max-width: 92vw; background: var(--panel); border: 1px solid var(--border-3); border-radius: 18px; box-shadow: var(--shadow-pop); padding: 20px 20px 18px; display: flex; flex-direction: column; gap: 14px; animation: popCard .3s cubic-bezier(.2, .9, .2, 1) both; }
+.stm { width: 460px; max-width: 92vw; max-height: calc(100vh - 18vh - 20px); max-height: calc(100dvh - 18vh - 20px); overflow-y: auto; overscroll-behavior: contain; background: var(--panel); border: 1px solid var(--border-3); border-radius: 18px; box-shadow: var(--shadow-pop); padding: 20px 20px 18px; display: flex; flex-direction: column; gap: 14px; animation: popCard .3s cubic-bezier(.2, .9, .2, 1) both; }
 .stm-head { display: flex; align-items: center; }
 .stm-head h2 { font-size: 17px; font-weight: 800; letter-spacing: -.01em; }
 .stm-x { margin-left: auto; border: 0; background: transparent; color: var(--text-3); cursor: pointer; padding: 4px; border-radius: 8px; display: flex; }
@@ -485,6 +485,7 @@ button, input, textarea, select { font-family: inherit; -webkit-tap-highlight-co
   .list-scroll { padding: 70px 16px 120px; }
   .fab { right: 18px; bottom: calc(20px + env(safe-area-inset-bottom)); }
   .modal-scrim { padding-top: 9vh; }
+  .stm { max-height: calc(100vh - 9vh - 16px); max-height: calc(100dvh - 9vh - 16px); }
   .list-head h1 { font-size: 28px; }
   .h1-edit { font-size: 28px; }
   .list-head { margin-bottom: 18px; }
