@@ -1,6 +1,7 @@
-import { useEffect } from 'react'
-import { Moon, MonitorSmartphone, Sun, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Check, Copy, Moon, MonitorSmartphone, Sun, X } from 'lucide-react'
 import { lang, setLang, t, type Lang } from '../lib/i18n'
+import { mcpInfo, mcpRotate } from '../lib/api'
 import styles from './SettingsModal.module.css'
 
 export type ThemeMode = 'light' | 'dark' | 'auto'
@@ -35,6 +36,61 @@ interface SettingsModalProps {
   onMode: (m: ThemeMode) => void
   onPalette: (p: string) => void
   onClose: () => void
+}
+
+// Секция «доступ для агентов»: адрес /mcp, токен и готовая команда подключения.
+function McpSection() {
+  const [token, setToken] = useState<string | null>(null)
+  const [copied, setCopied] = useState<string | null>(null)
+
+  useEffect(() => {
+    mcpInfo().then(r => setToken(r.token)).catch(() => {})
+  }, [])
+
+  if (!token) return null
+  const url = window.location.origin + '/mcp'
+  const cmd = `claude mcp add --transport http bender ${url} --header "Authorization: Bearer ${token}"`
+
+  const copy = (text: string, key: string) => {
+    navigator.clipboard?.writeText(text).then(() => {
+      setCopied(key)
+      setTimeout(() => setCopied(c => (c === key ? null : c)), 1500)
+    }).catch(() => {})
+  }
+
+  const rotate = () => {
+    if (!window.confirm(t('mcpRotateConfirm'))) return
+    mcpRotate().then(r => setToken(r.token)).catch(() => {})
+  }
+
+  return (
+    <>
+      <div className={styles.label}>{t('mcpTitle')}</div>
+      <div className={styles.mcpBox}>
+        <div className={styles.mcpHint}>{t('mcpHint')}</div>
+        <div className={styles.mcpRow}>
+          <span className={styles.mcpKey}>{t('mcpEndpoint')}</span>
+          <code className={styles.mcpVal}>{url}</code>
+          <button className={styles.mcpCopy} onClick={() => copy(url, 'url')} title={t('copy')}>
+            {copied === 'url' ? <Check size={14} /> : <Copy size={14} />}
+          </button>
+        </div>
+        <div className={styles.mcpRow}>
+          <span className={styles.mcpKey}>{t('mcpToken')}</span>
+          <code className={styles.mcpVal}>{token.slice(0, 8)}…</code>
+          <button className={styles.mcpCopy} onClick={() => copy(token, 'token')} title={t('copy')}>
+            {copied === 'token' ? <Check size={14} /> : <Copy size={14} />}
+          </button>
+        </div>
+        <div className={styles.mcpBtns}>
+          <button className={styles.mcpBtn} onClick={() => copy(cmd, 'cmd')}>
+            {copied === 'cmd' ? t('copied') : t('mcpCopyCmd')}
+          </button>
+          <button className={styles.mcpGhost} onClick={rotate}>{t('mcpRotate')}</button>
+        </div>
+      </div>
+    </>
+  )
 }
 
 export function SettingsModal({ mode, palette, onMode, onPalette, onClose }: SettingsModalProps) {
@@ -84,6 +140,8 @@ export function SettingsModal({ mode, palette, onMode, onPalette, onClose }: Set
             </button>
           ))}
         </div>
+
+        <McpSection />
 
         <div className={styles.ver}>{t('wiki')} · v{__APP_VERSION__}</div>
       </div>

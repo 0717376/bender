@@ -83,6 +83,9 @@ export const api = {
 };
 
 /** Subscribe to server-side task changes (chat / Telegram / cron). Returns an unsubscribe fn. */
+export const mcpInfo = () => req<{ token: string }>("GET", "/api/mcp");
+export const mcpRotate = () => req<{ token: string }>("POST", "/api/mcp/rotate");
+
 export function subscribeTasks(onChange: () => void): () => void {
   const es = new EventSource(`/tasks/events?token=${getToken()}`);
   es.addEventListener("tasks", onChange);

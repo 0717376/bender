@@ -169,6 +169,17 @@ const RU = {
   toast_done: "Выполнено",
   toast_deleted: "Удалено",
 
+  // MCP
+  mcp_title: "Доступ для агентов (MCP)",
+  mcp_hint: "Внешние агенты — Claude Code и другие MCP-клиенты — могут читать и пополнять задачи и вики.",
+  mcp_endpoint: "Адрес",
+  mcp_token: "Токен",
+  mcp_copy_cmd: "Команда для Claude Code",
+  mcp_rotate: "Перевыпустить токен",
+  mcp_rotate_confirm: "Старый токен перестанет работать у всех подключённых клиентов. Перевыпустить?",
+  copy: "Скопировать",
+  copied: "Скопировано",
+
   // Misc
   voice_input: "Голосовой ввод",
 } as const;
@@ -312,6 +323,16 @@ const EN: Record<keyof typeof RU, string> = {
   undo: "Undo",
   toast_done: "Completed",
   toast_deleted: "Deleted",
+
+  mcp_title: "Agent access (MCP)",
+  mcp_hint: "External agents — Claude Code and other MCP clients — can read and update your tasks and wiki.",
+  mcp_endpoint: "URL",
+  mcp_token: "Token",
+  mcp_copy_cmd: "Claude Code command",
+  mcp_rotate: "Rotate token",
+  mcp_rotate_confirm: "The old token will stop working for every connected client. Rotate?",
+  copy: "Copy",
+  copied: "Copied",
 
   voice_input: "Voice input",
 };
