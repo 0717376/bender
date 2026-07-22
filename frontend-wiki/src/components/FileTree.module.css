@@ -81,11 +81,9 @@
     position: relative;
 }
 
-/* Indent + vertical guide line for nested levels */
+/* Вложенность — только отступом, без направляющих линий */
 .children {
-    margin-left: 16px;
-    padding-left: 2px;
-    border-left: 1px solid var(--border);
+    margin-left: 18px;
 }
 
 .row {
@@ -102,8 +100,11 @@
     transition: background 0.14s ease;
 }
 
-.row:hover {
-    background: rgba(0, 0, 0, 0.04);
+/* Только для устройств с курсором — на тач-экранах hover «залипает» после тапа */
+@media (hover: hover) {
+    .row:hover {
+        background: rgba(0, 0, 0, 0.04);
+    }
 }
 
 /* Спокойное выделение в духе сайдбара Tasks: мягкая заливка, без градиента и тени */
