@@ -34,7 +34,7 @@ export function StorageView({ path, size, onMissing }: StorageViewProps) {
     if (!path) return
     let alive = true
     fetch(storageFileUrl(path), { method: 'HEAD' })
-      .then(r => { if (alive && !r.ok) { setMissing(true); onMissing?.() } })
+      .then(r => { if (alive && r.status === 404) { setMissing(true); onMissing?.() } })
       .catch(() => {})
     return () => { alive = false }
   }, [path, onMissing])
