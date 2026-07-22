@@ -11,6 +11,8 @@ from .asr import router as asr_router
 from .auth import require_auth
 from .chat import router as chat_router
 from .files import router as files_router
+from .storage_api import init as storage_init
+from .storage_api import router as storage_router
 from .cron_api import router as cron_router
 from .curator_api import router as curator_router
 from .scheduler import scheduler_loop
@@ -28,6 +30,7 @@ async def lifespan(_app: FastAPI):
     cron_store.init()
     session_log.init()
     skill_store.init()  # scaffold learned-skills plugin + migrate legacy flat skills once
+    storage_init()
     tasks: list[asyncio.Task] = []
     if config.TELEGRAM_BOT_TOKEN:
         tasks.append(asyncio.create_task(telegram_poller()))
@@ -74,6 +77,7 @@ async def health():
 
 app.include_router(chat_router)
 app.include_router(files_router)
+app.include_router(storage_router)
 app.include_router(asr_router)
 app.include_router(tasks_events_router)  # before tasks_router so /tasks/events isn't shadowed by /tasks/{id}
 app.include_router(tasks_router)

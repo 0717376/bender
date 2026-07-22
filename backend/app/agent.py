@@ -36,6 +36,8 @@ from .skill_tools import TOOL_NAMES as SKILL_TOOL_NAMES
 from .skill_tools import server as skills_server
 from .tasks_tools import TOOL_NAMES as TASK_TOOL_NAMES
 from .tasks_tools import server as tasks_server
+from .telegram_tools import TOOL_NAMES as TG_TOOL_NAMES
+from .telegram_tools import server as tg_server
 
 logger = logging.getLogger("wiki.agent")
 
@@ -226,7 +228,7 @@ def build_options(resume: str | None, surface: str = "wiki", interactive: bool =
                   extra_context: str | None = None) -> ClaudeAgentOptions:
     # Tasks, skills (read+author), memory-read injection and subagents (Task) are always
     # available. Cron/memory WRITE tools are interactive-only (not inside scheduled runs).
-    tools = config.ALLOWED_TOOLS + TASK_TOOL_NAMES + SKILL_TOOL_NAMES + SESSION_TOOL_NAMES
+    tools = config.ALLOWED_TOOLS + TASK_TOOL_NAMES + SKILL_TOOL_NAMES + SESSION_TOOL_NAMES + TG_TOOL_NAMES
     if interactive:
         tools = tools + CRON_TOOL_NAMES + MEMORY_TOOL_NAMES
     append = _compose_prompt(surface, resume)
@@ -247,7 +249,7 @@ def build_options(resume: str | None, surface: str = "wiki", interactive: bool =
         system_prompt={"type": "preset", "preset": "claude_code", "append": append},
         allowed_tools=tools,
         mcp_servers={"tasks": tasks_server, "cron": cron_server, "memory": memory_server,
-                     "skills": skills_server, "sessions": sessions_server},
+                     "skills": skills_server, "sessions": sessions_server, "tg": tg_server},
         agents=SUBAGENTS,
         plugins=[
             {"type": "local", "path": config.SKILL_PLUGIN_DIR},      # domain skills (wiki/tasks)

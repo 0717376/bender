@@ -17,7 +17,7 @@ const RU = {
   loginError: 'Ошибка входа',
   password: 'Пароль',
   signIn: 'Войти',
-  tabFiles: 'Файлы',
+  tabFiles: 'Обзор',
   tabPage: 'Страница',
   assistant: 'Ассистент',
   chatHint1: 'Спросите ассистента про вики',
@@ -71,13 +71,19 @@ const RU = {
   view: 'Просмотр',
   copy: 'Скопировать',
   copied: 'Скопировано',
+  storage: 'Файлы',
+  upload: 'Загрузить файлы',
+  emptyStorage: 'Пусто. Загрузите файл или пришлите его боту.',
+  pickFile: 'Выберите файл из списка',
+  download: 'Скачать',
+  openInTab: 'Открыть в новой вкладке',
 } as const
 
 const EN: Record<keyof typeof RU, string> = {
   loginError: 'Login failed',
   password: 'Password',
   signIn: 'Sign in',
-  tabFiles: 'Files',
+  tabFiles: 'Browse',
   tabPage: 'Page',
   assistant: 'Assistant',
   chatHint1: 'Ask the assistant about your wiki',
@@ -131,6 +137,12 @@ const EN: Record<keyof typeof RU, string> = {
   view: 'View',
   copy: 'Copy',
   copied: 'Copied',
+  storage: 'Files',
+  upload: 'Upload files',
+  emptyStorage: 'Empty. Upload a file or send one to the bot.',
+  pickFile: 'Pick a file from the list',
+  download: 'Download',
+  openInTab: 'Open in a new tab',
 }
 
 export const t = (k: keyof typeof RU): string => (ru ? RU : EN)[k]

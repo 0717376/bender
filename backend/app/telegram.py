@@ -21,6 +21,7 @@ TG_WELCOME = (
     "• Вики: отвечаю по твоим заметкам, создаю и правлю страницы\n"
     "• Задачи: создаю, переношу, подсказываю план на день\n"
     "• Веб: ищу актуальную информацию в интернете\n"
+    "• Файлы: храню документы — пришли файл, я его положу куда скажешь и найду по просьбе\n"
     "• Расписание: напоминания и регулярные сводки («каждый день в 9 пришли задачи»)\n"
     "• Журнал: помню все прошлые разговоры и ищу по ним\n"
     "• Самообучение: запоминаю факты и предпочтения, выучиваю навыки из решённых "
@@ -143,6 +144,24 @@ async def tg_save_image(client: httpx.AsyncClient, file_id: str) -> str | None:
     return dest
 
 
+async def tg_save_document(client: httpx.AsyncClient, doc: dict) -> str | None:
+    """Save an incoming non-image document into the storage inbox, keeping its name."""
+    res = await tg_download(client, doc["file_id"])
+    if not res:
+        return None
+    content, remote = res
+    name = os.path.basename(doc.get("file_name") or remote) or "файл"
+    inbox = os.path.join(config.FILES_DIR, config.FILES_INBOX)
+    os.makedirs(inbox, exist_ok=True)
+    dest = os.path.join(inbox, name)
+    if os.path.exists(dest):
+        stem, ext = os.path.splitext(name)
+        dest = os.path.join(inbox, f"{stem}-{int(time.time())}{ext}")
+    with open(dest, "wb") as f:
+        f.write(content)
+    return dest
+
+
 async def tg_transcribe(client: httpx.AsyncClient, file_id: str, mime: str | None) -> str | None:
     if not config.ASR_UPSTREAM:
         return None
@@ -204,6 +223,17 @@ async def tg_handle(client: httpx.AsyncClient, update: dict):
         return
     if image_path:
         instr = f"[Пользователь прислал изображение. Посмотри его через Read: {image_path}]"
+        text = f"{instr}\n\n{text}" if text else instr
+    elif doc:
+        await tg_api(client, "sendChatAction", chat_id=chat_id, action="typing")
+        doc_path = await tg_save_document(client, doc)
+        if not doc_path:
+            await tg_api(client, "sendMessage", chat_id=chat_id,
+                         text="Не удалось получить файл — попробуй ещё раз (лимит Telegram для ботов — 20 МБ).")
+            return
+        instr = (f"[Пользователь прислал файл «{os.path.basename(doc_path)}», он сохранён в {doc_path}. "
+                 f"Если из сообщения ясно, куда его положить или как назвать, — перенеси и переименуй; "
+                 f"иначе оставь во «{config.FILES_INBOX}» и скажи, что принял.]")
         text = f"{instr}\n\n{text}" if text else instr
 
     media = msg.get("voice") or msg.get("audio") or msg.get("video_note")

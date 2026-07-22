@@ -16,6 +16,8 @@ export interface FileNode {
   path: string
   type: 'dir' | 'file'
   children?: FileNode[]
+  size?: number
+  mtime?: number
 }
 
 export const TOOL_LABELS: Record<string, string> = {

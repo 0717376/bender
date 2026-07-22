@@ -6,6 +6,7 @@ services:
     volumes:
       - ./content:/app/content        # md-страницы вики (видны на хосте)
       - ./data:/app/data              # session, tasks.db, cron.db, memory, навыки
+      - ./files:/app/files            # файловое хранилище (документы пользователя)
       - ${CLAUDE_DIR:-~/.claude}:/root/.claude          # креды Claude CLI (рефреш токена сюда)
       - ${CLAUDE_JSON:-~/.claude.json}:/seed/.claude.json:ro  # конфиг-seed (копируется в HOME при старте)
     environment:

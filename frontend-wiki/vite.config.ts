@@ -11,6 +11,7 @@ export default defineConfig({
     proxy: {
       '/auth': 'http://localhost:8000',
       '/files': 'http://localhost:8000',
+      '/storage': 'http://localhost:8000',
       '/api': 'http://localhost:8000',
       '/chat': { target: 'http://localhost:8000', ws: true },
     },

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react'
 import { Eye, Pencil } from 'lucide-react'
-import { fetchFile, saveFile } from '../lib/api'
+import { fetchFile, saveFile, storageFileUrl } from '../lib/api'
 import { renderMarkdown, enhanceCodeBlocks, resolveWikiPath } from '../lib/markdown'
 import styles from './ContentPane.module.css'
 import { t } from '../lib/i18n'
@@ -97,6 +97,15 @@ export const ContentPane = forwardRef<ContentPaneHandle, ContentPaneProps>(
       if (mode === 'view' && viewRef.current) {
         viewRef.current.innerHTML = renderMarkdown(text)
         enhanceCodeBlocks(viewRef.current)
+        // storage:Папка/скан.jpg → authorized /storage/file URL
+        viewRef.current.querySelectorAll<HTMLImageElement>('img[src^="storage:"]').forEach(img => {
+          img.src = storageFileUrl(img.getAttribute('src')!.slice('storage:'.length))
+        })
+        viewRef.current.querySelectorAll<HTMLAnchorElement>('a[href^="storage:"]').forEach(a => {
+          a.href = storageFileUrl(a.getAttribute('href')!.slice('storage:'.length))
+          a.target = '_blank'
+          a.rel = 'noopener noreferrer'
+        })
       }
     }, [text, mode])
 
