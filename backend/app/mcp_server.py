@@ -13,6 +13,7 @@ from urllib.parse import parse_qs
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.server import StreamableHTTPASGIApp
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.responses import JSONResponse
 
 from . import config, files, tasks_store
@@ -77,6 +78,11 @@ mcp = FastMCP(
     stateless_http=True,
     json_response=True,
     streamable_http_path="/",
+    # Дефолтная защита от DNS rebinding пускает только localhost и в проде
+    # отвечает 421 на Host: wiki.muravskiy.com. Она нужна неаутентифицированным
+    # локальным серверам; здесь каждый запрос требует bearer-токен, который
+    # злоумышленный сайт подставить не может.
+    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
 )
 
 
