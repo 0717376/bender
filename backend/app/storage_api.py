@@ -88,7 +88,7 @@ async def tree(_: bool = Depends(require_auth)):
     return {"tree": build_tree(config.FILES_DIR, "")}
 
 
-@router.get("/file")
+@router.api_route("/file", methods=["GET", "HEAD"])
 async def download(path: str, token: str = ""):
     # Token via query: <img>/<iframe>/<a> can't set the Bearer header.
     if not check_token(token):
