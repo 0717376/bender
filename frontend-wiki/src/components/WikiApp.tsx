@@ -93,6 +93,24 @@ export function WikiApp({ onLogout }: WikiAppProps) {
     reloadStorage()
   }, [reloadTree, reloadStorage])
 
+  // Files can change outside this tab (Telegram bot, another device) — refresh
+  // both trees when the tab regains focus.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') { reloadTree(); reloadStorage() }
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+    }
+  }, [reloadTree, reloadStorage])
+
+  const storageMissing = useCallback(() => {
+    reloadStorage()
+  }, [reloadStorage])
+
   const selectStorage = useCallback((p: string | null) => {
     setStoragePath(p || null)
     if (p) setPane('content')
@@ -157,6 +175,7 @@ export function WikiApp({ onLogout }: WikiAppProps) {
           <StorageView
             path={storagePath}
             size={storagePath ? findNode(storage, storagePath)?.size : undefined}
+            onMissing={storageMissing}
           />
         )}
       </main>

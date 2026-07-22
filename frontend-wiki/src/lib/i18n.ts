@@ -77,6 +77,7 @@ const RU = {
   pickFile: 'Выберите файл из списка',
   download: 'Скачать',
   openInTab: 'Открыть в новой вкладке',
+  fileMissing: 'Файл не найден — возможно, его переместили или удалили. Список обновлён.',
 } as const
 
 const EN: Record<keyof typeof RU, string> = {
@@ -143,6 +144,7 @@ const EN: Record<keyof typeof RU, string> = {
   pickFile: 'Pick a file from the list',
   download: 'Download',
   openInTab: 'Open in a new tab',
+  fileMissing: 'File not found — it may have been moved or deleted. The list has been refreshed.',
 }
 
 export const t = (k: keyof typeof RU): string => (ru ? RU : EN)[k]

@@ -1,4 +1,5 @@
-import { Download, ExternalLink, File as FileIcon } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Download, ExternalLink, File as FileIcon, FileQuestion } from 'lucide-react'
 import { storageFileUrl } from '../lib/api'
 import styles from './StorageView.module.css'
 import { t, lang } from '../lib/i18n'
@@ -6,6 +7,7 @@ import { t, lang } from '../lib/i18n'
 interface StorageViewProps {
   path: string | null
   size?: number
+  onMissing?: () => void
 }
 
 const isImage = (p: string) => /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(p)
@@ -22,9 +24,34 @@ export function formatSize(bytes?: number): string {
   return `${i === 0 ? v : v.toFixed(1)} ${units[i]}`
 }
 
-export function StorageView({ path, size }: StorageViewProps) {
+export function StorageView({ path, size, onMissing }: StorageViewProps) {
+  const [missing, setMissing] = useState(false)
+
+  // A stale tree can point at a file the agent has already moved (e.g. out of
+  // the inbox via Telegram) — probe first instead of iframing a JSON 404.
+  useEffect(() => {
+    setMissing(false)
+    if (!path) return
+    let alive = true
+    fetch(storageFileUrl(path), { method: 'HEAD' })
+      .then(r => { if (alive && !r.ok) { setMissing(true); onMissing?.() } })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [path, onMissing])
+
   if (!path) {
     return <div className={styles.pane}><div className={styles.empty}>{t('pickFile')}</div></div>
+  }
+  if (missing) {
+    return (
+      <div className={styles.pane}>
+        <div className={styles.fallback}>
+          <FileQuestion size={40} strokeWidth={1.2} />
+          <div className={styles.fname}>{path}</div>
+          <div className={styles.fsize}>{t('fileMissing')}</div>
+        </div>
+      </div>
+    )
   }
   const url = storageFileUrl(path)
   const name = path.includes('/') ? path.slice(path.lastIndexOf('/') + 1) : path
