@@ -97,12 +97,17 @@ export const ContentPane = forwardRef<ContentPaneHandle, ContentPaneProps>(
       if (mode === 'view' && viewRef.current) {
         viewRef.current.innerHTML = renderMarkdown(text)
         enhanceCodeBlocks(viewRef.current)
-        // storage:Папка/скан.jpg → authorized /storage/file URL
+        // storage:Папка/скан.jpg → authorized /storage/file URL.
+        // marked percent-encodes hrefs; decode before storageFileUrl re-encodes.
+        const storagePath = (v: string) => {
+          const raw = v.slice('storage:'.length)
+          try { return decodeURIComponent(raw) } catch { return raw }
+        }
         viewRef.current.querySelectorAll<HTMLImageElement>('img[src^="storage:"]').forEach(img => {
-          img.src = storageFileUrl(img.getAttribute('src')!.slice('storage:'.length))
+          img.src = storageFileUrl(storagePath(img.getAttribute('src')!))
         })
         viewRef.current.querySelectorAll<HTMLAnchorElement>('a[href^="storage:"]').forEach(a => {
-          a.href = storageFileUrl(a.getAttribute('href')!.slice('storage:'.length))
+          a.href = storageFileUrl(storagePath(a.getAttribute('href')!))
           a.target = '_blank'
           a.rel = 'noopener noreferrer'
         })

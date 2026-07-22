@@ -6,8 +6,10 @@ instead of unlinking. Uploads land via temp file + rename (atomic).
 
 import mimetypes
 import os
+import re
 import shutil
 import time
+import unicodedata
 import urllib.parse
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
@@ -22,6 +24,20 @@ router = APIRouter(prefix="/storage", tags=["storage"])
 
 def init() -> None:
     os.makedirs(os.path.join(config.FILES_DIR, config.FILES_INBOX), exist_ok=True)
+
+
+# Telegram and browsers ship names with zero-width/bidi marks and exotic spaces
+# that later break shell handling and links.
+_INVISIBLE = re.compile("[\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u206f\\ufeff\\u00ad]")
+_ODD_SPACE = re.compile("[\\u00a0\\u2000-\\u200a\\u202f\\u205f\\u3000]")
+
+
+def clean_name(name: str) -> str:
+    name = unicodedata.normalize("NFC", name)
+    name = _INVISIBLE.sub("", name)
+    name = _ODD_SPACE.sub(" ", name)
+    name = "".join(c for c in name if c.isprintable())
+    return re.sub(r"\s+", " ", name).strip() or "файл"
 
 
 def safe_path(rel: str) -> str:
@@ -91,7 +107,7 @@ async def download(path: str, token: str = ""):
 async def upload(file: UploadFile, dir: str = "", _: bool = Depends(require_auth)):
     abs_dir = safe_path(dir)
     os.makedirs(abs_dir, exist_ok=True)
-    name = os.path.basename(file.filename or "файл")
+    name = clean_name(os.path.basename(file.filename or "файл"))
     dest = os.path.join(abs_dir, name)
     if os.path.exists(dest):
         stem, ext = os.path.splitext(name)
