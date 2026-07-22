@@ -5,12 +5,14 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from starlette.routing import Route
 
-from . import config, cron_store, session_log, skill_store, tasks_store
+from . import config, cron_store, mcp_server, session_log, skill_store, tasks_store
 from .asr import router as asr_router
 from .auth import require_auth
 from .chat import router as chat_router
 from .files import router as files_router
+from .mcp_api import router as mcp_router
 from .storage_api import init as storage_init
 from .storage_api import router as storage_router
 from .cron_api import router as cron_router
@@ -39,7 +41,10 @@ async def lifespan(_app: FastAPI):
         logger.info("Telegram bot disabled (no TELEGRAM_BOT_TOKEN)")
     tasks.append(asyncio.create_task(scheduler_loop()))
     try:
-        yield
+        # Примонтированный на /mcp sub-app не получает свой lifespan от FastAPI —
+        # менеджер сессий MCP запускаем здесь.
+        async with mcp_server.mcp.session_manager.run():
+            yield
     finally:
         for t in tasks:
             t.cancel()
@@ -83,3 +88,7 @@ app.include_router(tasks_events_router)  # before tasks_router so /tasks/events 
 app.include_router(tasks_router)
 app.include_router(cron_router)
 app.include_router(curator_router)
+app.include_router(mcp_router)
+# Route, а не Mount: Mount("/mcp") отвечает 307-редиректом на /mcp/,
+# который MCP-клиенты не обязаны следовать за POST.
+app.router.routes.append(Route("/mcp", endpoint=mcp_server.asgi_app))

@@ -85,6 +85,13 @@ const RU = {
   uploadHint: 'Перетащите файлы сюда или загрузите с устройства',
   back: 'Назад',
   open: 'Открыть',
+  mcpTitle: 'Доступ для агентов (MCP)',
+  mcpHint: 'Внешние агенты — Claude Code и другие MCP-клиенты — могут читать и пополнять вики и задачи.',
+  mcpEndpoint: 'Адрес',
+  mcpToken: 'Токен',
+  mcpCopyCmd: 'Команда для Claude Code',
+  mcpRotate: 'Перевыпустить токен',
+  mcpRotateConfirm: 'Старый токен перестанет работать у всех подключённых клиентов. Перевыпустить?',
 } as const
 
 const EN: Record<keyof typeof RU, string> = {
@@ -159,6 +166,13 @@ const EN: Record<keyof typeof RU, string> = {
   uploadHint: 'Drop files here or upload from your device',
   back: 'Back',
   open: 'Open',
+  mcpTitle: 'Agent access (MCP)',
+  mcpHint: 'External agents — Claude Code and other MCP clients — can read and update your wiki and tasks.',
+  mcpEndpoint: 'URL',
+  mcpToken: 'Token',
+  mcpCopyCmd: 'Claude Code command',
+  mcpRotate: 'Rotate token',
+  mcpRotateConfirm: 'The old token will stop working for every connected client. Rotate?',
 }
 
 export const t = (k: keyof typeof RU): string => (ru ? RU : EN)[k]

@@ -99,6 +99,20 @@ export async function deleteNode(path: string): Promise<void> {
   if (!res.ok) throw new Error('delete error')
 }
 
+// ── MCP access for external agents ──
+
+export async function mcpInfo(): Promise<{ token: string }> {
+  const res = await fetch(API + '/api/mcp', { headers: authHeaders() })
+  if (!res.ok) throw new Error('mcp error')
+  return res.json()
+}
+
+export async function mcpRotate(): Promise<{ token: string }> {
+  const res = await fetch(API + '/api/mcp/rotate', { method: 'POST', headers: authHeaders() })
+  if (!res.ok) throw new Error('mcp error')
+  return res.json()
+}
+
 // ── Personal file storage (/storage) ──
 
 export async function storageTree(): Promise<FileNode[]> {
