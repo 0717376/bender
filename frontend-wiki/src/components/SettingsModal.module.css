@@ -20,6 +20,11 @@
 .card {
     width: 460px;
     max-width: 92vw;
+    /* Секций стало много — карточка не должна вылезать за экран */
+    max-height: calc(100vh - 16vh - 20px);
+    max-height: calc(100dvh - 16vh - 20px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
     background: var(--panel);
     border: 1px solid var(--border-light);
     border-radius: 18px;
@@ -264,5 +269,9 @@
 
 @media (max-width: 760px) {
     .scrim { padding-top: 10vh; }
+    .card {
+        max-height: calc(100vh - 10vh - 16px);
+        max-height: calc(100dvh - 10vh - 16px);
+    }
     .palGrid { grid-template-columns: repeat(4, 1fr); }
 }
