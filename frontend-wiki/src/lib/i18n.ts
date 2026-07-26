@@ -92,6 +92,8 @@ const RU = {
   mcpCopyCmd: 'Команда для Claude Code',
   mcpRotate: 'Перевыпустить токен',
   mcpRotateConfirm: 'Старый токен перестанет работать у всех подключённых клиентов. Перевыпустить?',
+  toc: 'Оглавление',
+  missingPage: 'Страница не найдена',
 } as const
 
 const EN: Record<keyof typeof RU, string> = {
@@ -173,6 +175,8 @@ const EN: Record<keyof typeof RU, string> = {
   mcpCopyCmd: 'Claude Code command',
   mcpRotate: 'Rotate token',
   mcpRotateConfirm: 'The old token will stop working for every connected client. Rotate?',
+  toc: 'Contents',
+  missingPage: 'Page not found',
 }
 
 export const t = (k: keyof typeof RU): string => (ru ? RU : EN)[k]
