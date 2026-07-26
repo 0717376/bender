@@ -5,6 +5,7 @@ import { parseTitle, stripMatch } from "./nlp";
 import { MenuPopover } from "./Popover";
 import { RepeatPopover, repeatLabel } from "./RepeatPopover";
 import { projectColor } from "./colors";
+import { isoToday } from "./dates";
 import { t } from "./i18n";
 import type { Project, RepeatRule } from "./types";
 import type { Sel } from "./useTasks";
@@ -15,7 +16,6 @@ const tomorrowISO = () => {
   d.setDate(d.getDate() + 1);
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
-const isoToday = () => new Date().toISOString().slice(0, 10);
 const fmt = (iso: string) => { const [, m, d] = iso.split("-"); return `${d}.${m}`; };
 
 /** Preset the schedule/project from the space the task is being created in. */

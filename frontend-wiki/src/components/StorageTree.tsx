@@ -7,8 +7,9 @@ import type { FileNode } from '../lib/types'
 import { storageUpload, storageMkdir, storageMove, storageDelete } from '../lib/api'
 import { fileIcon } from '../lib/fileIcons'
 import { RowMenu, type MenuItem } from './RowMenu'
+import { useUi } from './Ui'
 import styles from './FileTree.module.css'
-import { t, confirmDelete } from '../lib/i18n'
+import { t } from '../lib/i18n'
 
 interface TreeCtx {
   selectedPath: string | null
@@ -20,7 +21,7 @@ interface TreeCtx {
   submitCreate: (name: string) => void
   submitRename: (node: FileNode, name: string) => void
   cancel: () => void
-  remove: (path: string) => void
+  remove: (path: string, isDir: boolean) => void
   dropTarget: string | null
   onDragStart: (e: React.DragEvent, path: string) => void
   onDragOverDir: (e: React.DragEvent, dest: string) => void
@@ -42,6 +43,7 @@ const baseOf = (p: string) => (p.includes('/') ? p.slice(p.lastIndexOf('/') + 1)
 const join = (parent: string, name: string) => (parent ? `${parent}/${name}` : name)
 
 export function StorageTree({ tree, selectedPath, onSelect, onChanged, onSettings, header }: StorageTreeProps) {
+  const { notify, ask } = useUi()
   const [creating, setCreating] = useState<string | null>(null)   // parent dir of the new folder
   const [renaming, setRenaming] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
@@ -62,7 +64,7 @@ export function StorageTree({ tree, selectedPath, onSelect, onChanged, onSetting
       await storageMkdir(path)
       onChanged()
     } catch (e) {
-      alert((e as Error).message)
+      notify((e as Error).message, 'error')
     }
   }
 
@@ -75,18 +77,18 @@ export function StorageTree({ tree, selectedPath, onSelect, onChanged, onSetting
       onChanged()
       fixSelection(node.path, dst)
     } catch (e) {
-      alert((e as Error).message)
+      notify((e as Error).message, 'error')
     }
   }
 
-  const remove = async (path: string) => {
-    if (!confirm(confirmDelete(path))) return
+  const remove = async (path: string, isDir: boolean) => {
+    if (!await ask(isDir ? t('deleteFolderQ') : t('deletePageQ'), path)) return
     try {
       await storageDelete(path)
       if (selectedPath === path || selectedPath?.startsWith(path + '/')) onSelect('')
       onChanged()
     } catch (e) {
-      alert((e as Error).message)
+      notify((e as Error).message, 'error')
     }
   }
 
@@ -100,7 +102,7 @@ export function StorageTree({ tree, selectedPath, onSelect, onChanged, onSetting
       try {
         await storageUpload(dir, f)
       } catch (e) {
-        alert(`${f.name}: ${(e as Error).message}`)
+        notify(`${f.name}: ${(e as Error).message}`, 'error')
       }
     }
     onChanged()
@@ -160,7 +162,7 @@ export function StorageTree({ tree, selectedPath, onSelect, onChanged, onSetting
       onChanged()
       fixSelection(src, dst)
     } catch (err) {
-      alert((err as Error).message)
+      notify((err as Error).message, 'error')
     }
   }
 
@@ -258,7 +260,7 @@ function TreeNode({ node, ctx }: { node: FileNode; ctx: TreeCtx }) {
       { icon: <FolderPlus size={14} />, label: t('newFolderHere'), onClick: () => { setOpen(true); ctx.startCreate(node.path) } },
     ] : []),
     { icon: <Pencil size={14} />, label: t('rename'), onClick: () => ctx.startRename(node.path) },
-    { icon: <Trash2 size={14} />, label: t('delete'), danger: true, onClick: () => ctx.remove(node.path) },
+    { icon: <Trash2 size={14} />, label: t('delete'), danger: true, onClick: () => ctx.remove(node.path, node.type === 'dir') },
   ]
 
   return (

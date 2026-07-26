@@ -1,19 +1,20 @@
 import { useState, useRef, useEffect } from 'react'
 import {
   BookOpen, ChevronRight, Download, Folder, FolderOpen, FileText,
-  FilePlus2, FolderPlus, Pencil, Trash2, FolderUp, Settings,
+  FilePlus2, FolderPlus, Pencil, Trash2, FolderUp, Search, Settings,
 } from 'lucide-react'
 import type { FileNode } from '../lib/types'
 import { createNode, renameNode, deleteNode, fetchFile } from '../lib/api'
 import { RowMenu, type MenuItem } from './RowMenu'
+import { useUi } from './Ui'
 import styles from './FileTree.module.css'
-import { t, confirmDelete } from '../lib/i18n'
+import { t } from '../lib/i18n'
 
 type Creating = { parent: string; type: 'file' | 'dir' } | null
 
 interface TreeCtx {
   selectedPath: string | null
-  onSelect: (path: string) => void
+  onSelect: (path: string | null) => void
   creating: Creating
   renaming: string | null
   startCreate: (parent: string, type: 'file' | 'dir') => void
@@ -21,7 +22,7 @@ interface TreeCtx {
   submitCreate: (name: string) => void
   submitRename: (node: FileNode, name: string) => void
   cancel: () => void
-  remove: (path: string) => void
+  remove: (node: FileNode) => void
   download: (path: string) => void
   // drag & drop
   dropTarget: string | null
@@ -34,9 +35,10 @@ interface TreeCtx {
 interface FileTreeProps {
   tree: FileNode[]
   selectedPath: string | null
-  onSelect: (path: string) => void
+  onSelect: (path: string | null) => void
   onChanged: () => void
   onSettings: () => void
+  onSearch: () => void
   header?: React.ReactNode
 }
 
@@ -44,7 +46,8 @@ const parentOf = (p: string) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')
 const baseOf = (p: string) => (p.includes('/') ? p.slice(p.lastIndexOf('/') + 1) : p)
 const join = (parent: string, name: string) => (parent ? `${parent}/${name}` : name)
 
-export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings, header }: FileTreeProps) {
+export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings, onSearch, header }: FileTreeProps) {
+  const { notify, ask } = useUi()
   const [creating, setCreating] = useState<Creating>(null)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
@@ -72,7 +75,7 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings, 
       onChanged()
       if (creating.type === 'file') onSelect(path)
     } catch (e) {
-      alert((e as Error).message)
+      notify((e as Error).message, 'error')
     }
   }
 
@@ -85,17 +88,20 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings, 
       onChanged()
       fixSelection(node.path, dst)
     } catch (e) {
-      alert((e as Error).message)
+      notify((e as Error).message, 'error')
     }
   }
 
-  const remove = async (path: string) => {
-    if (!confirm(confirmDelete(path))) return
+  const remove = async (node: FileNode) => {
+    const ok = await ask(node.type === 'dir' ? t('deleteFolderQ') : t('deletePageQ'), node.path)
+    if (!ok) return
     try {
-      await deleteNode(path)
+      await deleteNode(node.path)
       onChanged()
+      // Удалили то, что открыто, — иначе в центре осталась бы страница-призрак.
+      if (selectedPath === node.path || selectedPath?.startsWith(node.path + '/')) onSelect(null)
     } catch (e) {
-      alert((e as Error).message)
+      notify((e as Error).message, 'error')
     }
   }
 
@@ -110,7 +116,7 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings, 
       a.click()
       URL.revokeObjectURL(url)
     } catch (e) {
-      alert((e as Error).message)
+      notify((e as Error).message, 'error')
     }
   }
 
@@ -156,7 +162,7 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings, 
       onChanged()
       fixSelection(src, dst)
     } catch (err) {
-      alert((err as Error).message)
+      notify((err as Error).message, 'error')
     }
   }
 
@@ -180,6 +186,7 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings, 
           </span>
         )}
         <div className={styles.actions}>
+          <button title={`${t('search')} (⌘K)`} aria-label={t('search')} onClick={onSearch}><Search size={15} /></button>
           <button title={t('newPage')} onClick={() => startCreate(toolbarParent, 'file')}><FilePlus2 size={15} /></button>
           <button title={t('newFolder')} onClick={() => startCreate(toolbarParent, 'dir')}><FolderPlus size={15} /></button>
         </div>
@@ -226,6 +233,11 @@ function TreeNode({ node, ctx }: { node: FileNode; ctx: TreeCtx }) {
   const isDir = node.type === 'dir'
   const isSelected = !isDir && node.path === ctx.selectedPath
 
+  // Страницу могли открыть мимо дерева (прямая ссылка, поиск, чат) — раскрываем
+  // папки по пути к ней, иначе непонятно, где ты находишься.
+  const onPath = isDir && !!ctx.selectedPath?.startsWith(node.path + '/')
+  useEffect(() => { if (onPath) setOpen(true) }, [onPath])
+
   const beginCreate = (type: 'file' | 'dir') => {
     setOpen(true)
     ctx.startCreate(node.path, type)
@@ -239,7 +251,7 @@ function TreeNode({ node, ctx }: { node: FileNode; ctx: TreeCtx }) {
       { icon: <Download size={14} />, label: t('download'), onClick: () => ctx.download(node.path) },
     ]),
     { icon: <Pencil size={14} />, label: t('rename'), onClick: () => ctx.startRename(node.path) },
-    { icon: <Trash2 size={14} />, label: t('delete'), danger: true, onClick: () => ctx.remove(node.path) },
+    { icon: <Trash2 size={14} />, label: t('delete'), danger: true, onClick: () => ctx.remove(node) },
   ]
 
   if (ctx.renaming === node.path) {

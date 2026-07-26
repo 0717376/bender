@@ -58,6 +58,22 @@ def build_tree(abs_dir: str, rel_prefix: str) -> list[dict]:
     return nodes
 
 
+def snippet(text: str, needle: str, width: int = 110) -> str:
+    """Строка с совпадением, обрезанная вокруг него."""
+    at = text.lower().find(needle)
+    if at == -1:
+        return ""
+    start = text.rfind("\n", 0, at) + 1
+    end = text.find("\n", at)
+    line = text[start:end if end != -1 else len(text)].strip()
+    pos = line.lower().find(needle)
+    if len(line) <= width:
+        return line
+    left = max(0, pos - width // 3)
+    out = line[left:left + width].strip()
+    return ("…" if left else "") + out + "…"
+
+
 class WriteReq(BaseModel):
     path: str
     text: str
@@ -86,6 +102,35 @@ async def files_content(path: str, _: bool = Depends(require_auth)):
         raise HTTPException(404, "Файл не найден")
     with open(abs_path, encoding="utf-8") as f:
         return {"path": path, "text": f.read()}
+
+
+@router.get("/search")
+async def files_search(q: str, limit: int = 30, _: bool = Depends(require_auth)):
+    """Поиск по вики: сначала совпадения в названии страницы, потом в тексте."""
+    needle = q.strip().lower()
+    if not needle:
+        return {"results": []}
+    by_title: list[dict] = []
+    by_text: list[dict] = []
+    for dirpath, dirnames, filenames in os.walk(config.WIKI_DIR):
+        dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
+        for name in sorted(filenames):
+            if not name.endswith(".md") or name.startswith("."):
+                continue
+            abs_path = os.path.join(dirpath, name)
+            rel = os.path.relpath(abs_path, config.WIKI_DIR)
+            try:
+                with open(abs_path, encoding="utf-8", errors="ignore") as f:
+                    text = f.read()
+            except OSError:
+                continue
+            title = page_title(abs_path) or name[:-3]
+            hit = {"path": rel, "title": title, "snippet": snippet(text, needle)}
+            if needle in title.lower() or needle in rel.lower():
+                by_title.append(hit)
+            elif needle in text.lower():
+                by_text.append(hit)
+    return {"results": (by_title + by_text)[:limit]}
 
 
 @router.put("/content")

@@ -94,6 +94,17 @@ const RU = {
   mcpRotateConfirm: 'Старый токен перестанет работать у всех подключённых клиентов. Перевыпустить?',
   toc: 'Оглавление',
   missingPage: 'Страница не найдена',
+  search: 'Поиск по вики',
+  searchHint: 'Название или текст страницы…',
+  nothingFound: 'Ничего не найдено',
+  cancel: 'Отмена',
+  deletePageQ: 'Удалить страницу?',
+  deleteFolderQ: 'Удалить папку со всем содержимым?',
+  saveFailed: 'Не удалось сохранить — изменения только в этой вкладке',
+  loadFailed: 'Не удалось открыть страницу',
+  treeFailed: 'Не удалось загрузить список страниц',
+  retry: 'Повторить',
+  connectionLost: 'Соединение с ассистентом прервано',
 } as const
 
 const EN: Record<keyof typeof RU, string> = {
@@ -177,13 +188,20 @@ const EN: Record<keyof typeof RU, string> = {
   mcpRotateConfirm: 'The old token will stop working for every connected client. Rotate?',
   toc: 'Contents',
   missingPage: 'Page not found',
+  search: 'Search the wiki',
+  searchHint: 'Page title or text…',
+  nothingFound: 'Nothing found',
+  cancel: 'Cancel',
+  deletePageQ: 'Delete this page?',
+  deleteFolderQ: 'Delete this folder and everything in it?',
+  saveFailed: 'Could not save — changes live only in this tab',
+  loadFailed: 'Could not open the page',
+  treeFailed: 'Could not load the page list',
+  retry: 'Retry',
+  connectionLost: 'Lost connection to the assistant',
 }
 
 export const t = (k: keyof typeof RU): string => (ru ? RU : EN)[k]
-
-export function confirmDelete(path: string): string {
-  return ru ? `Удалить «${path}»?` : `Delete “${path}”?`
-}
 
 export function selectedChars(n: number): string {
   return ru ? `выделено ${n}` : `${n} chars selected`

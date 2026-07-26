@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { ChevronDown, ChevronRight, ListPlus, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, ListPlus, Plus, Trash2, TriangleAlert } from "lucide-react";
 import TaskRow from "./TaskRow";
 import { projectColor } from "./colors";
+import { iso as isoOf, isoToday } from "./dates";
 import { MONTHS, doneOfTotal, locale, logbookStats, t } from "./i18n";
 import type { Area, Project, Task } from "./types";
 import { isOverdue, type Sel } from "./useTasks";
@@ -37,8 +38,6 @@ const KICKERS: Record<string, string> = {
   anytime: t("kicker_anytime"),
   someday: t("kicker_someday"),
 };
-
-const isoToday = () => new Date().toISOString().slice(0, 10);
 
 function cap(s: string): string { return s.charAt(0).toUpperCase() + s.slice(1); }
 
@@ -118,6 +117,8 @@ export default function TaskList({
   ops,
   entering,
   loading,
+  loadError,
+  onRetry,
   expandedId,
   onExpand,
   onNewTask,
@@ -137,6 +138,8 @@ export default function TaskList({
   completing: Set<number>;
   entering: Set<number>;
   loading: boolean;
+  loadError: boolean;
+  onRetry: () => void;
   projects: Project[];
   areas: Area[];
   ops: Ops;
@@ -176,7 +179,7 @@ export default function TaskList({
     if (!isLogbook) return "";
     const now = new Date(); now.setHours(0, 0, 0, 0);
     const monday = new Date(now); monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
-    const mondayISO = monday.toISOString().slice(0, 10);
+    const mondayISO = isoOf(monday);
     const monthISO = isoToday().slice(0, 7);
     const week = tasks.filter((t) => (t.completed_at ?? "") >= mondayISO).length;
     const month = tasks.filter((t) => (t.completed_at ?? "").startsWith(monthISO)).length;
@@ -280,7 +283,13 @@ export default function TaskList({
         )}
 
         {tasks.length === 0 && !addingHead ? (
-          loading ? <div className="list-loading" /> : areaProjects.length === 0 && <div className="empty">{emptyMsg}</div>
+          loadError ? (
+            <div className="load-error">
+              <TriangleAlert size={16} strokeWidth={2} />
+              <span>{t("load_failed")}</span>
+              <button onClick={onRetry}>{t("retry")}</button>
+            </div>
+          ) : loading ? <div className="list-loading" /> : areaProjects.length === 0 && <div className="empty">{emptyMsg}</div>
         ) : (
           <ul className="tasks">
             {isToday ? (

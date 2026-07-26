@@ -7,12 +7,14 @@ export interface ChatMsg {
   role: "user" | "assistant";
   text: string;
   tools?: string[];
+  error?: boolean;
 }
 
 interface Streaming {
   id: string;
   text: string;
   tools: string[];
+  error?: boolean;
 }
 
 type ToolEvent = { name: string; pattern?: string; file?: string };
@@ -29,6 +31,19 @@ export function useChat(onActivity?: () => void) {
   const [busy, setBusy] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const streamRef = useRef<Streaming | null>(null);
+
+  /** Переложить то, что накопилось в потоке, в историю и разблокировать ввод. */
+  const flush = useCallback(() => {
+    const s = streamRef.current;
+    if (s && (s.text || s.tools.length)) {
+      setMessages((prev) => [...prev, {
+        id: s.id || crypto.randomUUID(), role: "assistant", text: s.text, tools: s.tools, error: s.error,
+      }]);
+    }
+    streamRef.current = null;
+    setStreaming(null);
+    setBusy(false);
+  }, []);
 
   const connect = useCallback((): Promise<WebSocket> => {
     return new Promise((resolve, reject) => {
@@ -55,25 +70,26 @@ export function useChat(onActivity?: () => void) {
           onActivity?.();
         } else if (m.t === "error") {
           const s = streamRef.current ?? { id: "e", text: "", tools: [] };
-          s.text = (s.text ? s.text + "\n\n" : "") + "⚠ " + m.text;
+          s.text = (s.text ? s.text + "\n\n" : "") + m.text;
+          s.error = true;
           streamRef.current = { ...s };
           setStreaming(streamRef.current);
         } else if (m.t === "done") {
-          const s = streamRef.current;
-          if (s && (s.text || s.tools.length)) {
-            setMessages((prev) => [...prev, { id: s.id || crypto.randomUUID(), role: "assistant", text: s.text, tools: s.tools }]);
-          }
-          streamRef.current = null;
-          setStreaming(null);
-          setBusy(false);
+          flush();
           onActivity?.();
         }
       };
+      // Обрыв посреди ответа: без этого индикатор «печатает» крутился бы вечно,
+      // а поле ввода оставалось заблокированным.
       ws.onclose = () => {
         wsRef.current = null;
+        if (streamRef.current) {
+          streamRef.current = { ...streamRef.current, text: streamRef.current.text || tr("no_connection"), error: true };
+        }
+        flush();
       };
     });
-  }, [onActivity]);
+  }, [onActivity, flush]);
 
   const send = useCallback(
     async (text: string) => {
@@ -94,7 +110,8 @@ export function useChat(onActivity?: () => void) {
       } catch {
         setBusy(false);
         setStreaming(null);
-        setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "assistant", text: tr("no_connection") }]);
+        streamRef.current = null;
+        setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "assistant", text: tr("no_connection"), error: true }]);
       }
     },
     [busy, connect],

@@ -214,6 +214,9 @@ button, input, textarea, select { font-family: inherit; -webkit-tap-highlight-co
 .chip.dl { font-size: 11.5px; font-weight: 600; color: var(--danger); background: var(--danger-soft); padding: 1px 8px; border-radius: 6px; }
 .chip.tag { font-size: 11px; font-weight: 600; color: var(--accent-ink); background: var(--accent-soft); padding: 1px 8px; border-radius: 6px; }
 .chip.stale { font-size: 11px; font-weight: 600; color: var(--text-3); background: var(--bg-2); padding: 1px 7px; border-radius: 6px; }
+.load-error { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 40px 0; color: var(--danger); font-size: 13.5px; font-weight: 600; }
+.load-error button { padding: 7px 15px; border: 1px solid var(--border-light); border-radius: var(--r-pill); background: var(--panel); color: var(--text-2); font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.load-error button:hover { background: var(--bg-2); }
 .empty { color: var(--text-4); padding: 40px 4px; font-size: 13.5px; text-align: center; }
 .list-loading { min-height: 40px; }
 
@@ -407,6 +410,9 @@ button, input, textarea, select { font-family: inherit; -webkit-tap-highlight-co
 .bubble .text { white-space: pre-wrap; word-wrap: break-word; font-size: 13.5px; line-height: 1.55; }
 .bubble.user .text { color: #fff; }
 .bubble.assistant .text { color: var(--text-1); }
+.bubble.error { border-color: var(--danger-line); background: var(--danger-soft); }
+.bubble.error .text { display: flex; align-items: flex-start; gap: 6px; color: var(--danger); }
+.bubble.error .text svg { flex: none; margin-top: 2px; }
 .bubble .tools { display: flex; flex-direction: column; gap: 4px; margin-bottom: 7px; }
 .bubble .tool { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; font-size: 11.5px; color: var(--text-3); background: var(--bg); padding: 2px 9px; border-radius: var(--r-pill); }
 .bubble.user .tool { background: rgba(255, 255, 255, .2); color: rgba(255, 255, 255, .9); }

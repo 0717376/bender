@@ -12,6 +12,8 @@ from .asr import router as asr_router
 from .auth import require_auth
 from .chat import router as chat_router
 from .files import router as files_router
+from .files_events import router as files_events_router
+from .files_events import watch_loop as files_watch_loop
 from .mcp_api import router as mcp_router
 from .storage_api import init as storage_init
 from .storage_api import router as storage_router
@@ -40,6 +42,7 @@ async def lifespan(_app: FastAPI):
     else:
         logger.info("Telegram bot disabled (no TELEGRAM_BOT_TOKEN)")
     tasks.append(asyncio.create_task(scheduler_loop()))
+    tasks.append(asyncio.create_task(files_watch_loop()))
     try:
         # Примонтированный на /mcp sub-app не получает свой lifespan от FastAPI —
         # менеджер сессий MCP запускаем здесь.
@@ -81,6 +84,7 @@ async def health():
 
 
 app.include_router(chat_router)
+app.include_router(files_events_router)  # /files/events: SSE без auth-зависимости (токен в query)
 app.include_router(files_router)
 app.include_router(storage_router)
 app.include_router(asr_router)

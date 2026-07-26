@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Check, Copy, Moon, MonitorSmartphone, Sun, X } from 'lucide-react'
 import { lang, setLang, t, type Lang } from '../lib/i18n'
 import { mcpInfo, mcpRotate } from '../lib/api'
+import { useUi } from './Ui'
 import styles from './SettingsModal.module.css'
 
 export type ThemeMode = 'light' | 'dark' | 'auto'
@@ -40,6 +41,7 @@ interface SettingsModalProps {
 
 // Секция «доступ для агентов»: адрес /mcp, токен и готовая команда подключения.
 function McpSection() {
+  const { ask } = useUi()
   const [token, setToken] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
 
@@ -58,8 +60,8 @@ function McpSection() {
     }).catch(() => {})
   }
 
-  const rotate = () => {
-    if (!window.confirm(t('mcpRotateConfirm'))) return
+  const rotate = async () => {
+    if (!await ask(t('mcpRotateConfirm'))) return
     mcpRotate().then(r => setToken(r.token)).catch(() => {})
   }
 

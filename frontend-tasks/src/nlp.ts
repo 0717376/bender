@@ -1,3 +1,4 @@
+import { iso, isoShift } from "./dates";
 import type { RepeatRule } from "./types";
 
 /** Lightweight RU natural-language date/repeat detection for the quick-entry title.
@@ -9,24 +10,23 @@ export interface ParsedHint {
   label: string;          // human label for the hint chip
 }
 
-const pad = (n: number) => String(n).padStart(2, "0");
-const iso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+// Границы слова: \b в JS считает «словом» только латиницу с цифрами, поэтому рядом
+// с кириллицей никогда не срабатывает. Собственные границы через lookaround.
+const L = "(?<![\\p{L}\\p{N}])";
+const R = "(?![\\p{L}\\p{N}])";
+const word = (body: string, flags = "iu") => new RegExp(`${L}${body}${R}`, flags);
 
-const plusDays = (n: number) => {
-  const d = new Date();
-  d.setDate(d.getDate() + n);
-  return iso(d);
-};
+const plusDays = isoShift;
 
 // Weekday → JS getDay() index. Multiple colloquial forms per day.
 const WEEKDAYS: [RegExp, number][] = [
-  [/\b(в\s+)?(понедельник|пн)\b/iu, 1],
-  [/\b(во\s+)?(вторник|вт)\b/iu, 2],
-  [/\b(в\s+)?(среду|среда|ср)\b/iu, 3],
-  [/\b(в\s+)?(четверг|чт)\b/iu, 4],
-  [/\b(в\s+)?(пятницу|пятница|пт)\b/iu, 5],
-  [/\b(в\s+)?(субботу|суббота|сб)\b/iu, 6],
-  [/\b(в\s+)?(воскресенье|вс)\b/iu, 0],
+  [word("(в\\s+)?(понедельник|пн)"), 1],
+  [word("(во\\s+)?(вторник|вт)"), 2],
+  [word("(в\\s+)?(среду|среда|ср)"), 3],
+  [word("(в\\s+)?(четверг|чт)"), 4],
+  [word("(в\\s+)?(пятницу|пятница|пт)"), 5],
+  [word("(в\\s+)?(субботу|суббота|сб)"), 6],
+  [word("(в\\s+)?(воскресенье|вс)"), 0],
 ];
 
 const WEEKDAY_LABELS = ["воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"];
@@ -61,7 +61,7 @@ export function parseTitle(text: string): ParsedHint | null {
   let m: RegExpMatchArray | null;
 
   // --- Repeat: «каждый день», «каждую неделю», «каждые 3 дня», «каждый вторник» ---
-  m = text.match(/\bкажд(?:ый|ую|ое|ые)\s+(?:(\d+)\s+)?([а-яё]+)/iu);
+  m = text.match(word("кажд(?:ый|ую|ое|ые)\\s+(?:(\\d+)\\s+)?([а-яё]+)"));
   if (m) {
     const n = m[1] ? parseInt(m[1], 10) : 1;
     const unit = unitOf(m[2]);
@@ -83,17 +83,17 @@ export function parseTitle(text: string): ParsedHint | null {
   }
 
   // --- Simple day words ---
-  m = text.match(/\bпослезавтра\b/iu);
+  m = text.match(word("послезавтра"));
   if (m) return { when: plusDays(2), matched: m[0], label: `послезавтра · ${fmtDM(plusDays(2))}` };
-  m = text.match(/\bзавтра\b/iu);
+  m = text.match(word("завтра"));
   if (m) return { when: plusDays(1), matched: m[0], label: `завтра · ${fmtDM(plusDays(1))}` };
-  m = text.match(/\bсегодня\b/iu);
+  m = text.match(word("сегодня"));
   if (m) return { when: "today", matched: m[0], label: "сегодня" };
-  m = text.match(/\bкогда-нибудь\b/iu);
+  m = text.match(word("когда-нибудь"));
   if (m) return { when: "someday", matched: m[0], label: "когда-нибудь" };
 
   // --- «через N дней/недель/месяцев», «через неделю» ---
-  m = text.match(/\bчерез\s+(?:(\d+)\s+)?([а-яё]+)/iu);
+  m = text.match(word("через\\s+(?:(\\d+)\\s+)?([а-яё]+)"));
   if (m) {
     const n = m[1] ? parseInt(m[1], 10) : 1;
     const unit = unitOf(m[2]);
@@ -114,7 +114,7 @@ export function parseTitle(text: string): ParsedHint | null {
   }
 
   // --- «15 июля» ---
-  m = text.match(new RegExp(`\\b(\\d{1,2})\\s+(${MONTHS_GEN.join("|")})\\b`, "iu"));
+  m = text.match(word(`(\\d{1,2})\\s+(${MONTHS_GEN.join("|")})`));
   if (m) {
     const day = parseInt(m[1], 10);
     const month = MONTHS_GEN.indexOf(m[2].toLowerCase());
@@ -127,7 +127,7 @@ export function parseTitle(text: string): ParsedHint | null {
   }
 
   // --- «15.07» / «15.07.2026» ---
-  m = text.match(/\b(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?\b/u);
+  m = text.match(word("(\\d{1,2})\\.(\\d{1,2})(?:\\.(\\d{4}))?", "u"));
   if (m) {
     const day = parseInt(m[1], 10), month = parseInt(m[2], 10);
     if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {

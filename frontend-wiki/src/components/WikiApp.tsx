@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { FolderTree, FileText, Sparkles, BookOpen, HardDrive } from 'lucide-react'
+import { FolderTree, FileText, Sparkles, BookOpen, HardDrive, TriangleAlert } from 'lucide-react'
 import type { FileNode } from '../lib/types'
 import type { ChatContext } from '../hooks/useWebSocket'
-import { fetchTree, storageTree } from '../lib/api'
+import { fetchTree, storageTree, subscribeFiles } from '../lib/api'
 import { parseHash, hashFor } from '../lib/route'
 import { clearToken } from '../lib/auth'
 import { FileTree } from './FileTree'
@@ -10,6 +10,7 @@ import { StorageTree } from './StorageTree'
 import { StorageView } from './StorageView'
 import { ContentPane, type ContentPaneHandle } from './ContentPane'
 import { ChatPane } from './ChatPane'
+import { SearchPalette } from './SearchPalette'
 import { SettingsModal, type ThemeMode } from './SettingsModal'
 import styles from './WikiApp.module.css'
 import { t } from '../lib/i18n'
@@ -41,13 +42,15 @@ function findNode(nodes: FileNode[], path: string): FileNode | null {
 }
 
 export function WikiApp({ onLogout }: WikiAppProps) {
-  const [tree, setTree] = useState<FileNode[]>([])
+  // null — дерево ещё не загружено; пустой массив — вики действительно пуста.
+  const [tree, setTree] = useState<FileNode[] | null>(null)
+  const [treeError, setTreeError] = useState(false)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [anchor, setAnchor] = useState('')
   const [section, setSection] = useState<Section>('wiki')
   const [storage, setStorage] = useState<FileNode[]>([])
   const [storagePath, setStoragePath] = useState<string | null>(null)
-  const [reloadSignal, setReloadSignal] = useState(0)
+  const [searchOpen, setSearchOpen] = useState(false)
   const [selText, setSelText] = useState('')
   // Which pane is visible on mobile (single-pane layout). Ignored on desktop.
   const [pane, setPane] = useState<Pane>('tree')
@@ -61,6 +64,10 @@ export function WikiApp({ onLogout }: WikiAppProps) {
   // На узких экранах чат живёт в таб-баре — сворачивание в рейку только для десктопа.
   const [narrow, setNarrow] = useState(() => window.matchMedia('(max-width: 760px)').matches)
   const contentRef = useRef<ContentPaneHandle>(null)
+  const openPathRef = useRef<string | null>(null)
+  openPathRef.current = selectedPath
+
+  const nodes = tree ?? []
 
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 760px)')
@@ -122,8 +129,7 @@ export function WikiApp({ onLogout }: WikiAppProps) {
     return () => window.removeEventListener('hashchange', apply)
   }, [])
 
-  const wikiPaths = useMemo(() => collectPaths(tree, new Set<string>()), [tree])
-  const exists = useCallback((p: string) => wikiPaths.has(p), [wikiPaths])
+  const pages = useMemo(() => (tree ? collectPaths(tree, new Set<string>()) : null), [tree])
 
   const getContext = useCallback((): ChatContext => ({
     path: selectedPath,
@@ -132,8 +138,13 @@ export function WikiApp({ onLogout }: WikiAppProps) {
 
   const clearSelection = useCallback(() => contentRef.current?.clearSelection(), [])
 
-  const reloadTree = useCallback(() => {
-    fetchTree().then(setTree).catch(() => {})
+  const reloadTree = useCallback(async () => {
+    try {
+      setTree(await fetchTree())
+      setTreeError(false)
+    } catch {
+      setTreeError(true)
+    }
   }, [])
 
   const reloadStorage = useCallback(() => {
@@ -145,11 +156,26 @@ export function WikiApp({ onLogout }: WikiAppProps) {
     reloadStorage()
   }, [reloadTree, reloadStorage])
 
-  // Files can change outside this tab (Telegram bot, another device) — refresh
-  // both trees when the tab regains focus.
+  // Живая синхронизация: страницы меняют агент, Telegram, крон и внешние агенты по MCP —
+  // всё это мимо этой вкладки. Бэкенд следит за файлами и присылает, что изменилось.
+  useEffect(() => {
+    return subscribeFiles(ev => {
+      if (ev.pages.length) {
+        reloadTree()
+        const open = openPathRef.current
+        if (open && ev.pages.includes(open)) contentRef.current?.reload()
+      }
+      if (ev.storage) reloadStorage()
+    })
+  }, [reloadTree, reloadStorage])
+
+  // Подстраховка на случай, когда поток простоял мёртвым (ноутбук спал, сеть отваливалась).
   useEffect(() => {
     const onVisible = () => {
-      if (document.visibilityState === 'visible') { reloadTree(); reloadStorage() }
+      if (document.visibilityState !== 'visible') return
+      reloadTree()
+      reloadStorage()
+      contentRef.current?.reload()
     }
     document.addEventListener('visibilitychange', onVisible)
     window.addEventListener('focus', onVisible)
@@ -158,6 +184,17 @@ export function WikiApp({ onLogout }: WikiAppProps) {
       window.removeEventListener('focus', onVisible)
     }
   }, [reloadTree, reloadStorage])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setSearchOpen(v => !v)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   const storageMissing = useCallback(() => {
     reloadStorage()
@@ -174,11 +211,11 @@ export function WikiApp({ onLogout }: WikiAppProps) {
     onLogout()
   }, [onLogout])
 
-  // After the assistant finishes, files may have changed: refresh trees + open file.
+  // Свои правки видно сразу, не дожидаясь следующего обхода файлов на бэкенде.
   const onAssistantDone = useCallback(() => {
     reloadTree()
     reloadStorage()
-    setReloadSignal(s => s + 1)
+    contentRef.current?.reload()
   }, [reloadTree, reloadStorage])
 
   const sections = (
@@ -196,14 +233,24 @@ export function WikiApp({ onLogout }: WikiAppProps) {
     <div className={styles.wrapper} data-pane={pane}>
       <aside className={styles.left}>
         {section === 'wiki' ? (
-          <FileTree
-            tree={tree}
-            selectedPath={selectedPath}
-            onSelect={selectPath}
-            onChanged={reloadTree}
-            onSettings={() => setSettingsOpen(true)}
-            header={sections}
-          />
+          <>
+            {treeError && (
+              <button className={styles.treeError} onClick={reloadTree}>
+                <TriangleAlert size={14} strokeWidth={2.2} />
+                <span>{t('treeFailed')}</span>
+                <span className={styles.retry}>{t('retry')}</span>
+              </button>
+            )}
+            <FileTree
+              tree={nodes}
+              selectedPath={selectedPath}
+              onSelect={selectPath}
+              onChanged={reloadTree}
+              onSettings={() => setSettingsOpen(true)}
+              onSearch={() => setSearchOpen(true)}
+              header={sections}
+            />
+          </>
         ) : (
           <StorageTree
             tree={storage}
@@ -220,11 +267,10 @@ export function WikiApp({ onLogout }: WikiAppProps) {
           <ContentPane
             ref={contentRef}
             path={selectedPath}
-            title={selectedPath ? findNode(tree, selectedPath)?.title : undefined}
-            mtime={selectedPath ? findNode(tree, selectedPath)?.mtime : undefined}
+            title={selectedPath ? findNode(nodes, selectedPath)?.title : undefined}
+            mtime={selectedPath ? findNode(nodes, selectedPath)?.mtime : undefined}
             anchor={anchor}
-            exists={exists}
-            reloadSignal={reloadSignal}
+            pages={pages}
             onSelectionChange={setSelText}
             onNavigate={selectPath}
             onBack={() => setPane('tree')}
@@ -248,7 +294,7 @@ export function WikiApp({ onLogout }: WikiAppProps) {
           onAssistantDone={onAssistantDone}
           onLogout={logout}
           currentPath={selectedPath}
-          currentTitle={selectedPath ? findNode(tree, selectedPath)?.title : undefined}
+          currentTitle={selectedPath ? findNode(nodes, selectedPath)?.title : undefined}
           getContext={getContext}
           pinnedSel={selText}
           onClearSelection={clearSelection}
@@ -256,6 +302,13 @@ export function WikiApp({ onLogout }: WikiAppProps) {
           onToggle={toggleChat}
         />
       </aside>
+
+      {searchOpen && (
+        <SearchPalette
+          onPick={p => { setSearchOpen(false); setSection('wiki'); selectPath(p) }}
+          onClose={() => setSearchOpen(false)}
+        />
+      )}
 
       {settingsOpen && (
         <SettingsModal
