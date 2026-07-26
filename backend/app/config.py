@@ -37,8 +37,9 @@ REVIEWER_EVERY_TURNS = max(1, int(os.environ.get("REVIEWER_EVERY_TURNS", "10")))
 # Tools pre-approved so they run headless without prompts (mirrors the old
 # --allowedTools list). Anything outside this set is denied, not prompted.
 ALLOWED_TOOLS = [
-    "Read", "Glob", "Grep", "Write", "Edit", "MultiEdit",
-    "Bash", "WebSearch", "WebFetch", "TodoWrite", "NotebookEdit",
+    "Read", "Glob", "Grep", "Write", "Edit",
+    "Bash", "BashOutput", "KillShell",
+    "WebSearch", "WebFetch", "TodoWrite", "NotebookEdit",
     "Task",  # delegate to subagents (researcher / librarian)
 ]
 

@@ -1,0 +1,11 @@
+version: 2
+updates:
+  # Следим только за claude-agent-sdk: внутри него bundled Claude Code CLI,
+  # который разворачивает алиас модели (opus -> конкретный ID). Свежий SDK =
+  # свежий опус. Остальные зависимости бампаем руками по необходимости.
+  - package-ecosystem: "uv"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+    allow:
+      - dependency-name: "claude-agent-sdk"
