@@ -11,6 +11,7 @@ from . import config, cron_store, mcp_server, session_log, skill_store, tasks_st
 from .asr import router as asr_router
 from .auth import require_auth
 from .chat import router as chat_router
+from .files import normalize_pages
 from .files import router as files_router
 from .files_events import router as files_events_router
 from .files_events import watch_loop as files_watch_loop
@@ -35,6 +36,11 @@ async def lifespan(_app: FastAPI):
     session_log.init()
     skill_store.init()  # scaffold learned-skills plugin + migrate legacy flat skills once
     storage_init()
+    # Папки заводит не только интерфейс (агент через Bash, бэкапы) — выдаём им
+    # страницы, иначе в дереве всплывёт «папка», которой в модели вики нет.
+    fixed = normalize_pages()
+    if fixed:
+        logger.info("Wiki: added index pages to %d folder(s)", fixed)
     tasks: list[asyncio.Task] = []
     if config.TELEGRAM_BOT_TOKEN:
         tasks.append(asyncio.create_task(telegram_poller()))

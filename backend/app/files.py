@@ -235,6 +235,10 @@ def moves_for(src_rel: str, dst_rel: str) -> dict[str, str]:
 
 
 # ── Родительские страницы ──
+#
+# Главное правило: папок как отдельной сущности не существует. У всякой папки есть
+# своя страница — её index.md, — и пользователь видит только страницы. Всё, что ниже,
+# охраняет этот инвариант, чтобы «папка» не всплыла в интерфейсе.
 
 def promote(rel: str) -> str:
     """`x.md` → `x/index.md`: страница становится родителем и получает детей.
@@ -244,26 +248,74 @@ def promote(rel: str) -> str:
     """
     abs_src = os.path.join(config.WIKI_DIR, rel)
     folder = abs_src[:-3]
-    if os.path.exists(folder):
-        raise ValueError("Папка с таким именем уже есть")
+    index = os.path.join(folder, "index.md")
+    if os.path.exists(index):
+        raise ValueError("Страница с таким именем уже есть")
     dst = f"{rel[:-3]}/index.md"
     os.makedirs(folder, exist_ok=True)
-    os.rename(abs_src, os.path.join(folder, "index.md"))
+    os.rename(abs_src, index)
     rewrite_links({rel: dst})
     return dst
 
 
+def ensure_page(rel_dir: str) -> str:
+    """Дать папке её страницу. Если рядом лежит `x.md` — это она и есть."""
+    abs_dir = os.path.join(config.WIKI_DIR, rel_dir)
+    index = os.path.join(abs_dir, "index.md")
+    if os.path.isfile(index):
+        return f"{rel_dir}/index.md"
+    if os.path.isfile(abs_dir + ".md"):
+        return promote(f"{rel_dir}.md")
+    os.makedirs(abs_dir, exist_ok=True)
+    with open(index, "w", encoding="utf-8") as f:
+        f.write(f"# {os.path.basename(rel_dir)}\n")
+    return f"{rel_dir}/index.md"
+
+
+def page_folder(parent: str) -> str:
+    """Папка, в которой живут дети этой страницы; обычную страницу продвигает.
+
+    Принимает и путь страницы (`x.md`, `x/index.md`), и путь папки, и пустую строку
+    для корня — вызывающему не нужно знать, кем родитель был до этого.
+    """
+    parent = (parent or "").strip().lstrip("/")
+    if not parent:
+        return ""
+    if parent.endswith("/index.md"):
+        return parent[: -len("/index.md")]
+    if parent.endswith(".md"):
+        promote(parent)
+        return parent[:-3]
+    ensure_page(parent)
+    return parent
+
+
 def ensure_parent(abs_path: str) -> None:
-    """Создать папки под abs_path, продвигая страницы, ставшие на пути родителями."""
+    """Создать папки под abs_path — каждую сразу со своей страницей."""
     parts = rel_path(os.path.dirname(abs_path)).split(os.sep)
-    cur = config.WIKI_DIR
+    cur = ""
     for part in parts:
         if part in ("", "."):
             continue
-        cur = os.path.join(cur, part)
-        if os.path.isfile(cur + ".md") and not os.path.isdir(cur):
-            promote(os.path.relpath(cur + ".md", config.WIKI_DIR))
-        os.makedirs(cur, exist_ok=True)
+        cur = f"{cur}/{part}" if cur else part
+        ensure_page(cur)
+
+
+def normalize_pages() -> int:
+    """Разовая починка при старте: папкам без страницы её выдать.
+
+    Папки заводит не только интерфейс — их создаёт агент через Bash, они приезжают
+    из бэкапов. Без этого в дереве всплыла бы «папка», которой в модели нет.
+    """
+    fixed = 0
+    for dirpath, dirnames, _ in os.walk(config.WIKI_DIR):
+        dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
+        for name in dirnames:
+            rel = rel_path(os.path.join(dirpath, name))
+            if not os.path.isfile(os.path.join(dirpath, name, "index.md")):
+                ensure_page(rel)
+                fixed += 1
+    return fixed
 
 
 def move(src_rel: str, dst_rel: str) -> None:
@@ -334,7 +386,6 @@ class WriteReq(BaseModel):
 
 class CreateReq(BaseModel):
     path: str
-    type: str  # "file" | "dir"
 
 
 class RenameReq(BaseModel):
@@ -343,8 +394,13 @@ class RenameReq(BaseModel):
 
 
 class ChildReq(BaseModel):
-    parent: str  # путь родительской страницы или папки; "" — корень вики
+    parent: str  # путь родительской страницы; "" — корень вики
     title: str
+
+
+class ReparentReq(BaseModel):
+    src: str
+    parent: str  # новая родительская страница; "" — корень вики
 
 
 @router.get("/tree")
@@ -401,46 +457,42 @@ async def files_create(req: CreateReq, _: bool = Depends(require_auth)):
     abs_path = safe_path(path)
     if os.path.exists(abs_path):
         raise HTTPException(409, "Уже существует")
-    if req.type == "dir":
-        os.makedirs(abs_path, exist_ok=True)
-    else:
-        ensure_parent(abs_path)
-        with open(abs_path, "w", encoding="utf-8") as f:
-            f.write("")
+    ensure_parent(abs_path)
+    with open(abs_path, "w", encoding="utf-8") as f:
+        f.write("")
     return {"ok": True, "path": path}
 
 
 @router.post("/child")
 async def files_child(req: ChildReq, _: bool = Depends(require_auth)):
-    """Дочерняя страница. Родитель-файл сам становится папкой со своим index.md —
-    слова «index» пользователь не видит никогда."""
+    """Дочерняя страница. Родитель при необходимости сам становится родительским —
+    слова «index» и «папка» пользователь не видит никогда."""
     title = req.title.strip()
     if not title:
         raise HTTPException(400, "Пустой заголовок")
-    parent = (req.parent or "").strip().lstrip("/")
-    promoted = None
-    if parent.endswith("/index.md"):
-        folder = parent[: -len("/index.md")]
-    elif parent.endswith(".md"):
-        if not os.path.isfile(safe_path(parent)):
-            raise HTTPException(404, "Родительская страница не найдена")
-        try:
-            promoted = promote(parent)
-        except ValueError as e:
-            raise HTTPException(409, str(e)) from None
-        folder = parent[:-3]
-    else:
-        folder = parent
-    abs_dir = safe_path(folder)
-    os.makedirs(abs_dir, exist_ok=True)
-    abs_path = free_path(os.path.join(abs_dir, slugify(title) + ".md"))
+    safe_path(req.parent)
+    try:
+        folder = page_folder(req.parent)
+    except ValueError as e:
+        raise HTTPException(409, str(e)) from None
+    abs_path = free_path(os.path.join(safe_path(folder), slugify(title) + ".md"))
     with open(abs_path, "w", encoding="utf-8") as f:
         f.write(f"# {title}\n")
-    return {
-        "ok": True,
-        "path": rel_path(abs_path),
-        "promoted": promoted,
-    }
+    return {"ok": True, "path": rel_path(abs_path)}
+
+
+@router.post("/reparent")
+async def files_reparent(req: ReparentReq, _: bool = Depends(require_auth)):
+    """Перенести страницу под другую страницу (перетаскивание в дереве)."""
+    src_rel = rel_path(safe_path(req.src))
+    safe_path(req.parent)
+    try:
+        folder = page_folder(req.parent)
+        dst_rel = f"{folder}/{os.path.basename(src_rel)}" if folder else os.path.basename(src_rel)
+        move(src_rel, dst_rel)
+    except ValueError as e:
+        raise HTTPException(409, str(e)) from None
+    return {"ok": True, "path": dst_rel}
 
 
 @router.post("/rename")

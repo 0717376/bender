@@ -157,6 +157,61 @@ def test_promote_makes_parent_and_fixes_links(wiki):
     assert "[Timeweb](machines/timeweb/index.md)" in wiki.read("index.md")
 
 
+def test_ensure_page_gives_folder_its_own_page(wiki):
+    """Папок в модели вики нет: у всякой папки есть своя страница."""
+    (wiki.root / "notes").mkdir()
+
+    assert wiki.ensure_page("notes") == "notes/index.md"
+    assert wiki.read("notes/index.md") == "# notes\n"
+
+
+def test_ensure_page_prefers_existing_sibling(wiki):
+    """`timeweb.md` рядом с папкой `timeweb/` — это и есть её страница, а не пустышка."""
+    wiki.write("machines/timeweb.md", "# Timeweb\nсервисы\n")
+    (wiki.root / "machines" / "timeweb").mkdir()
+    wiki.write("machines/timeweb/litellm.md", "# LiteLLM\n")
+
+    assert wiki.ensure_page("machines/timeweb") == "machines/timeweb/index.md"
+    assert wiki.read("machines/timeweb/index.md") == "# Timeweb\nсервисы\n"
+    assert not os.path.exists(wiki.root / "machines" / "timeweb.md")
+
+
+@pytest.mark.parametrize(("parent", "want"), [
+    ("", ""),
+    ("infra", "infra"),
+    ("infra/index.md", "infra"),
+    ("infra/hermes.md", "infra/hermes"),
+])
+def test_page_folder(wiki, parent, want):
+    wiki.write("infra/index.md", "# Инфра\n")
+    wiki.write("infra/hermes.md", "# Hermes\n")
+    assert wiki.page_folder(parent) == want
+
+
+def test_page_folder_promotes_plain_page(wiki):
+    wiki.write("index.md", "# Главная\n[Hermes](infra/hermes.md)\n")
+    wiki.write("infra/hermes.md", "# Hermes\n")
+
+    wiki.page_folder("infra/hermes.md")
+
+    assert wiki.read("infra/hermes/index.md") == "# Hermes\n"
+    assert "[Hermes](infra/hermes/index.md)" in wiki.read("index.md")
+
+
+def test_normalize_pages_fixes_folders_without_a_page(wiki):
+    wiki.write("uchyoba/notes/lекция.md", "# Лекция\n")
+    wiki.write("machines/timeweb.md", "# Timeweb\n")
+    wiki.write("machines/timeweb/litellm.md", "# LiteLLM\n")
+
+    wiki.normalize_pages()
+
+    assert wiki.read("uchyoba/notes/index.md") == "# notes\n"
+    assert wiki.read("machines/timeweb/index.md") == "# Timeweb\n"
+    assert [n.get("page") for n in wiki.build_tree(wiki.config.WIKI_DIR, "")] == [
+        "machines/index.md", "uchyoba/index.md",
+    ]
+
+
 def test_ensure_parent_promotes_page_on_the_way(wiki):
     """Запись ребёнка под обычной страницей делает её родительской."""
     wiki.write("timeweb.md", "# Timeweb\n")
