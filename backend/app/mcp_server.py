@@ -7,7 +7,9 @@ Auth — отдельный bearer-токен (data/mcp_token), независи
 управляется из настроек фронтендов через /api/mcp.
 """
 
+import fnmatch
 import os
+import re
 import secrets
 from urllib.parse import parse_qs
 
@@ -131,36 +133,110 @@ def wiki_write(path: str, text: str) -> dict:
 
 
 @mcp.tool()
-def wiki_search(query: str, limit: int = 20) -> list[dict]:
-    """Поиск по вики (регистронезависимо, по заголовкам и тексту страниц).
-    Возвращает страницы с фрагментами совпавших строк."""
-    q = query.strip().lower()
-    if not q:
-        return []
-    hits: list[dict] = []
-    for dirpath, dirnames, filenames in os.walk(config.WIKI_DIR):
-        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+def wiki_edit(path: str, old_string: str, new_string: str, replace_all: bool = False) -> dict:
+    """Точечная правка страницы: замена точного фрагмента текста (семантика Edit
+    из Claude Code). old_string должен совпадать дословно — включая отступы и
+    переносы строк — и встречаться в файле ровно один раз; если вхождений больше,
+    дай больше окружающего контекста или поставь replace_all=true, чтобы заменить
+    все. Перед правкой прочитай страницу через wiki_read и копируй фрагмент оттуда
+    без изменений."""
+    abs_path = _wiki_abs(path)
+    if not os.path.isfile(abs_path):
+        raise ValueError(f"Страница не найдена: {path}")
+    if old_string == new_string:
+        raise ValueError("old_string и new_string совпадают — менять нечего")
+    with open(abs_path, encoding="utf-8") as f:
+        text = f.read()
+    n = text.count(old_string)
+    if n == 0:
+        raise ValueError("Фрагмент old_string не найден в файле. Он должен совпадать "
+                         "дословно, включая пробелы, отступы и переносы строк — "
+                         "перечитай страницу через wiki_read и скопируй фрагмент точно.")
+    if n > 1 and not replace_all:
+        raise ValueError(f"Фрагмент встречается в файле {n} раз(а). Добавь окружающий "
+                         "контекст, чтобы он стал уникальным, или поставь "
+                         "replace_all=true для замены всех вхождений.")
+    with open(abs_path, "w", encoding="utf-8") as f:
+        f.write(text.replace(old_string, new_string) if replace_all
+                else text.replace(old_string, new_string, 1))
+    return {"ok": True, "path": path, "replacements": n if replace_all else 1}
+
+
+@mcp.tool()
+def wiki_grep(pattern: str, path: str = "", glob: str | None = None,
+              output_mode: str = "files_with_matches", case_insensitive: bool = False,
+              context: int = 0, head_limit: int | None = None,
+              multiline: bool = False) -> dict:
+    """Поиск по вики регулярным выражением (семантика Grep из Claude Code).
+    output_mode: "files_with_matches" (по умолчанию) — только пути страниц;
+    "content" — совпавшие строки как "путь:номер: строка" (context добавляет
+    строки вокруг); "count" — число совпадений на страницу. path — подпапка вики,
+    glob — фильтр по имени файла (напр. "vault/**"). По умолчанию паттерн ищется
+    в пределах одной строки; multiline=true — сквозь переносы (напр. "## Газ[\\s\\S]*?логин").
+    head_limit обрезает выдачу."""
+    if output_mode not in ("files_with_matches", "content", "count"):
+        raise ValueError('output_mode: "files_with_matches" | "content" | "count"')
+    flags = re.IGNORECASE if case_insensitive else 0
+    try:
+        rx = re.compile(pattern, flags)
+    except re.error as e:
+        raise ValueError(f"Некорректное регулярное выражение: {e}") from None
+
+    root = _wiki_abs(path) if path else config.WIKI_DIR
+    files_out: list[str] = []
+    content_out: list[str] = []
+    counts: dict[str, int] = {}
+    done = False
+    for dirpath, dirnames, filenames in os.walk(root):
+        if done:
+            break
+        dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
         for name in sorted(filenames):
             if not name.endswith(".md") or name.startswith("."):
                 continue
             abs_path = os.path.join(dirpath, name)
             rel = os.path.relpath(abs_path, config.WIKI_DIR)
+            if glob and not (fnmatch.fnmatch(rel, glob) or fnmatch.fnmatch(name, glob)):
+                continue
             try:
                 with open(abs_path, encoding="utf-8", errors="ignore") as f:
                     text = f.read()
             except OSError:
                 continue
-            title = files.page_title(abs_path)
-            snippets = [
-                line.strip()[:200]
-                for line in text.splitlines()
-                if q in line.lower()
-            ][:3]
-            if snippets or q in rel.lower() or (title and q in title.lower()):
-                hits.append({"path": rel, "title": title, "snippets": snippets})
-            if len(hits) >= limit:
-                return hits
-    return hits
+            lines = text.splitlines()
+            if multiline:
+                matches = list(rx.finditer(text))
+                hit_lines = sorted({text.count("\n", 0, m.start()) for m in matches})
+            else:
+                hit_lines = [i for i, line in enumerate(lines) if rx.search(line)]
+                matches = hit_lines
+            if not matches:
+                continue
+            if output_mode == "files_with_matches":
+                files_out.append(rel)
+                if head_limit and len(files_out) >= head_limit:
+                    done = True
+                    break
+            elif output_mode == "count":
+                counts[rel] = len(matches)
+            else:
+                shown: set[int] = set()
+                for i in hit_lines:
+                    for j in range(max(0, i - context), min(len(lines), i + context + 1)):
+                        if j not in shown:
+                            shown.add(j)
+                            mark = ":" if j in hit_lines else "-"
+                            content_out.append(f"{rel}:{j + 1}{mark} {lines[j]}")
+                    if head_limit and len(content_out) >= head_limit:
+                        done = True
+                        break
+                if done:
+                    break
+    if output_mode == "files_with_matches":
+        return {"files": files_out}
+    if output_mode == "count":
+        return {"counts": counts, "total": sum(counts.values())}
+    return {"lines": content_out[:head_limit] if head_limit else content_out}
 
 
 # ── Задачи ──
