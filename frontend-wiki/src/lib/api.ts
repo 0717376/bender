@@ -1,4 +1,5 @@
 import { authHeaders, getToken } from './auth'
+import { normalizeTree } from './pageIndex'
 import type { FileNode } from './types'
 
 const API = window.location.origin
@@ -34,7 +35,7 @@ export async function fetchTree(): Promise<FileNode[]> {
   const res = await fetch(API + '/files/tree', { headers: authHeaders() })
   if (!res.ok) throw new Error('tree error')
   const data = await res.json()
-  return data.tree
+  return normalizeTree(data.tree)
 }
 
 export async function fetchFile(path: string): Promise<string> {
@@ -80,16 +81,27 @@ export async function saveFile(path: string, text: string): Promise<void> {
   if (!res.ok) throw new Error('save error')
 }
 
-export async function createNode(path: string, type: 'file' | 'dir'): Promise<void> {
+/** Возвращает фактический путь: имя приводится к латинице на бэкенде. */
+export async function createNode(path: string, type: 'file' | 'dir'): Promise<string> {
   const res = await fetch(API + '/files/create', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify({ path, type }),
   })
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}))
-    throw new Error(data.detail || 'create error')
-  }
+  await ok(res, 'create error')
+  return (await res.json()).path
+}
+
+// Дочерняя страница: если родитель был обычной страницей, бэкенд сам продвинет его
+// в родительскую (x.md → x/index.md) и починит ссылки.
+export async function createChild(parent: string, title: string): Promise<string> {
+  const res = await fetch(API + '/files/child', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ parent, title }),
+  })
+  await ok(res, 'create error')
+  return (await res.json()).path
 }
 
 export async function renameNode(src: string, dst: string): Promise<void> {
@@ -118,12 +130,14 @@ export async function transcribeAudio(blob: Blob): Promise<string | null> {
   return result.text || null
 }
 
-export async function deleteNode(path: string): Promise<void> {
+/** Удаление — перенос в корзину; возвращает путь в ней, чтобы можно было отменить. */
+export async function deleteNode(path: string): Promise<string> {
   const res = await fetch(API + '/files?path=' + encodeURIComponent(path), {
     method: 'DELETE',
     headers: authHeaders(),
   })
-  if (!res.ok) throw new Error('delete error')
+  await ok(res, 'delete error')
+  return (await res.json()).trashed
 }
 
 // ── MCP access for external agents ──

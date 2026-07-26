@@ -4,20 +4,22 @@ import {
   FilePlus2, FolderPlus, Pencil, Trash2, FolderUp, Search, Settings,
 } from 'lucide-react'
 import type { FileNode } from '../lib/types'
-import { createNode, renameNode, deleteNode, fetchFile } from '../lib/api'
+import { pageLabel } from '../lib/pageIndex'
+import { createNode, createChild, renameNode, deleteNode, fetchFile } from '../lib/api'
 import { RowMenu, type MenuItem } from './RowMenu'
 import { useUi } from './Ui'
 import styles from './FileTree.module.css'
 import { t } from '../lib/i18n'
 
-type Creating = { parent: string; type: 'file' | 'dir' } | null
+type NewKind = 'file' | 'dir' | 'child'
+type Creating = { parent: string; type: NewKind } | null
 
 interface TreeCtx {
   selectedPath: string | null
   onSelect: (path: string | null) => void
   creating: Creating
   renaming: string | null
-  startCreate: (parent: string, type: 'file' | 'dir') => void
+  startCreate: (parent: string, type: NewKind) => void
   startRename: (path: string) => void
   submitCreate: (name: string) => void
   submitRename: (node: FileNode, name: string) => void
@@ -54,7 +56,7 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings, 
   const [dragging, setDragging] = useState(false)
   const dragPathRef = useRef<string | null>(null)
 
-  const startCreate = (parent: string, type: 'file' | 'dir') => {
+  const startCreate = (parent: string, type: NewKind) => {
     setRenaming(null)
     setCreating({ parent, type })
   }
@@ -66,14 +68,20 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings, 
 
   const submitCreate = async (name: string) => {
     if (!creating || !name) { cancel(); return }
-    let leaf = name
-    if (creating.type === 'file' && !leaf.endsWith('.md')) leaf += '.md'
-    const path = join(creating.parent, leaf)
+    const { parent, type } = creating
     cancel()
     try {
-      await createNode(path, creating.type)
+      if (type === 'child') {
+        // Родитель-страница станет папкой со своим index.md — это делает бэкенд.
+        onSelect(await createChild(parent, name))
+        onChanged()
+        return
+      }
+      let leaf = name
+      if (type === 'file' && !leaf.endsWith('.md')) leaf += '.md'
+      const path = await createNode(join(parent, leaf), type)
       onChanged()
-      if (creating.type === 'file') onSelect(path)
+      if (type === 'file') onSelect(path)
     } catch (e) {
       notify((e as Error).message, 'error')
     }
@@ -93,13 +101,22 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings, 
   }
 
   const remove = async (node: FileNode) => {
-    const ok = await ask(node.type === 'dir' ? t('deleteFolderQ') : t('deletePageQ'), node.path)
+    const branch = node.type === 'dir' && !!node.children?.length
+    const ok = await ask(branch ? t('deleteFolderQ') : t('deletePageQ'), node.path)
     if (!ok) return
     try {
-      await deleteNode(node.path)
+      const trashed = await deleteNode(node.path)
       onChanged()
       // Удалили то, что открыто, — иначе в центре осталась бы страница-призрак.
       if (selectedPath === node.path || selectedPath?.startsWith(node.path + '/')) onSelect(null)
+      notify(t('deleted'), 'info', {
+        label: t('undo'),
+        run: () => {
+          renameNode(trashed, node.path)
+            .then(onChanged)
+            .catch(e => notify((e as Error).message, 'error'))
+        },
+      })
     } catch (e) {
       notify((e as Error).message, 'error')
     }
@@ -198,7 +215,7 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings, 
       >
         {creating?.parent === '' && (
           <InlineInput
-            type={creating.type}
+            kind={creating.type}
             icon={creating.type === 'dir' ? <Folder size={15} /> : <FileText size={15} />}
             onSubmit={submitCreate}
             onCancel={cancel}
@@ -231,25 +248,29 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings, 
 function TreeNode({ node, ctx }: { node: FileNode; ctx: TreeCtx }) {
   const [open, setOpen] = useState(false) // folders start collapsed
   const isDir = node.type === 'dir'
-  const isSelected = !isDir && node.path === ctx.selectedPath
+  // Узел — страница, если у него есть page (папка с index.md — тоже страница, только
+  // с детьми): строка открывает её, шеврон разворачивает детей.
+  const pagePath = node.page ?? null
+  const isSelected = !!pagePath && pagePath === ctx.selectedPath
 
   // Страницу могли открыть мимо дерева (прямая ссылка, поиск, чат) — раскрываем
   // папки по пути к ней, иначе непонятно, где ты находишься.
   const onPath = isDir && !!ctx.selectedPath?.startsWith(node.path + '/')
   useEffect(() => { if (onPath) setOpen(true) }, [onPath])
 
-  const beginCreate = (type: 'file' | 'dir') => {
+  const beginCreate = (type: NewKind) => {
     setOpen(true)
-    ctx.startCreate(node.path, type)
+    ctx.startCreate(type === 'child' && pagePath ? pagePath : node.path, type)
   }
 
   const menu: MenuItem[] = [
+    { icon: <FilePlus2 size={14} />, label: t('newChild'), onClick: () => beginCreate('child') },
     ...(isDir ? [
-      { icon: <FilePlus2 size={14} />, label: t('newPageHere'), onClick: () => beginCreate('file') },
       { icon: <FolderPlus size={14} />, label: t('newFolderHere'), onClick: () => beginCreate('dir') },
-    ] : [
-      { icon: <Download size={14} />, label: t('download'), onClick: () => ctx.download(node.path) },
-    ]),
+    ] : []),
+    ...(pagePath ? [
+      { icon: <Download size={14} />, label: t('download'), onClick: () => ctx.download(pagePath) },
+    ] : []),
     { icon: <Pencil size={14} />, label: t('rename'), onClick: () => ctx.startRename(node.path) },
     { icon: <Trash2 size={14} />, label: t('delete'), danger: true, onClick: () => ctx.remove(node) },
   ]
@@ -257,9 +278,9 @@ function TreeNode({ node, ctx }: { node: FileNode; ctx: TreeCtx }) {
   if (ctx.renaming === node.path) {
     return (
       <InlineInput
-        type={node.type}
+        kind={isDir ? 'dir' : 'file'}
         initial={baseOf(node.path)}
-        icon={isDir ? <Folder size={15} /> : <FileText size={15} />}
+        icon={isDir && !node.page ? <Folder size={15} /> : <FileText size={15} />}
         onSubmit={(name) => ctx.submitRename(node, name)}
         onCancel={ctx.cancel}
       />
@@ -274,6 +295,9 @@ function TreeNode({ node, ctx }: { node: FileNode; ctx: TreeCtx }) {
       }
     : {}
 
+  const hasKids = isDir && !!node.children?.length
+  const creatingHere = ctx.creating?.parent === node.path || ctx.creating?.parent === pagePath
+
   return (
     <div className={styles.node} {...dirDnd}>
       <div
@@ -281,9 +305,12 @@ function TreeNode({ node, ctx }: { node: FileNode; ctx: TreeCtx }) {
         draggable
         onDragStart={(e) => ctx.onDragStart(e, node.path)}
         onDragEnd={ctx.onDragEnd}
-        onClick={() => (isDir ? setOpen(o => !o) : ctx.onSelect(node.path))}
+        onClick={() => (pagePath ? ctx.onSelect(pagePath) : setOpen(o => !o))}
       >
-        <span className={styles.chevron}>
+        <span
+          className={styles.chevron}
+          onClick={(e) => { if (isDir) { e.stopPropagation(); setOpen(o => !o) } }}
+        >
           {isDir && (
             <ChevronRight
               size={14}
@@ -292,22 +319,24 @@ function TreeNode({ node, ctx }: { node: FileNode; ctx: TreeCtx }) {
           )}
         </span>
         <span className={styles.fileIcon}>
-          {isDir ? (open ? <FolderOpen size={15} /> : <Folder size={15} />) : <FileText size={15} />}
+          {isDir && !node.page
+            ? (open ? <FolderOpen size={15} /> : <Folder size={15} />)
+            : <FileText size={15} />}
         </span>
-        <span className={styles.name}>{isDir ? node.name : node.title || node.name.replace(/\.md$/, '')}</span>
+        <span className={styles.name}>{node.title || pageLabel(node.path)}</span>
         <RowMenu items={menu} className={styles.dots} />
       </div>
-      {isDir && open && (
+      {(creatingHere || (hasKids && open)) && (
         <div className={styles.children}>
-          {ctx.creating?.parent === node.path && (
+          {creatingHere && (
             <InlineInput
-              type={ctx.creating.type}
-              icon={ctx.creating.type === 'dir' ? <Folder size={15} /> : <FileText size={15} />}
+              kind={ctx.creating!.type}
+              icon={ctx.creating!.type === 'dir' ? <Folder size={15} /> : <FileText size={15} />}
               onSubmit={ctx.submitCreate}
               onCancel={ctx.cancel}
             />
           )}
-          {node.children?.map(child => (
+          {open && node.children?.map(child => (
             <TreeNode key={child.path} node={child} ctx={ctx} />
           ))}
         </div>
@@ -317,14 +346,20 @@ function TreeNode({ node, ctx }: { node: FileNode; ctx: TreeCtx }) {
 }
 
 interface InlineInputProps {
-  type: 'file' | 'dir'
+  kind: NewKind
   initial?: string
   icon: React.ReactNode
   onSubmit: (name: string) => void
   onCancel: () => void
 }
 
-function InlineInput({ type, initial = '', icon, onSubmit, onCancel }: InlineInputProps) {
+const PLACEHOLDER: Record<NewKind, 'folderName' | 'pageName' | 'childName'> = {
+  dir: 'folderName',
+  file: 'pageName',
+  child: 'childName',
+}
+
+function InlineInput({ kind, initial = '', icon, onSubmit, onCancel }: InlineInputProps) {
   const [value, setValue] = useState(initial)
   const doneRef = useRef(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -355,7 +390,7 @@ function InlineInput({ type, initial = '', icon, onSubmit, onCancel }: InlineInp
         className={styles.inlineInput}
         value={value}
         spellCheck={false}
-        placeholder={type === 'dir' ? t('folderName') : t('pageName')}
+        placeholder={t(PLACEHOLDER[kind])}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter') { e.preventDefault(); finish(true) }

@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { markLinks, renderMarkdown, resolveWikiPath, slugify, toggleTask } from './markdown'
+import type { PageIndex } from './pageIndex'
+
+// Указатель страниц с разрешением по имени файла — большего этим тестам не нужно.
+const index = (...paths: string[]): PageIndex => ({
+  paths: new Set(paths),
+  resolve: (name) =>
+    paths.find(p => p === name || p === `${name}.md` || p.endsWith(`/${name}.md`)) ?? null,
+})
 
 describe('slugify', () => {
   it('делает якорь из кириллицы', () => {
@@ -73,7 +81,7 @@ describe('markLinks', () => {
 
   it('помечает ссылку на несуществующую страницу', () => {
     const root = render('<a href="нет.md">нет</a>')
-    markLinks(root, 'index.md', new Set(['index.md']), 'нет такой')
+    markLinks(root, 'index.md', index('index.md'), 'нет такой')
     const a = root.querySelector('a')!
     expect(a.dataset.dead).toBe('')
     expect(a.title).toBe('нет такой')
@@ -87,8 +95,8 @@ describe('markLinks', () => {
 
   it('снимает пометку, когда страница появилась', () => {
     const root = render('<a href="есть.md">есть</a>')
-    markLinks(root, 'index.md', new Set(['index.md']), 'нет такой')
-    markLinks(root, 'index.md', new Set(['index.md', 'есть.md']), 'нет такой')
+    markLinks(root, 'index.md', index('index.md'), 'нет такой')
+    markLinks(root, 'index.md', index('index.md', 'есть.md'), 'нет такой')
     const a = root.querySelector('a')!
     expect(a.dataset.dead).toBeUndefined()
     expect(a.hasAttribute('title')).toBe(false)
@@ -96,7 +104,7 @@ describe('markLinks', () => {
 
   it('внешние ссылки открывает в новой вкладке', () => {
     const root = render('<a href="https://example.com">тык</a>')
-    markLinks(root, 'index.md', new Set(), 'нет такой')
+    markLinks(root, 'index.md', index(), 'нет такой')
     const a = root.querySelector('a')!
     expect(a.dataset.ext).toBe('')
     expect(a.target).toBe('_blank')
@@ -105,7 +113,54 @@ describe('markLinks', () => {
 
   it('не трогает якоря и ссылки в хранилище', () => {
     const root = render('<a href="#раздел">я</a><a href="storage:Док/скан.pdf">файл</a>')
-    markLinks(root, 'index.md', new Set(), 'нет такой')
+    markLinks(root, 'index.md', index(), 'нет такой')
     root.querySelectorAll('a').forEach(a => expect(a.dataset.dead).toBeUndefined())
+  })
+})
+
+describe('ссылки по имени', () => {
+  const doc = (md: string) => {
+    const root = document.createElement('div')
+    root.innerHTML = renderMarkdown(md)
+    return root
+  }
+
+  it('подставляет адрес найденной страницы', () => {
+    const root = doc('см. [[litellm]]')
+    markLinks(root, 'infra/index.md', index('infra/litellm.md'), 'нет такой')
+    const a = root.querySelector('a')!
+    expect(a.getAttribute('href')).toBe('/infra/litellm.md')
+    expect(a.textContent).toBe('litellm')
+    expect(a.dataset.dead).toBeUndefined()
+  })
+
+  it('уважает подпись и якорь', () => {
+    const root = doc('[[litellm#доступ|наш прокси]]')
+    markLinks(root, 'index.md', index('litellm.md'), 'нет такой')
+    const a = root.querySelector('a')!
+    expect(a.textContent).toBe('наш прокси')
+    expect(a.getAttribute('href')).toBe('/litellm.md#' + encodeURIComponent('доступ'))
+  })
+
+  it('помечает битой, когда такой страницы нет', () => {
+    const root = doc('[[нетути]]')
+    markLinks(root, 'index.md', index('index.md'), 'нет такой')
+    expect(root.querySelector('a')!.dataset.dead).toBe('')
+  })
+
+  it('оживает, когда страница появилась', () => {
+    const root = doc('[[litellm]]')
+    markLinks(root, 'index.md', index('index.md'), 'нет такой')
+    markLinks(root, 'index.md', index('index.md', 'litellm.md'), 'нет такой')
+    const a = root.querySelector('a')!
+    expect(a.dataset.dead).toBeUndefined()
+    expect(a.getAttribute('href')).toBe('/litellm.md')
+  })
+
+  it('внутри кода остаётся текстом', () => {
+    const root = doc('`[[litellm]]` и\n\n```\n[[kuma]]\n```\n')
+    expect(root.querySelectorAll('a')).toHaveLength(0)
+    expect(root.textContent).toContain('[[litellm]]')
+    expect(root.textContent).toContain('[[kuma]]')
   })
 })

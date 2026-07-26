@@ -84,6 +84,21 @@
     text-overflow: ellipsis;
 }
 
+.crumbLink {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.crumbLink:hover {
+    color: var(--text);
+}
+
 .crumbSep {
     margin: 0 7px;
     color: var(--text-3);

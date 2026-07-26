@@ -9,6 +9,8 @@ import asyncio
 import json
 import logging
 import os
+import re
+import shlex
 import time
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
@@ -224,6 +226,56 @@ def _surface_nudge_hook(surface: str):
     return hook
 
 
+# У Bash рабочая директория — корень вики, так что `rm` стирает страницы мимо корзины
+# и мимо всякой отмены. Просьбы в промпте тут мало: запрещаем жёстко, оставляя
+# временные файлы вне вики и хранилища.
+TEMP_DIRS = ("/tmp/", "/var/tmp/", "/var/folders/")
+# Слова, за которыми команда продолжается: `sudo rm`, `find … -exec rm`.
+RUNNERS = ("sudo", "env", "time", "nohup", "xargs")
+
+
+def _rm_args(cmd: str) -> list[str] | None:
+    """Что именно стирает команда. None — rm в ней нет (например, это аргумент grep)."""
+    args: list[str] = []
+    found = False
+    for segment in re.split(r"[;&|\n]+", cmd):
+        try:
+            tokens = shlex.split(segment)
+        except ValueError:
+            tokens = segment.split()
+        starts = []
+        head = 0
+        while head < len(tokens) and tokens[head] in RUNNERS:
+            head += 1
+        if head < len(tokens) and tokens[head] == "rm":
+            starts.append(head)
+        starts += [i + 1 for i, tok in enumerate(tokens[:-1])
+                   if tok in ("-exec", "-execdir") and tokens[i + 1] == "rm"]
+        for start in starts:
+            found = True
+            args += [t for t in tokens[start + 1:]
+                     if not t.startswith("-") and t not in ("{}", "+", ";")]
+    return args if found else None
+
+
+async def _no_rm_hook(input_data, tool_use_id, context):  # noqa: ARG001 — SDK callback signature
+    cmd = (input_data.get("tool_input") or {}).get("command", "")
+    args = _rm_args(cmd)
+    if args is None or (args and all(a.startswith(TEMP_DIRS) for a in args)):
+        return {}
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": (
+                "rm запрещён: удаление должно быть отменяемым. Перемести в корзину — "
+                f"страницу вики в {config.WIKI_TRASH}/ (рядом с корнем вики), файл "
+                f"хранилища в {config.FILES_DIR}/{config.FILES_TRASH}/."
+            ),
+        }
+    }
+
+
 def build_options(resume: str | None, surface: str = "wiki", interactive: bool = True,
                   extra_context: str | None = None) -> ClaudeAgentOptions:
     # Tasks, skills (read+author), memory-read injection and subagents (Task) are always
@@ -237,8 +289,10 @@ def build_options(resume: str | None, surface: str = "wiki", interactive: bool =
     # Domain skills (wiki/tasks) are native SDK Skills loaded from our plugin dir. The Skill
     # tool is auto-added by the SDK when skills are enabled. A per-surface hook nudges the
     # domain frontends toward the right skill; Telegram gets none (model self-selects).
-    hook = _surface_nudge_hook(surface)
-    hooks = {"UserPromptSubmit": [HookMatcher(hooks=[hook])]} if hook else None
+    hooks: dict = {"PreToolUse": [HookMatcher(matcher="Bash", hooks=[_no_rm_hook])]}
+    nudge = _surface_nudge_hook(surface)
+    if nudge:
+        hooks["UserPromptSubmit"] = [HookMatcher(hooks=[nudge])]
     # Enable ONLY our own skills by name — NOT "all". The mounted host ~/.claude carries the
     # official Claude plugin marketplace (code-review, deep-research, run, loop, …); skills="all"
     # would expose all of those. An explicit allow-list keeps the assistant self-contained:

@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { FolderTree, FileText, Sparkles, BookOpen, HardDrive, TriangleAlert } from 'lucide-react'
-import type { FileNode } from '../lib/types'
+import type { Crumb, FileNode } from '../lib/types'
 import type { ChatContext } from '../hooks/useWebSocket'
 import { fetchTree, storageTree, subscribeFiles } from '../lib/api'
+import { buildIndex, pageLabel } from '../lib/pageIndex'
 import { parseHash, hashFor } from '../lib/route'
 import { clearToken } from '../lib/auth'
 import { FileTree } from './FileTree'
@@ -22,17 +23,23 @@ interface WikiAppProps {
 type Pane = 'tree' | 'content' | 'chat'
 type Section = 'wiki' | 'files'
 
-function collectPaths(nodes: FileNode[], into: Set<string>): Set<string> {
-  for (const n of nodes) {
-    into.add(n.path)
-    if (n.children) collectPaths(n.children, into)
+// Цепочка родителей до открытой страницы — с их заголовками, а не именами папок.
+function trailFor(nodes: FileNode[], path: string): Crumb[] {
+  const out: Crumb[] = []
+  let level: FileNode[] = nodes
+  for (;;) {
+    const node = level.find(n => n.type === 'dir' && path.startsWith(n.path + '/'))
+    if (!node) break
+    if (node.page !== path) out.push({ title: node.title || pageLabel(node.path), page: node.page })
+    level = node.children ?? []
   }
-  return into
+  return out
 }
 
+// Родительская страница живёт в index.md своей папки, поэтому ищем и по нему.
 function findNode(nodes: FileNode[], path: string): FileNode | null {
   for (const n of nodes) {
-    if (n.path === path) return n
+    if (n.path === path || n.page === path) return n
     if (n.children && path.startsWith(n.path + '/')) {
       const hit = findNode(n.children, path)
       if (hit) return hit
@@ -68,6 +75,8 @@ export function WikiApp({ onLogout }: WikiAppProps) {
   openPathRef.current = selectedPath
 
   const nodes = tree ?? []
+  const treeRef = useRef<FileNode[]>(nodes)
+  treeRef.current = nodes
 
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 760px)')
@@ -104,14 +113,17 @@ export function WikiApp({ onLogout }: WikiAppProps) {
   // Tapping a file in the tree opens it and slides to the content pane on mobile.
   // Путь открытой страницы держим в адресе: перезагрузка и «назад» работают.
   const selectPath = useCallback((p: string | null, to = '') => {
-    setSelectedPath(p)
+    // Ссылка могла указать на папку-родителя — открываем её собственную страницу.
+    const node = p ? findNode(treeRef.current, p) : null
+    const path = node?.page && node.path === p ? node.page : p
+    setSelectedPath(path)
     setAnchor(to)
     setPane('content')
     const cur = parseHash()
-    if (!p) {
+    if (!path) {
       if (cur.path) history.replaceState(null, '', location.pathname + location.search)
-    } else if (cur.path !== p || cur.anchor !== to) {
-      location.hash = hashFor(p, to)
+    } else if (cur.path !== path || cur.anchor !== to) {
+      location.hash = hashFor(path, to)
     }
   }, [])
 
@@ -129,7 +141,11 @@ export function WikiApp({ onLogout }: WikiAppProps) {
     return () => window.removeEventListener('hashchange', apply)
   }, [])
 
-  const pages = useMemo(() => (tree ? collectPaths(tree, new Set<string>()) : null), [tree])
+  const index = useMemo(() => (tree ? buildIndex(tree) : null), [tree])
+  const trail = useMemo(
+    () => (selectedPath ? trailFor(nodes, selectedPath) : []),
+    [nodes, selectedPath],
+  )
 
   const getContext = useCallback((): ChatContext => ({
     path: selectedPath,
@@ -161,13 +177,19 @@ export function WikiApp({ onLogout }: WikiAppProps) {
   useEffect(() => {
     return subscribeFiles(ev => {
       if (ev.pages.length) {
-        reloadTree()
         const open = openPathRef.current
+        reloadTree().then(() => {
+          // Открытую страницу могли продвинуть в родительскую (x.md → x/index.md):
+          // идём за ней, иначе на экране осталась бы ошибка «страница не найдена».
+          if (!open || findNode(treeRef.current, open)) return
+          const promoted = open.replace(/\.md$/, '/index.md')
+          if (findNode(treeRef.current, promoted)) selectPath(promoted)
+        })
         if (open && ev.pages.includes(open)) contentRef.current?.reload()
       }
       if (ev.storage) reloadStorage()
     })
-  }, [reloadTree, reloadStorage])
+  }, [reloadTree, reloadStorage, selectPath])
 
   // Подстраховка на случай, когда поток простоял мёртвым (ноутбук спал, сеть отваливалась).
   useEffect(() => {
@@ -270,7 +292,8 @@ export function WikiApp({ onLogout }: WikiAppProps) {
             title={selectedPath ? findNode(nodes, selectedPath)?.title : undefined}
             mtime={selectedPath ? findNode(nodes, selectedPath)?.mtime : undefined}
             anchor={anchor}
-            pages={pages}
+            index={index}
+            trail={trail}
             onSelectionChange={setSelText}
             onNavigate={selectPath}
             onBack={() => setPane('tree')}

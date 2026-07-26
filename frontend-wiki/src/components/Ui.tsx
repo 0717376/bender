@@ -6,8 +6,13 @@ import { t } from '../lib/i18n'
 
 // Нативные alert/confirm выпадали из оформления и блокировали поток; здесь тот же
 // контракт (сообщение и вопрос «да/нет»), но своими компонентами.
+export interface ToastAction {
+  label: string
+  run: () => void
+}
+
 interface Ui {
-  notify: (text: string, kind?: 'info' | 'error') => void
+  notify: (text: string, kind?: 'info' | 'error', action?: ToastAction) => void
   ask: (question: string, detail?: string) => Promise<boolean>
 }
 
@@ -19,6 +24,7 @@ interface Toast {
   id: number
   text: string
   kind: 'info' | 'error'
+  action?: ToastAction
 }
 
 interface Question {
@@ -34,11 +40,15 @@ export function UiProvider({ children }: { children: React.ReactNode }) {
   const [ask, setAsk] = useState<Question | null>(null)
   const nextId = useRef(1)
 
-  const notify = useCallback((text: string, kind: 'info' | 'error' = 'info') => {
-    const id = nextId.current++
-    setToasts(list => [...list, { id, text, kind }])
-    setTimeout(() => setToasts(list => list.filter(x => x.id !== id)), LIFETIME_MS)
+  const drop = useCallback((id: number) => {
+    setToasts(list => list.filter(x => x.id !== id))
   }, [])
+
+  const notify = useCallback((text: string, kind: 'info' | 'error' = 'info', action?: ToastAction) => {
+    const id = nextId.current++
+    setToasts(list => [...list, { id, text, kind, action }])
+    setTimeout(() => drop(id), LIFETIME_MS)
+  }, [drop])
 
   const askFn = useCallback((question: string, detail?: string) => {
     return new Promise<boolean>(resolve => setAsk({ question, detail, resolve }))
@@ -59,6 +69,14 @@ export function UiProvider({ children }: { children: React.ReactNode }) {
             <div key={x.id} className={styles.toast} data-kind={x.kind}>
               {x.kind === 'error' && <TriangleAlert size={14} strokeWidth={2.2} />}
               <span>{x.text}</span>
+              {x.action && (
+                <button
+                  className={styles.undo}
+                  onClick={() => { drop(x.id); x.action!.run() }}
+                >
+                  {x.action.label}
+                </button>
+              )}
             </div>
           ))}
         </div>,

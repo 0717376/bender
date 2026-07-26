@@ -1,7 +1,8 @@
-import { marked, type Tokens } from 'marked'
+import { marked, type Tokens, type TokenizerAndRendererExtension } from 'marked'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
 import { t } from './i18n'
+import type { PageIndex } from './pageIndex'
 
 const renderer = new marked.Renderer()
 
@@ -33,8 +34,33 @@ renderer.heading = function (token: Tokens.Heading) {
   return `<h${token.depth} id="${n === 1 ? base : `${base}-${n}`}">${html}</h${token.depth}>`
 }
 
+// `[[имя]]` и `[[имя|подпись]]` — ссылка по имени страницы, а не по пути. Куда она
+// ведёт, решает markLinks: указатель страниц приезжает своим темпом и меняется при
+// каждой правке, а перерисовывать из-за него документ незачем.
+const wikilink: TokenizerAndRendererExtension = {
+  name: 'wikilink',
+  level: 'inline',
+  start: (src: string) => src.indexOf('[['),
+  tokenizer(src: string) {
+    const m = /^\[\[([^[\]|]+?)(?:\|([^[\]]+?))?\]\]/.exec(src)
+    if (!m) return undefined
+    return {
+      type: 'wikilink',
+      raw: m[0],
+      target: m[1].trim(),
+      label: (m[2] ?? '').trim(),
+    }
+  },
+  renderer(token) {
+    const target = String(token.target)
+    const label = escapeHtml(String(token.label) || target.split('#')[0])
+    return `<a data-wiki="${escapeHtml(target)}" href="#">${label}</a>`
+  },
+}
+
 marked.use({
   renderer,
+  extensions: [wikilink],
   breaks: true,
   gfm: true,
 })
@@ -94,34 +120,51 @@ export function escapeHtml(str: string): string {
   return d.innerHTML
 }
 
+const encodePath = (p: string) => '/' + p.split('/').map(encodeURIComponent).join('/')
+
 // Внутренние ссылки помечаем «битыми», если такой страницы нет в дереве, внешние —
-// стрелкой. Обработку кликов делает ContentPane, здесь только разметка.
-// pages = null означает «дерево ещё не загружено»: это не повод объявлять все
+// стрелкой. Ссылки по имени (`[[имя]]`) здесь же получают адрес. Обработку кликов
+// делает ContentPane, здесь только разметка.
+// index = null означает «дерево ещё не загружено»: это не повод объявлять все
 // ссылки битыми, поэтому просто ничего не судим до его приезда.
 export function markLinks(
   root: HTMLElement,
   currentPath: string | null,
-  pages: Set<string> | null,
+  index: PageIndex | null,
   missingLabel: string,
 ): void {
-  root.querySelectorAll<HTMLAnchorElement>('a[href]').forEach(a => {
-    const href = a.getAttribute('href') || ''
-    if (href.startsWith('storage:') || href.startsWith('#')) return
-    const target = resolveWikiPath(currentPath, href)
-    if (target === null) {
-      a.dataset.ext = ''
-      a.target = '_blank'
-      a.rel = 'noopener noreferrer'
-      return
+  root.querySelectorAll<HTMLAnchorElement>('a[href], a[data-wiki]').forEach(a => {
+    const name = a.dataset.wiki
+    let target: string | null
+    if (name !== undefined) {
+      // Ссылка по имени: адрес у неё появляется только здесь, когда есть указатель.
+      const [page, anchor] = name.split('#')
+      target = index ? index.resolve(page, currentPath) : null
+      if (!index) return
+      a.setAttribute(
+        'href',
+        target ? encodePath(target) + (anchor ? '#' + encodeURIComponent(anchor) : '') : '#',
+      )
+    } else {
+      const href = a.getAttribute('href') || ''
+      if (href.startsWith('storage:') || href.startsWith('#')) return
+      target = resolveWikiPath(currentPath, href)
+      if (target === null) {
+        a.dataset.ext = ''
+        a.target = '_blank'
+        a.rel = 'noopener noreferrer'
+        return
+      }
+      if (!index) return
+      target = index.paths.has(target) ? target : null
     }
     // Проходов может быть несколько (дерево обновилось) — снимаем прошлый вердикт.
-    const dead = !!target && pages !== null && !pages.has(target)
-    if (dead) {
-      a.dataset.dead = ''
-      a.title = missingLabel
-    } else {
+    if (target) {
       delete a.dataset.dead
       if (a.title === missingLabel) a.removeAttribute('title')
+    } else {
+      a.dataset.dead = ''
+      a.title = missingLabel
     }
   })
 }
