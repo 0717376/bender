@@ -19,6 +19,14 @@ export interface FileNode {
   children?: FileNode[]
   size?: number
   mtime?: number
+  /** У страницы с детьми path — папка, а сама страница (её index.md) здесь. */
+  page?: string
+}
+
+/** Хлебная крошка: заголовок родителя и его страница, если она есть. */
+export interface Crumb {
+  title: string
+  page?: string
 }
 
 export const TOOL_LABELS: Record<string, string> = {

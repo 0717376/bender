@@ -1,0 +1,188 @@
+"""Иерархия страниц вики: имена файлов, продвижение в родителя, ссылки, корзина."""
+
+import os
+import sys
+
+import pytest
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+class Wiki:
+    """Вики на диске: обращения проксируются в files.py, плюс write/read для фикстур."""
+
+    def __init__(self, root, module):
+        self.root = root
+        self._module = module
+
+    def __getattr__(self, name):
+        return getattr(self._module, name)
+
+    def write(self, rel: str, text: str = "# страница\n") -> str:
+        path = self.root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        return rel
+
+    def read(self, rel: str) -> str:
+        return (self.root / rel).read_text(encoding="utf-8")
+
+
+@pytest.fixture
+def wiki(tmp_path, monkeypatch):
+    from app import config, files
+
+    monkeypatch.setattr(config, "WIKI_DIR", str(tmp_path))
+    return Wiki(tmp_path, files)
+
+
+# ── Имена файлов ──
+
+@pytest.mark.parametrize(("raw", "want"), [
+    ("Гига-VPN", "giga-vpn"),
+    ("Персона ассистента", "persona-assistenta"),
+    ("home-network", "home-network"),
+    ("Что где живёт?", "chto-gde-zhivet"),
+    ("  Ёлки   и  Палки  ", "elki-i-palki"),
+    ("Résumé", "resume"),
+    ("", "page"),
+    ("???", "page"),
+])
+def test_slugify(wiki, raw, want):
+    assert wiki.slugify(raw) == want
+
+
+def test_slugify_idempotent(wiki):
+    once = wiki.slugify("Гига-VPN 2.0")
+    assert wiki.slugify(once) == once
+
+
+def test_slug_path_keeps_existing_file(wiki):
+    """Иначе запись в кириллическую страницу плодила бы её латинского двойника."""
+    wiki.write("Персона ассистента.md")
+    assert wiki.slug_path("Персона ассистента.md") == "Персона ассистента.md"
+
+
+def test_slug_path_normalizes_new_page(wiki):
+    assert wiki.slug_path("Инфра/Машины/Гига-VPN.md") == "infra/mashiny/giga-vpn.md"
+
+
+def test_rel_path_survives_symlinked_root(tmp_path, monkeypatch):
+    """Корень вики бывает симлинком (/tmp → /private/tmp) — иначе путь уезжает в «../..»."""
+    from app import config, files
+
+    real = tmp_path / "real"
+    real.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(real)
+    monkeypatch.setattr(config, "WIKI_DIR", str(link))
+
+    assert files.rel_path(str(link / "infra" / "hermes.md")) == "infra/hermes.md"
+
+
+# ── Дерево ──
+
+def test_tree_collapses_index(wiki):
+    wiki.write("infra/index.md", "# Инфраструктура\n")
+    wiki.write("infra/hermes.md", "# Hermes\n")
+    tree = wiki.build_tree(wiki.config.WIKI_DIR, "")
+
+    (node,) = tree
+    assert node["path"] == "infra"
+    assert node["page"] == "infra/index.md"
+    assert node["title"] == "Инфраструктура"
+    assert [c["path"] for c in node["children"]] == ["infra/hermes.md"]
+
+
+def test_tree_keeps_plain_folder_without_index(wiki):
+    wiki.write("misc/note.md")
+    (node,) = wiki.build_tree(wiki.config.WIKI_DIR, "")
+    assert "page" not in node
+
+
+def test_tree_keeps_root_index(wiki):
+    """index.md в корне вики — обычная страница, схлопывать её не с чем."""
+    wiki.write("index.md", "# Главная\n")
+    assert [n["path"] for n in wiki.build_tree(wiki.config.WIKI_DIR, "")] == ["index.md"]
+
+
+# ── Ссылки ──
+
+def test_move_fixes_inbound_links(wiki):
+    wiki.write("infra/index.md", "# Инфра\nСмотри [Timeweb](machines/timeweb.md).\n")
+    wiki.write("infra/machines/timeweb.md", "# Timeweb\n")
+
+    wiki.move("infra/machines/timeweb.md", "infra/cloud/timeweb.md")
+
+    assert "[Timeweb](cloud/timeweb.md)" in wiki.read("infra/index.md")
+
+
+def test_move_fixes_links_inside_moved_page(wiki):
+    """У переехавшей страницы сменилась папка — её собственные ссылки тоже врут."""
+    wiki.write("infra/machines/timeweb.md", "# Timeweb\nСеть: [дом](../home-network.md)\n")
+    wiki.write("infra/home-network.md", "# Дом\n")
+
+    wiki.move("infra/machines/timeweb.md", "timeweb.md")
+
+    assert "[дом](infra/home-network.md)" in wiki.read("timeweb.md")
+
+
+def test_move_keeps_anchor_and_external_links(wiki):
+    wiki.write("a.md", "# A\n[раздел](b.md#доступ) и [сайт](https://example.com/b.md)\n")
+    wiki.write("b.md", "# B\n")
+
+    wiki.move("b.md", "sub/b.md")
+
+    text = wiki.read("a.md")
+    assert "[раздел](sub/b.md#доступ)" in text
+    assert "[сайт](https://example.com/b.md)" in text
+
+
+def test_move_folder_fixes_links_to_children(wiki):
+    wiki.write("index.md", "# Главная\n[LiteLLM](infra/litellm.md)\n")
+    wiki.write("infra/litellm.md", "# LiteLLM\n")
+
+    wiki.move("infra", "cloud")
+
+    assert "[LiteLLM](cloud/litellm.md)" in wiki.read("index.md")
+
+
+# ── Родительские страницы ──
+
+def test_promote_makes_parent_and_fixes_links(wiki):
+    wiki.write("index.md", "# Главная\n[Timeweb](machines/timeweb.md)\n")
+    wiki.write("machines/timeweb.md", "# Timeweb\n")
+
+    assert wiki.promote("machines/timeweb.md") == "machines/timeweb/index.md"
+    assert "[Timeweb](machines/timeweb/index.md)" in wiki.read("index.md")
+
+
+def test_ensure_parent_promotes_page_on_the_way(wiki):
+    """Запись ребёнка под обычной страницей делает её родительской."""
+    wiki.write("timeweb.md", "# Timeweb\n")
+
+    wiki.ensure_parent(os.path.join(wiki.config.WIKI_DIR, "timeweb", "litellm.md"))
+
+    assert os.path.isfile(os.path.join(wiki.config.WIKI_DIR, "timeweb", "index.md"))
+    assert not os.path.exists(os.path.join(wiki.config.WIKI_DIR, "timeweb.md"))
+
+
+# ── Корзина ──
+
+def test_delete_goes_to_trash_and_can_be_restored(wiki):
+    wiki.write("note.md", "# Заметка\n")
+
+    trashed = wiki.to_trash("note.md")
+
+    assert trashed.startswith(wiki.TRASH + "/")
+    assert not os.path.exists(os.path.join(wiki.config.WIKI_DIR, "note.md"))
+    wiki.move(trashed, "note.md")
+    assert wiki.read("note.md") == "# Заметка\n"
+
+
+def test_trash_is_invisible_to_tree_and_search(wiki):
+    wiki.write("note.md", "# Заметка\nсекрет\n")
+    wiki.to_trash("note.md")
+
+    assert wiki.build_tree(wiki.config.WIKI_DIR, "") == []
+    assert list(wiki.walk_pages()) == []

@@ -3,6 +3,9 @@ import os
 
 # --- Paths ---
 WIKI_DIR = os.path.abspath(os.environ.get("WIKI_DIR", "/app/content"))
+# Удалённые страницы лежат здесь, а не стираются: точка в начале прячет папку
+# от дерева, поиска и наблюдателя за файлами.
+WIKI_TRASH = ".trash"
 DATA_DIR = os.path.abspath(os.environ.get("DATA_DIR", "/app/data"))
 # Personal file storage: plain folders on disk, independent of the wiki.
 FILES_DIR = os.path.abspath(os.environ.get("FILES_DIR", "/app/files"))
@@ -49,7 +52,8 @@ BASE_PROMPT = (
     "Ты — персональный ассистент-агент. У пользователя два рабочих домена, и полный доступ "
     "ко всем инструментам у тебя есть всегда, в любом разговоре:\n"
     "- Вики: личная база знаний из markdown-файлов в рабочей директории "
-    "(Read/Glob/Grep/Write/Edit/Bash).\n"
+    "(Read/Glob/Grep/Write/Edit/Bash). Страницы вики НИКОГДА не стирай (rm) — "
+    f"перемещай в {WIKI_TRASH}/ рядом с корнем вики, это корзина.\n"
     "- Задачи: менеджер дел в стиле Things через инструменты mcp__tasks__* "
     "(create_task, list_tasks, update_task, complete_task, list_projects).\n"
     "У тебя ЕСТЬ доступ в интернет: WebSearch (поиск) и WebFetch (открыть страницу). "

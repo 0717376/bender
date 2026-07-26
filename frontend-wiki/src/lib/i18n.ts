@@ -105,6 +105,10 @@ const RU = {
   treeFailed: 'Не удалось загрузить список страниц',
   retry: 'Повторить',
   connectionLost: 'Соединение с ассистентом прервано',
+  newChild: 'Дочерняя страница',
+  childName: 'заголовок дочерней',
+  deleted: 'Удалено',
+  undo: 'Отменить',
 } as const
 
 const EN: Record<keyof typeof RU, string> = {
@@ -199,6 +203,10 @@ const EN: Record<keyof typeof RU, string> = {
   treeFailed: 'Could not load the page list',
   retry: 'Retry',
   connectionLost: 'Lost connection to the assistant',
+  newChild: 'Child page',
+  childName: 'child page title',
+  deleted: 'Deleted',
+  undo: 'Undo',
 }
 
 export const t = (k: keyof typeof RU): string => (ru ? RU : EN)[k]

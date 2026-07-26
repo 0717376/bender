@@ -9,7 +9,7 @@ A self-hosted personal AI agent: a markdown wiki, a Things-style task manager, a
 ## Features
 
 - **Tasks** — Things-style mechanics: Inbox / Today / Upcoming / Someday, projects and areas, tags, deadlines, checklists, repeating tasks, logbook, drag-and-drop, hotkeys, PWA. Live sync over SSE — changes made from Telegram or by scheduled jobs appear on screen by themselves.
-- **Wiki** — a personal knowledge base of markdown files. The agent reads and writes pages, cross-links them, and keeps things tidy.
+- **Wiki** — a personal knowledge base of markdown files. Confluence-style hierarchy: any page can grow child pages and becomes a parent — on disk that is a folder with its own `index.md`, in the UI there are no folders and no "index". Links by name (`[[litellm]]`), so a page can move between parents for free; plain links are rewritten automatically on move. Deleting means trash with undo. Live sync over SSE: edits from the agent, Telegram, or external MCP clients show up on their own.
 - **Files** — a personal file storage: plain folders on disk, browsable from the wiki UI (upload, preview, drag-and-drop). Send a document to the Telegram bot — it lands in the inbox folder, gets a human name, and the agent files it into the right folder; ask for a file and the bot sends it back. Wiki pages link to files with `[name](<storage:Folder/file.pdf>)`. Deletes go to a trash folder, not oblivion.
 - **Two UI languages** — English and Russian: switchable in Tasks settings; the wiki follows the browser language.
 - **Assistant everywhere** — web chat in both UIs plus a Telegram bot sharing one session: whatever you discussed on the web, it remembers in Telegram. Voice messages via ASR. Replies stream in Telegram through the native `sendMessageDraft`.

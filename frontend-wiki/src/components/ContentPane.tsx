@@ -6,6 +6,8 @@ import {
   renderMarkdown, enhanceCodeBlocks, resolveWikiPath, markLinks, toggleTask,
 } from '../lib/markdown'
 import { hashFor } from '../lib/route'
+import type { Crumb } from '../lib/types'
+import { pageLabel, type PageIndex } from '../lib/pageIndex'
 import { usePage } from '../hooks/usePage'
 import { useToc } from '../hooks/useToc'
 import { Toc, TOC_MIN } from './Toc'
@@ -17,8 +19,10 @@ interface ContentPaneProps {
   title?: string | null
   mtime?: number
   anchor?: string
-  /** Пути всех страниц вики; null — дерево ещё не загружено (ссылки не судим). */
-  pages: Set<string> | null
+  /** Указатель страниц вики; null — дерево ещё не загружено (ссылки не судим). */
+  index: PageIndex | null
+  /** Родители открытой страницы — их заголовками, а не именами папок. */
+  trail: Crumb[]
   onSelectionChange: (text: string) => void
   onNavigate: (path: string, anchor?: string) => void
   onBack: () => void
@@ -34,7 +38,7 @@ const HL = 'wiki-sel'
 
 export const ContentPane = forwardRef<ContentPaneHandle, ContentPaneProps>(
   function ContentPane(
-    { path, title, mtime, anchor, pages, onSelectionChange, onNavigate, onBack },
+    { path, title, mtime, anchor, index, trail, onSelectionChange, onNavigate, onBack },
     ref,
   ) {
     const page = usePage(path)
@@ -120,8 +124,8 @@ export const ContentPane = forwardRef<ContentPaneHandle, ContentPaneProps>(
     useEffect(() => {
       const doc = docRef.current
       if (mode !== 'view' || !doc || page.loadedPath !== path) return
-      markLinks(doc, path, pages, t('missingPage'))
-    }, [pages, page.text, page.loadedPath, mode, path])
+      markLinks(doc, path, index, t('missingPage'))
+    }, [index, page.text, page.loadedPath, mode, path])
 
     // Переход к разделу той же страницы (ссылка из другой вкладки, кнопка «назад»).
     useEffect(() => {
@@ -217,9 +221,7 @@ export const ContentPane = forwardRef<ContentPaneHandle, ContentPaneProps>(
       return <div className={styles.pane}><div className={styles.empty}>{t('pickPage')}</div></div>
     }
 
-    const segments = path.split('/')
-    const leaf = title || segments[segments.length - 1].replace(/\.md$/, '')
-    const folders = segments.slice(0, -1)
+    const leaf = title || pageLabel(path)
     const hasToc = mode === 'view' && headings.length >= TOC_MIN
 
     return (
@@ -229,8 +231,13 @@ export const ContentPane = forwardRef<ContentPaneHandle, ContentPaneProps>(
             <ChevronLeft size={19} strokeWidth={2.2} />
           </button>
           <span className={styles.crumbs}>
-            {folders.map((f, i) => (
-              <span key={i} className={styles.crumb}>{f}<span className={styles.crumbSep}>›</span></span>
+            {trail.map((c, i) => (
+              <span key={i} className={styles.crumb}>
+                {c.page
+                  ? <button className={styles.crumbLink} onClick={() => onNavigate(c.page!)}>{c.title}</button>
+                  : c.title}
+                <span className={styles.crumbSep}>›</span>
+              </span>
             ))}
             <span className={styles.crumbLeaf}>{leaf}</span>
           </span>

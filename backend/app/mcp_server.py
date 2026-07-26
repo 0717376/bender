@@ -75,7 +75,11 @@ mcp = FastMCP(
     instructions=(
         "Личный агент пользователя: вики (база знаний из markdown-страниц) и "
         "задачи (менеджер дел в стиле Things). Пути вики — относительные, "
-        "например 'vault/machines/backups.md'. Даты — ISO YYYY-MM-DD."
+        "например 'vault/machines/backups.md'. Даты — ISO YYYY-MM-DD.\n"
+        "Вики иерархична: папка с index.md — это одна страница со своими детьми "
+        "(infra/machines/index.md — страница «Машины»). Ссылайся на страницы по имени: "
+        "[[litellm]] или [[litellm|наш прокси]] — имя ищется по всей вики, поэтому "
+        "страница может переехать, а ссылка не сломается."
     ),
     stateless_http=True,
     json_response=True,
@@ -101,7 +105,8 @@ def _wiki_abs(path: str) -> str:
 
 @mcp.tool()
 def wiki_tree() -> list[dict]:
-    """Дерево страниц вики: path, title (первый заголовок), mtime; папки — с children."""
+    """Дерево страниц вики: path, title (первый заголовок), mtime; у страниц с детьми —
+    children, а сама страница лежит в поле page (это её index.md)."""
     return files.build_tree(config.WIKI_DIR, "")
 
 
@@ -119,17 +124,53 @@ def wiki_read(path: str) -> str:
 def wiki_write(path: str, text: str) -> dict:
     """Создать или полностью перезаписать страницу вики. Чтобы дополнить существующую —
     сначала wiki_read, затем wiki_write с полным новым текстом. Расширение .md
-    добавляется автоматически. Страница должна начинаться с заголовка '# …'."""
+    добавляется автоматически. Страница должна начинаться с заголовка '# …'.
+
+    Имя новой страницы приводится к латинице, нижнему регистру и дефисам, поэтому
+    фактический путь может отличаться от запрошенного — он возвращается в поле path,
+    ссылайся дальше на него. Существующие страницы не переименовываются.
+    Запись в 'x/дочерняя.md', когда 'x.md' — обычная страница, превращает её в
+    родительскую (x/index.md) и чинит ссылки на неё."""
     rel = (path or "").strip().lstrip("/")
     if not rel:
         raise ValueError("Пустой путь")
     if not rel.endswith(".md"):
         rel += ".md"
+    rel = files.slug_path(rel)
     abs_path = _wiki_abs(rel)
-    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+    files.ensure_parent(abs_path)
     with open(abs_path, "w", encoding="utf-8") as f:
         f.write(text)
     return {"ok": True, "path": rel}
+
+
+@mcp.tool()
+def wiki_move(src: str, dst: str) -> dict:
+    """Перенести или переименовать страницу вики (или папку целиком). Ссылки на
+    перенесённое чинятся автоматически по всей вики. Чтобы у страницы 'x.md' появились
+    дети, перенеси её в 'x/index.md' — она станет родительской."""
+    src_rel = files.rel_path(_wiki_abs(src))
+    dst_rel = files.rel_path(_wiki_abs(dst))
+    files.move(src_rel, dst_rel)
+    return {"ok": True, "path": dst_rel}
+
+
+@mcp.tool()
+def wiki_delete(path: str) -> dict:
+    """Удалить страницу вики — она уходит в корзину и хранится 30 дней (вернуть можно
+    через wiki_move из возвращённого пути). Удаление родительской страницы уносит
+    вместе с ней всех детей, поэтому папку с детьми ручка не трогает: перенеси или
+    удали детей сначала."""
+    rel = files.rel_path(_wiki_abs(path))
+    abs_path = os.path.join(config.WIKI_DIR, rel)
+    if os.path.isdir(abs_path):
+        kids = [n for n in os.listdir(abs_path) if not n.startswith(".") and n != "index.md"]
+        if kids:
+            raise ValueError(
+                f"У страницы есть дети ({', '.join(sorted(kids)[:5])}) — сначала перенеси "
+                "или удали их, иначе удаление унесёт всю ветку"
+            )
+    return {"ok": True, "trashed": files.to_trash(rel)}
 
 
 @mcp.tool()

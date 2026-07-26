@@ -15,3 +15,8 @@ dependencies = [
     # зависимость прямая, пусть так и будет записана.
     "sse-starlette>=2.1",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
