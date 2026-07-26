@@ -96,10 +96,12 @@ export function escapeHtml(str: string): string {
 
 // Внутренние ссылки помечаем «битыми», если такой страницы нет в дереве, внешние —
 // стрелкой. Обработку кликов делает ContentPane, здесь только разметка.
+// pages = null означает «дерево ещё не загружено»: это не повод объявлять все
+// ссылки битыми, поэтому просто ничего не судим до его приезда.
 export function markLinks(
   root: HTMLElement,
   currentPath: string | null,
-  exists: (path: string) => boolean,
+  pages: Set<string> | null,
   missingLabel: string,
 ): void {
   root.querySelectorAll<HTMLAnchorElement>('a[href]').forEach(a => {
@@ -112,9 +114,14 @@ export function markLinks(
       a.rel = 'noopener noreferrer'
       return
     }
-    if (target && !exists(target)) {
+    // Проходов может быть несколько (дерево обновилось) — снимаем прошлый вердикт.
+    const dead = !!target && pages !== null && !pages.has(target)
+    if (dead) {
       a.dataset.dead = ''
       a.title = missingLabel
+    } else {
+      delete a.dataset.dead
+      if (a.title === missingLabel) a.removeAttribute('title')
     }
   })
 }

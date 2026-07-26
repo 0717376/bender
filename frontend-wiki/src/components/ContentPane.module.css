@@ -118,6 +118,49 @@
     text-align: right;
 }
 
+.statusBad {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--danger);
+    font-family: inherit;
+    font-weight: 600;
+}
+
+/* Страница не открылась: честная ошибка вместо пустого документа. */
+.failed {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: var(--text-3);
+    font-size: 14px;
+}
+
+.failed svg {
+    color: var(--danger);
+}
+
+.failed button {
+    padding: 7px 15px;
+    border: 1px solid var(--border-light);
+    border-radius: var(--r-pill);
+    background: var(--panel);
+    color: var(--text-2);
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.failed button:hover {
+    border-color: var(--accent-line);
+    color: var(--accent-ink);
+    background: var(--accent-soft);
+}
+
 .toggle, .saveBtn {
     display: inline-flex;
     align-items: center;

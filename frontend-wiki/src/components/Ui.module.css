@@ -1,0 +1,96 @@
+.toasts {
+    position: fixed;
+    left: 50%;
+    bottom: 26px;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    z-index: 300;
+    pointer-events: none;
+}
+
+.toast {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: min(520px, 90vw);
+    padding: 10px 16px;
+    border: 1px solid var(--border-2);
+    border-radius: var(--r-pill);
+    background: var(--panel);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 500;
+    box-shadow: var(--shadow-pop);
+    animation: msgIn 0.18s ease;
+}
+
+.toast[data-kind="error"] {
+    border-color: var(--danger-line);
+    color: var(--danger);
+}
+
+.scrim {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: rgba(0, 0, 0, 0.32);
+    z-index: 320;
+    animation: msgIn 0.14s ease;
+}
+
+.confirm {
+    width: 340px;
+    max-width: 100%;
+    padding: 24px 24px 18px;
+    border: 1px solid var(--border-2);
+    border-radius: 18px;
+    background: var(--panel);
+    box-shadow: var(--shadow-pop);
+}
+
+.question {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+}
+
+.detail {
+    margin-top: 6px;
+    color: var(--text-3);
+    font-size: 13px;
+    word-break: break-word;
+}
+
+.buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 20px;
+}
+
+.buttons button {
+    padding: 8px 16px;
+    border: 1px solid var(--border-light);
+    border-radius: var(--r-pill);
+    background: var(--panel);
+    color: var(--text-2);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.buttons button:hover {
+    background: var(--bg-2);
+}
+
+.danger {
+    border-color: var(--danger-line) !important;
+    background: var(--danger-soft) !important;
+    color: var(--danger) !important;
+}

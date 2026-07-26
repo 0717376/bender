@@ -3,6 +3,7 @@ import { ChevronLeft, Download, ExternalLink, File as FileIcon, FileQuestion, Fi
 import type { FileNode } from '../lib/types'
 import { storageFileUrl, storageUpload } from '../lib/api'
 import { fileIcon } from '../lib/fileIcons'
+import { useUi } from './Ui'
 import styles from './StorageView.module.css'
 import { t, lang, formatDay } from '../lib/i18n'
 
@@ -183,6 +184,7 @@ function FolderView({ path, entries, onSelect, onChanged, onBack }: {
   onChanged: () => void
   onBack: () => void
 }) {
+  const { notify } = useUi()
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragOver, setDragOver] = useState(false)
 
@@ -191,7 +193,7 @@ function FolderView({ path, entries, onSelect, onChanged, onBack }: {
       try {
         await storageUpload(path ?? '', f)
       } catch (e) {
-        alert(`${f.name}: ${(e as Error).message}`)
+        notify(`${f.name}: ${(e as Error).message}`, 'error')
       }
     }
     onChanged()

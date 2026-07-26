@@ -9,8 +9,44 @@
 .left {
     width: 260px;
     flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
     border-right: 1px solid var(--border);
     min-height: 0;
+    background: var(--sidebar-bg);
+}
+
+.left > * {
+    min-height: 0;
+    flex: 1;
+}
+
+/* Дерево не загрузилось: честная плашка вместо «вики пуста». */
+.treeError {
+    flex: none !important;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border: none;
+    border-bottom: 1px solid var(--danger-line);
+    background: var(--danger-soft);
+    color: var(--danger);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+}
+
+.treeError span:first-of-type {
+    flex: 1;
+    min-width: 0;
+}
+
+.retry {
+    text-decoration: underline;
+    white-space: nowrap;
 }
 
 .center {

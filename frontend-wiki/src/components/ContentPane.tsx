@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronLeft, Eye, List, Pencil } from 'lucide-react'
-import { fetchFile, saveFile, storageFileUrl } from '../lib/api'
+import { ChevronLeft, Eye, List, Pencil, TriangleAlert } from 'lucide-react'
+import { storageFileUrl } from '../lib/api'
 import {
   renderMarkdown, enhanceCodeBlocks, resolveWikiPath, markLinks, toggleTask,
-  collectHeadings, type Heading,
 } from '../lib/markdown'
 import { hashFor } from '../lib/route'
+import { usePage } from '../hooks/usePage'
+import { useToc } from '../hooks/useToc'
 import { Toc, TOC_MIN } from './Toc'
 import styles from './ContentPane.module.css'
 import { t, updatedAgo } from '../lib/i18n'
@@ -16,8 +17,8 @@ interface ContentPaneProps {
   title?: string | null
   mtime?: number
   anchor?: string
-  exists: (path: string) => boolean
-  reloadSignal: number
+  /** Пути всех страниц вики; null — дерево ещё не загружено (ссылки не судим). */
+  pages: Set<string> | null
   onSelectionChange: (text: string) => void
   onNavigate: (path: string, anchor?: string) => void
   onBack: () => void
@@ -26,151 +27,69 @@ interface ContentPaneProps {
 export interface ContentPaneHandle {
   getSelection: () => string
   clearSelection: () => void
+  reload: () => void
 }
 
 const HL = 'wiki-sel'
-const SAVE_DELAY = 600
-// Заголовок считается текущим, когда доходит до этой отметки от верха окна чтения.
-const ACTIVE_LINE = 76
 
 export const ContentPane = forwardRef<ContentPaneHandle, ContentPaneProps>(
   function ContentPane(
-    { path, title, mtime, anchor, exists, reloadSignal, onSelectionChange, onNavigate, onBack },
+    { path, title, mtime, anchor, pages, onSelectionChange, onNavigate, onBack },
     ref,
   ) {
-    const [text, setText] = useState('')
-    const [loadedPath, setLoadedPath] = useState<string | null>(null)
+    const page = usePage(path)
+    const { edit } = page
     const [mode, setMode] = useState<'view' | 'edit'>('view')
-    const [dirty, setDirty] = useState(false)
-    const [saving, setSaving] = useState(false)
-    const [headings, setHeadings] = useState<Heading[]>([])
-    const [activeId, setActiveId] = useState('')
     const [tocOpen, setTocOpen] = useState(false)
     const [zoom, setZoom] = useState<string | null>(null)
     const scrollRef = useRef<HTMLDivElement>(null)
-    const viewRef = useRef<HTMLDivElement>(null)
+    const docRef = useRef<HTMLDivElement>(null)
     const textareaRef = useRef<HTMLTextAreaElement>(null)
     const pinnedRef = useRef('')
-
-    const textRef = useRef('')
-    textRef.current = text
-    const dirtyRef = useRef(false)
-    dirtyRef.current = dirty
-    const saveTimer = useRef<number | undefined>(undefined)
-    const wantRef = useRef<string | null>(null)
     const renderedPath = useRef<string | null>(null)
 
-    const clearHighlight = useCallback(() => {
-      try { (CSS as unknown as { highlights?: Map<string, unknown> }).highlights?.delete(HL) } catch { /* unsupported */ }
-    }, [])
+    // Разбираем на отдельные функции: все они стабильны, а объект пересоздаётся
+    // каждый рендер — в зависимостях эффектов ему делать нечего.
+    const { headings, activeId, refresh, updateActive, scrollToId, reaim } = useToc(
+      scrollRef, docRef, mode === 'view',
+    )
+
+    const textRef = useRef('')
+    textRef.current = page.text
 
     const clearSelection = useCallback(() => {
       pinnedRef.current = ''
-      clearHighlight()
+      try { (CSS as unknown as { highlights?: Map<string, unknown> }).highlights?.delete(HL) } catch { /* unsupported */ }
       const sel = window.getSelection()
-      if (sel && viewRef.current && sel.anchorNode && viewRef.current.contains(sel.anchorNode)) {
+      if (sel && docRef.current && sel.anchorNode && docRef.current.contains(sel.anchorNode)) {
         sel.removeAllRanges()
       }
       onSelectionChange('')
-    }, [clearHighlight, onSelectionChange])
+    }, [onSelectionChange])
 
     useImperativeHandle(ref, () => ({
       getSelection: () => pinnedRef.current,
       clearSelection,
-    }), [clearSelection])
-
-    const doSave = useCallback(async (p: string, content: string) => {
-      setSaving(true)
-      try {
-        await saveFile(p, content)
-        if (textRef.current === content) setDirty(false)
-      } catch { /* stay dirty, will retry on next change */ }
-      finally { setSaving(false) }
-    }, [])
-
-    const load = useCallback(async (p: string) => {
-      wantRef.current = p
-      let content = ''
-      try { content = await fetchFile(p) } catch { /* показываем пустую */ }
-      if (wantRef.current !== p) return // пока грузили, открыли другую страницу
-      setText(content)
-      setLoadedPath(p)
-      setDirty(false)
-    }, [])
+      reload: page.reload,
+    }), [clearSelection, page.reload])
 
     useEffect(() => {
       clearSelection()
       setTocOpen(false)
-      if (path) load(path)
-      else { setText(''); setLoadedPath(null) }
       setMode('view')
-    }, [path, load, clearSelection])
+    }, [path, clearSelection])
 
-    // Flush unsaved edits when leaving the page or unmounting.
+    useEffect(() => { clearSelection() }, [mode, clearSelection])
+
+    // Перерисовка документа. Дерево страниц сюда намеренно не входит: иначе каждое
+    // обновление дерева стирало бы innerHTML вместе с выделением и подсветкой кода.
     useEffect(() => {
-      return () => {
-        if (saveTimer.current) clearTimeout(saveTimer.current)
-        if (dirtyRef.current && path) saveFile(path, textRef.current).catch(() => {})
-      }
-    }, [path])
-
-    useEffect(() => {
-      if (reloadSignal && path && !dirtyRef.current) { clearSelection(); load(path) }
-    }, [reloadSignal, path, load, clearSelection])
-
-    const onEdit = useCallback((value: string) => {
-      setText(value)
-      setDirty(true)
-      if (saveTimer.current) clearTimeout(saveTimer.current)
-      if (path) saveTimer.current = window.setTimeout(() => doSave(path, value), SAVE_DELAY)
-    }, [path, doSave])
-
-    const scrollToId = useCallback((id: string, smooth: boolean): boolean => {
-      const sc = scrollRef.current
-      const el = viewRef.current?.querySelector<HTMLElement>(`[id="${CSS.escape(id)}"]`)
-      if (!sc || !el) return false
-      const top = sc.scrollTop + el.getBoundingClientRect().top - sc.getBoundingClientRect().top - 18
-      sc.scrollTo({ top: Math.max(0, top), behavior: smooth ? 'smooth' : 'auto' })
-      return true
-    }, [])
-
-    // Manrope приезжает с Google Fonts уже после первого рендера (display=swap) и
-    // сдвигает вёрстку — повторяем прицел, пока пользователь сам не начал листать.
-    const reaim = useCallback((id: string) => {
-      const sc = scrollRef.current
-      if (!sc) return
-      let at = sc.scrollTop
-      const again = () => {
-        if (!scrollRef.current || Math.abs(scrollRef.current.scrollTop - at) > 2) return
-        scrollToId(id, false)
-        at = scrollRef.current.scrollTop
-      }
-      requestAnimationFrame(again)
-      document.fonts?.ready.then(again).catch(() => {})
-    }, [scrollToId])
-
-    const updateActive = useCallback(() => {
-      const sc = scrollRef.current
-      const doc = viewRef.current
-      if (!sc || !doc) return
-      const top = sc.getBoundingClientRect().top
-      const hs = Array.from(doc.querySelectorAll<HTMLElement>('h2, h3'))
-      let cur = ''
-      for (const h of hs) {
-        if (h.getBoundingClientRect().top - top > ACTIVE_LINE) break
-        cur = h.id
-      }
-      setActiveId(cur || hs[0]?.id || '')
-    }, [])
-
-    useEffect(() => {
-      const doc = viewRef.current
-      if (mode !== 'view' || !doc || loadedPath !== path) return
-      doc.innerHTML = renderMarkdown(text)
+      const doc = docRef.current
+      if (mode !== 'view' || !doc || page.loadedPath !== path) return
+      doc.innerHTML = renderMarkdown(page.text)
       enhanceCodeBlocks(doc)
-      markLinks(doc, path, exists, t('missingPage'))
-      // storage:Папка/скан.jpg → authorized /storage/file URL.
-      // marked percent-encodes hrefs; decode before storageFileUrl re-encodes.
+      // storage:Папка/скан.jpg → авторизованный /storage/file URL.
+      // marked процентно кодирует href; декодируем до того, как storageFileUrl закодирует снова.
       const storagePath = (v: string) => {
         const raw = v.slice('storage:'.length)
         try { return decodeURIComponent(raw) } catch { return raw }
@@ -187,31 +106,27 @@ export const ContentPane = forwardRef<ContentPaneHandle, ContentPaneProps>(
         box.disabled = false
         box.dataset.task = String(i)
       })
-      setHeadings(collectHeadings(doc))
+      refresh()
       if (renderedPath.current !== path) {
         renderedPath.current = path
         if (anchor && scrollToId(anchor, false)) reaim(anchor)
         else scrollRef.current!.scrollTop = 0
       }
       updateActive()
-    }, [text, mode, path, loadedPath, anchor, exists, scrollToId, reaim, updateActive])
+    }, [page.text, page.loadedPath, mode, path, anchor, refresh, scrollToId, reaim, updateActive])
 
-    // Ширина области чтения меняется (свернули чат, повернули экран) — текущий
-    // раздел пересчитываем: события скролла при этом не будет.
+    // Пометка ссылок — отдельным лёгким проходом: дерево приезжает своим темпом
+    // (и меняется при каждой правке), перерисовывать из-за него документ незачем.
     useEffect(() => {
-      const sc = scrollRef.current
-      if (!sc) return
-      const ro = new ResizeObserver(() => updateActive())
-      ro.observe(sc)
-      return () => ro.disconnect()
-    }, [mode, updateActive])
+      const doc = docRef.current
+      if (mode !== 'view' || !doc || page.loadedPath !== path) return
+      markLinks(doc, path, pages, t('missingPage'))
+    }, [pages, page.text, page.loadedPath, mode, path])
 
     // Переход к разделу той же страницы (ссылка из другой вкладки, кнопка «назад»).
     useEffect(() => {
       if (anchor && mode === 'view') scrollToId(anchor, true)
     }, [anchor, mode, scrollToId])
-
-    useEffect(() => { clearSelection() }, [mode, clearSelection])
 
     useEffect(() => {
       if (!zoom) return
@@ -220,16 +135,11 @@ export const ContentPane = forwardRef<ContentPaneHandle, ContentPaneProps>(
       return () => window.removeEventListener('keydown', onKey)
     }, [zoom])
 
-    const flushNow = useCallback(() => {
-      if (saveTimer.current) clearTimeout(saveTimer.current)
-      if (path && dirtyRef.current) doSave(path, textRef.current)
-    }, [path, doSave])
-
     const captureView = useCallback(() => {
       const sel = window.getSelection()
       if (!sel || sel.isCollapsed || sel.rangeCount === 0) return
       const range = sel.getRangeAt(0)
-      const v = viewRef.current
+      const v = docRef.current
       if (!v || !v.contains(range.commonAncestorContainer)) return
       const txt = sel.toString()
       if (!txt.trim()) return
@@ -257,7 +167,7 @@ export const ContentPane = forwardRef<ContentPaneHandle, ContentPaneProps>(
 
       if (el instanceof HTMLInputElement && el.type === 'checkbox' && el.dataset.task) {
         const next = toggleTask(textRef.current, Number(el.dataset.task))
-        if (next !== null) onEdit(next)
+        if (next !== null) edit(next)
         return
       }
       if (el instanceof HTMLImageElement && !el.closest('a')) {
@@ -286,7 +196,7 @@ export const ContentPane = forwardRef<ContentPaneHandle, ContentPaneProps>(
       let frag = href.split('#')[1] || ''
       try { frag = decodeURIComponent(frag) } catch { /* keep raw */ }
       onNavigate(target, frag)
-    }, [path, onNavigate, onEdit, scrollToId, rememberAnchor])
+    }, [path, onNavigate, edit, scrollToId, rememberAnchor])
 
     const captureEdit = useCallback(() => {
       const el = textareaRef.current
@@ -299,7 +209,7 @@ export const ContentPane = forwardRef<ContentPaneHandle, ContentPaneProps>(
     const onKeyDown = (e: React.KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault()
-        flushNow()
+        page.flush()
       }
     }
 
@@ -334,8 +244,12 @@ export const ContentPane = forwardRef<ContentPaneHandle, ContentPaneProps>(
                 <List size={17} strokeWidth={2} />
               </button>
             )}
-            {mode === 'edit' ? (
-              <span className={styles.status}>{saving || dirty ? t('saving') : t('saved')}</span>
+            {page.saveError ? (
+              <span className={`${styles.status} ${styles.statusBad}`}>
+                <TriangleAlert size={12} strokeWidth={2.2} /> {t('saveFailed')}
+              </span>
+            ) : mode === 'edit' ? (
+              <span className={styles.status}>{page.saving || page.dirty ? t('saving') : t('saved')}</span>
             ) : (
               mtime != null && <span className={styles.meta}>{updatedAgo(mtime)}</span>
             )}
@@ -348,7 +262,13 @@ export const ContentPane = forwardRef<ContentPaneHandle, ContentPaneProps>(
           </div>
         </div>
         <div className={styles.body}>
-          {mode === 'view' ? (
+          {page.loadError ? (
+            <div className={styles.failed}>
+              <TriangleAlert size={17} strokeWidth={2} />
+              <span>{t('loadFailed')}</span>
+              <button onClick={page.reload}>{t('retry')}</button>
+            </div>
+          ) : mode === 'view' ? (
             <div
               ref={scrollRef}
               className={`${styles.view} scroll`}
@@ -356,21 +276,21 @@ export const ContentPane = forwardRef<ContentPaneHandle, ContentPaneProps>(
               onMouseUp={captureView}
               onClick={onViewClick}
             >
-              <div ref={viewRef} className={styles.doc} />
+              <div ref={docRef} className={styles.doc} />
             </div>
           ) : (
             <textarea
               ref={textareaRef}
               className={`${styles.editor} scroll`}
-              value={text}
+              value={page.text}
               spellCheck={false}
-              onChange={e => onEdit(e.target.value)}
+              onChange={e => page.edit(e.target.value)}
               onKeyDown={onKeyDown}
               onSelect={captureEdit}
-              onBlur={flushNow}
+              onBlur={page.flush}
             />
           )}
-          {mode === 'view' && (
+          {mode === 'view' && !page.loadError && (
             <Toc
               items={headings}
               activeId={activeId}

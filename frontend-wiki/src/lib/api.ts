@@ -44,6 +44,33 @@ export async function fetchFile(path: string): Promise<string> {
   return data.text
 }
 
+export interface SearchHit {
+  path: string
+  title: string
+  snippet: string
+}
+
+export async function searchPages(q: string): Promise<SearchHit[]> {
+  const res = await fetch(API + '/files/search?q=' + encodeURIComponent(q), { headers: authHeaders() })
+  if (!res.ok) throw new Error('search error')
+  return (await res.json()).results
+}
+
+export interface FilesEvent {
+  pages: string[]
+  storage: boolean
+}
+
+// Страницы меняются мимо этой вкладки: агент, Telegram, крон, внешние агенты по MCP.
+// EventSource не умеет слать заголовок — токен уходит в query, как и у задач.
+export function subscribeFiles(onEvent: (e: FilesEvent) => void): () => void {
+  const es = new EventSource(API + '/files/events?token=' + encodeURIComponent(getToken() ?? ''))
+  es.addEventListener('files', (e) => {
+    try { onEvent(JSON.parse((e as MessageEvent).data)) } catch { /* битый кадр — пропускаем */ }
+  })
+  return () => es.close()
+}
+
 export async function saveFile(path: string, text: string): Promise<void> {
   const res = await fetch(API + '/files/content', {
     method: 'PUT',

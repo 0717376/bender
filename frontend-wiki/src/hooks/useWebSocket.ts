@@ -1,5 +1,6 @@
 import { useRef, useCallback, useEffect } from 'react'
 import { getToken } from '../lib/auth'
+import { t } from '../lib/i18n'
 import type { WSMessage } from '../lib/types'
 
 export interface ChatContext {
@@ -19,6 +20,9 @@ export function useWebSocket(
   onDisconnect: () => void,
 ): UseWebSocketReturn {
   const wsRef = useRef<WebSocket | null>(null)
+  // Ждём ли мы сейчас ответ: если да, обрыв связи надо показать, а не молча
+  // оставить крутиться индикатор навсегда.
+  const pendingRef = useRef(false)
 
   const connect = useCallback((): Promise<WebSocket> => {
     return new Promise((resolve, reject) => {
@@ -42,8 +46,10 @@ export function useWebSocket(
             const detail = msg.pattern || (msg.file ? msg.file.split('/').slice(-2).join('/') : '')
             onTool(msg.name, detail)
           } else if (msg.t === 'error') {
+            pendingRef.current = false
             onError(msg.text)
           } else if (msg.t === 'done') {
+            pendingRef.current = false
             onDone(msg.sid)
           }
         } catch { /* ignore parse errors */ }
@@ -53,6 +59,9 @@ export function useWebSocket(
         wsRef.current = null
         if (e.code === 4001 || e.code === 4003) {
           onDisconnect()
+        } else if (pendingRef.current) {
+          pendingRef.current = false
+          onError(t('connectionLost'))
         }
       }
 
@@ -67,6 +76,7 @@ export function useWebSocket(
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       await connect()
     }
+    pendingRef.current = true
     wsRef.current!.send(JSON.stringify({ type: 'message', text, context }))
   }, [connect])
 
