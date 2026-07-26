@@ -170,8 +170,9 @@ def wiki_grep(pattern: str, path: str = "", glob: str | None = None,
     """Поиск по вики регулярным выражением (семантика Grep из Claude Code).
     output_mode: "files_with_matches" (по умолчанию) — только пути страниц;
     "content" — совпавшие строки как "путь:номер: строка" (context добавляет
-    строки вокруг); "count" — число совпадений на страницу. path — подпапка вики,
-    glob — фильтр по имени файла (напр. "vault/**"). По умолчанию паттерн ищется
+    строки вокруг); "count" — число совпадений на страницу. path — подпапка вики
+    или конкретная страница, glob — фильтр по имени файла (напр. "vault/**").
+    По умолчанию паттерн ищется
     в пределах одной строки; multiline=true — сквозь переносы (напр. "## Газ[\\s\\S]*?логин").
     head_limit обрезает выдачу."""
     if output_mode not in ("files_with_matches", "content", "count"):
@@ -183,11 +184,21 @@ def wiki_grep(pattern: str, path: str = "", glob: str | None = None,
         raise ValueError(f"Некорректное регулярное выражение: {e}") from None
 
     root = _wiki_abs(path) if path else config.WIKI_DIR
+    if path and not os.path.exists(root) and not path.endswith(".md"):
+        root = _wiki_abs(path + ".md")
+    if os.path.isfile(root):
+        # path указывает на одну страницу: os.walk по файлу молча даёт пустоту
+        walker = [(os.path.dirname(root), [], [os.path.basename(root)])]
+    elif os.path.isdir(root):
+        walker = os.walk(root)
+    else:
+        raise ValueError(f"Путь не найден в вики: {path}")
+
     files_out: list[str] = []
     content_out: list[str] = []
     counts: dict[str, int] = {}
     done = False
-    for dirpath, dirnames, filenames in os.walk(root):
+    for dirpath, dirnames, filenames in walker:
         if done:
             break
         dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
