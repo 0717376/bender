@@ -82,11 +82,11 @@ export async function saveFile(path: string, text: string): Promise<void> {
 }
 
 /** Возвращает фактический путь: имя приводится к латинице на бэкенде. */
-export async function createNode(path: string, type: 'file' | 'dir'): Promise<string> {
+export async function createPage(path: string): Promise<string> {
   const res = await fetch(API + '/files/create', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    body: JSON.stringify({ path, type }),
+    body: JSON.stringify({ path }),
   })
   await ok(res, 'create error')
   return (await res.json()).path
@@ -101,6 +101,18 @@ export async function createChild(parent: string, title: string): Promise<string
     body: JSON.stringify({ parent, title }),
   })
   await ok(res, 'create error')
+  return (await res.json()).path
+}
+
+/** Перетаскивание в дереве: положить страницу под другую. Родитель, если он был
+ *  бездетным, становится родительским сам — клиенту знать об этом не нужно. */
+export async function reparent(src: string, parent: string): Promise<string> {
+  const res = await fetch(API + '/files/reparent', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ src, parent }),
+  })
+  await ok(res, 'move error')
   return (await res.json()).path
 }
 

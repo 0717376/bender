@@ -1,17 +1,18 @@
 import { useState, useRef, useEffect } from 'react'
 import {
   BookOpen, ChevronRight, Download, Folder, FolderOpen, FileText,
-  FilePlus2, FolderPlus, Pencil, Trash2, FolderUp, Search, Settings,
+  FilePlus2, Pencil, Trash2, FolderUp, Search, Settings,
 } from 'lucide-react'
 import type { FileNode } from '../lib/types'
 import { pageLabel } from '../lib/pageIndex'
-import { createNode, createChild, renameNode, deleteNode, fetchFile } from '../lib/api'
+import { createPage, createChild, renameNode, deleteNode, reparent, fetchFile } from '../lib/api'
 import { RowMenu, type MenuItem } from './RowMenu'
 import { useUi } from './Ui'
 import styles from './FileTree.module.css'
 import { t } from '../lib/i18n'
 
-type NewKind = 'file' | 'dir' | 'child'
+// Папок в интерфейсе нет: страница либо сама по себе, либо со своими детьми.
+type NewKind = 'page' | 'child'
 type Creating = { parent: string; type: NewKind } | null
 
 interface TreeCtx {
@@ -71,17 +72,12 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings, 
     const { parent, type } = creating
     cancel()
     try {
-      if (type === 'child') {
-        // Родитель-страница станет папкой со своим index.md — это делает бэкенд.
-        onSelect(await createChild(parent, name))
-        onChanged()
-        return
-      }
-      let leaf = name
-      if (type === 'file' && !leaf.endsWith('.md')) leaf += '.md'
-      const path = await createNode(join(parent, leaf), type)
+      // Дочернюю заводит бэкенд: родитель при необходимости сам станет родительским.
+      const path = type === 'child'
+        ? await createChild(parent, name)
+        : await createPage(join(parent, name.endsWith('.md') ? name : name + '.md'))
+      onSelect(path)
       onChanged()
-      if (type === 'file') onSelect(path)
     } catch (e) {
       notify((e as Error).message, 'error')
     }
@@ -102,7 +98,7 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings, 
 
   const remove = async (node: FileNode) => {
     const branch = node.type === 'dir' && !!node.children?.length
-    const ok = await ask(branch ? t('deleteFolderQ') : t('deletePageQ'), node.path)
+    const ok = await ask(branch ? t('deleteBranchQ') : t('deletePageQ'), node.path)
     if (!ok) return
     try {
       const trashed = await deleteNode(node.path)
@@ -143,9 +139,15 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings, 
     else if (selectedPath && selectedPath.startsWith(src + '/')) onSelect(dst + selectedPath.slice(src.length))
   }
 
+  // Куда лягут дети этой страницы (у бэкенда то же правило — он и решает по-настоящему).
+  const folderOf = (parent: string) =>
+    parent.endsWith('/index.md') ? parent.slice(0, -'/index.md'.length)
+      : parent.endsWith('.md') ? parent.slice(0, -3)
+        : parent
+
   const canDrop = (src: string | null, dest: string) => {
     if (src == null) return false
-    if (dest === parentOf(src)) return false               // already there
+    if (folderOf(dest) === parentOf(src)) return false            // already there
     if (dest === src || dest.startsWith(src + '/')) return false  // into itself / descendant
     return true
   }
@@ -173,11 +175,9 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings, 
     setDragging(false)
     setDropTarget(null)
     if (!canDrop(src, dest) || src == null) return
-    const dst = join(dest, baseOf(src))
     try {
-      await renameNode(src, dst)
+      fixSelection(src, await reparent(src, dest))
       onChanged()
-      fixSelection(src, dst)
     } catch (err) {
       notify((err as Error).message, 'error')
     }
@@ -204,8 +204,7 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings, 
         )}
         <div className={styles.actions}>
           <button title={`${t('search')} (⌘K)`} aria-label={t('search')} onClick={onSearch}><Search size={15} /></button>
-          <button title={t('newPage')} onClick={() => startCreate(toolbarParent, 'file')}><FilePlus2 size={15} /></button>
-          <button title={t('newFolder')} onClick={() => startCreate(toolbarParent, 'dir')}><FolderPlus size={15} /></button>
+          <button title={t('newPage')} onClick={() => startCreate(toolbarParent, 'page')}><FilePlus2 size={15} /></button>
         </div>
       </div>
       <div
@@ -216,7 +215,7 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings, 
         {creating?.parent === '' && (
           <InlineInput
             kind={creating.type}
-            icon={creating.type === 'dir' ? <Folder size={15} /> : <FileText size={15} />}
+            icon={<FileText size={15} />}
             onSubmit={submitCreate}
             onCancel={cancel}
           />
@@ -265,9 +264,6 @@ function TreeNode({ node, ctx }: { node: FileNode; ctx: TreeCtx }) {
 
   const menu: MenuItem[] = [
     { icon: <FilePlus2 size={14} />, label: t('newChild'), onClick: () => beginCreate('child') },
-    ...(isDir ? [
-      { icon: <FolderPlus size={14} />, label: t('newFolderHere'), onClick: () => beginCreate('dir') },
-    ] : []),
     ...(pagePath ? [
       { icon: <Download size={14} />, label: t('download'), onClick: () => ctx.download(pagePath) },
     ] : []),
@@ -278,7 +274,7 @@ function TreeNode({ node, ctx }: { node: FileNode; ctx: TreeCtx }) {
   if (ctx.renaming === node.path) {
     return (
       <InlineInput
-        kind={isDir ? 'dir' : 'file'}
+        kind="page"
         initial={baseOf(node.path)}
         icon={isDir && !node.page ? <Folder size={15} /> : <FileText size={15} />}
         onSubmit={(name) => ctx.submitRename(node, name)}
@@ -287,21 +283,20 @@ function TreeNode({ node, ctx }: { node: FileNode; ctx: TreeCtx }) {
     )
   }
 
-  // Folders are drop targets (the whole node region routes into this folder).
-  const dirDnd = isDir
-    ? {
-        onDragOver: (e: React.DragEvent) => ctx.onDragOverDir(e, node.path),
-        onDrop: (e: React.DragEvent) => ctx.onDropDir(e, node.path),
-      }
-    : {}
+  // Любая страница может стать родителем, поэтому цель для перетаскивания — каждая.
+  const dropTo = pagePath ?? node.path
+  const dnd = {
+    onDragOver: (e: React.DragEvent) => ctx.onDragOverDir(e, dropTo),
+    onDrop: (e: React.DragEvent) => ctx.onDropDir(e, dropTo),
+  }
 
   const hasKids = isDir && !!node.children?.length
   const creatingHere = ctx.creating?.parent === node.path || ctx.creating?.parent === pagePath
 
   return (
-    <div className={styles.node} {...dirDnd}>
+    <div className={styles.node} {...dnd}>
       <div
-        className={`${styles.row} ${isSelected ? styles.selected : ''} ${ctx.dropTarget === node.path ? styles.dropTarget : ''}`}
+        className={`${styles.row} ${isSelected ? styles.selected : ''} ${ctx.dropTarget === dropTo ? styles.dropTarget : ''}`}
         draggable
         onDragStart={(e) => ctx.onDragStart(e, node.path)}
         onDragEnd={ctx.onDragEnd}
@@ -331,7 +326,7 @@ function TreeNode({ node, ctx }: { node: FileNode; ctx: TreeCtx }) {
           {creatingHere && (
             <InlineInput
               kind={ctx.creating!.type}
-              icon={ctx.creating!.type === 'dir' ? <Folder size={15} /> : <FileText size={15} />}
+              icon={<FileText size={15} />}
               onSubmit={ctx.submitCreate}
               onCancel={ctx.cancel}
             />
@@ -353,9 +348,8 @@ interface InlineInputProps {
   onCancel: () => void
 }
 
-const PLACEHOLDER: Record<NewKind, 'folderName' | 'pageName' | 'childName'> = {
-  dir: 'folderName',
-  file: 'pageName',
+const PLACEHOLDER: Record<NewKind, 'pageName' | 'childName'> = {
+  page: 'pageName',
   child: 'childName',
 }
 
