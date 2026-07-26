@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
 import {
-  BookOpen, ChevronRight, Folder, FolderOpen, FileText,
+  BookOpen, ChevronRight, Download, Folder, FolderOpen, FileText,
   FilePlus2, FolderPlus, Pencil, Trash2, FolderUp, Settings,
 } from 'lucide-react'
 import type { FileNode } from '../lib/types'
-import { createNode, renameNode, deleteNode } from '../lib/api'
+import { createNode, renameNode, deleteNode, fetchFile } from '../lib/api'
 import { RowMenu, type MenuItem } from './RowMenu'
 import styles from './FileTree.module.css'
 import { t, confirmDelete } from '../lib/i18n'
@@ -22,6 +22,7 @@ interface TreeCtx {
   submitRename: (node: FileNode, name: string) => void
   cancel: () => void
   remove: (path: string) => void
+  download: (path: string) => void
   // drag & drop
   dropTarget: string | null
   onDragStart: (e: React.DragEvent, path: string) => void
@@ -98,6 +99,21 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings, 
     }
   }
 
+  // Скачать markdown-исходник страницы (<a download> не умеет Bearer — тянем сами).
+  const download = async (path: string) => {
+    try {
+      const text = await fetchFile(path)
+      const url = URL.createObjectURL(new Blob([text], { type: 'text/markdown;charset=utf-8' }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = baseOf(path)
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      alert((e as Error).message)
+    }
+  }
+
   // Keep the open page selected after it (or its parent folder) is moved/renamed.
   const fixSelection = (src: string, dst: string) => {
     if (selectedPath === src) onSelect(dst)
@@ -150,7 +166,7 @@ export function FileTree({ tree, selectedPath, onSelect, onChanged, onSettings, 
 
   const ctx: TreeCtx = {
     selectedPath, onSelect, creating, renaming,
-    startCreate, startRename, submitCreate, submitRename, cancel, remove,
+    startCreate, startRename, submitCreate, submitRename, cancel, remove, download,
     dropTarget, onDragStart, onDragOverDir, onDropDir, onDragEnd,
   }
 
@@ -219,7 +235,9 @@ function TreeNode({ node, ctx }: { node: FileNode; ctx: TreeCtx }) {
     ...(isDir ? [
       { icon: <FilePlus2 size={14} />, label: t('newPageHere'), onClick: () => beginCreate('file') },
       { icon: <FolderPlus size={14} />, label: t('newFolderHere'), onClick: () => beginCreate('dir') },
-    ] : []),
+    ] : [
+      { icon: <Download size={14} />, label: t('download'), onClick: () => ctx.download(node.path) },
+    ]),
     { icon: <Pencil size={14} />, label: t('rename'), onClick: () => ctx.startRename(node.path) },
     { icon: <Trash2 size={14} />, label: t('delete'), danger: true, onClick: () => ctx.remove(node.path) },
   ]
