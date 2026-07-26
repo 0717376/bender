@@ -158,7 +158,9 @@ const RU = {
   ask_assistant: "Спросите ассистента…",
   chat_empty_1: "Спросите ассистента про ваши задачи и планы.",
   chat_empty_2: "Напр.: «что у меня на сегодня?», «перенеси отчёт на пятницу».",
-  no_connection: "⚠ Нет связи с ассистентом.",
+  load_failed: "Не удалось загрузить задачи",
+  retry: "Повторить",
+  no_connection: "Нет связи с ассистентом.",
 
   // Command palette
   search_tasks: "Поиск задач…",
@@ -315,7 +317,9 @@ const EN: Record<keyof typeof RU, string> = {
   ask_assistant: "Ask the assistant…",
   chat_empty_1: "Ask the assistant about your tasks and plans.",
   chat_empty_2: "E.g. “what's on for today?”, “move the report to Friday”.",
-  no_connection: "⚠ Can't reach the assistant.",
+  load_failed: "Could not load tasks",
+  retry: "Retry",
+  no_connection: "Can't reach the assistant.",
 
   search_tasks: "Search tasks…",
   nothing_found: "Nothing found",

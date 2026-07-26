@@ -18,20 +18,14 @@ import { DragCard } from "./TaskRow";
 import Toasts from "./Toast";
 import { t, t as tr } from "./i18n"; // tr: alias for scopes where a local `t` shadows the import
 import type { Task } from "./types";
+import { isoShift, isoToday } from "./dates";
 import { Sel, ToastMsg, isOverdue, useTasks } from "./useTasks";
 
-
-const pad = (n: number) => String(n).padStart(2, "0");
-const tomorrowISO = () => {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-};
 
 /** What dropping a task onto a sidebar target does. null = not a move target (no-op). */
 function dropBody(overId: string): Record<string, unknown> | null {
   if (overId === "drop:view:today") return { when: "today" };
-  if (overId === "drop:view:upcoming") return { when: tomorrowISO() }; // nearest future day
+  if (overId === "drop:view:upcoming") return { when: isoShift(1) }; // nearest future day
   if (overId === "drop:view:anytime") return { when: "anytime" };
   if (overId === "drop:view:someday") return { when: "someday" };
   if (overId === "drop:view:inbox") return { project: "null", when: "inbox" };
@@ -39,8 +33,6 @@ function dropBody(overId: string): Record<string, unknown> | null {
   if (overId.startsWith("drop:area:")) return { area_id: Number(overId.slice(10)), project: "null" };
   return null;
 }
-
-const isoToday = () => new Date().toISOString().slice(0, 10);
 
 export default function App() {
   const [authed, setAuthed] = useState(!!getToken());
@@ -408,6 +400,8 @@ function Board() {
           completing={T.completing}
           entering={T.entering}
           loading={T.loading}
+          loadError={T.loadError}
+          onRetry={() => void T.reload()}
           projects={T.overview?.projects ?? []}
           areas={T.overview?.areas ?? []}
           ops={ops}

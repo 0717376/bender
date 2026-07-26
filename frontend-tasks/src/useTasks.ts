@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, subscribeTasks } from "./api";
+import { isoToday } from "./dates";
 import { t } from "./i18n";
 import type { Overview, Task } from "./types";
 
@@ -46,8 +47,6 @@ export interface ToastMsg {
 
 const COMPLETE_ANIM_MS = 280;
 
-const isoToday = () => new Date().toISOString().slice(0, 10);
-
 export const isOverdue = (t: Task, today: string): boolean =>
   !!((t.when_date && t.when_date < today) || (t.deadline && t.deadline < today));
 
@@ -66,6 +65,7 @@ export function useTasks(pushToast: (t: ToastMsg) => void) {
   const [completing, setCompleting] = useState<Set<number>>(new Set());
   const [entering, setEntering] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   const viewRef = useRef(view);
   viewRef.current = view;
@@ -112,8 +112,12 @@ export function useTasks(pushToast: (t: ToastMsg) => void) {
         const local = prev.find((t) => t.id === keepId);
         return local ? fresh.map((t) => (t.id === keepId ? local : t)) : fresh;
       });
+      setLoadError(false);
     } catch {
+      // Пустой список — не то же самое, что «бэкенд не ответил»: молчаливое
+      // «на сегодня ничего не запланировано» врёт.
       setTasks([]);
+      setLoadError(true);
     }
   }, []);
 
@@ -236,8 +240,7 @@ export function useTasks(pushToast: (t: ToastMsg) => void) {
           // Land the crossed-out task in the view's done block (Done today / Logbook) right away.
           const v = viewRef.current;
           if (willComplete && ((v.kind === "view" && v.key === "today") || v.kind === "project")) {
-            const iso = new Date().toISOString().slice(0, 10);
-            setDoneTasks((prev) => [{ ...task, status: "completed", completed_at: iso }, ...prev]);
+            setDoneTasks((prev) => [{ ...task, status: "completed", completed_at: isoToday() }, ...prev]);
           }
           setCompleting((s) => {
             const n = new Set(s);
@@ -351,7 +354,7 @@ export function useTasks(pushToast: (t: ToastMsg) => void) {
   }, []);
 
   return {
-    overview, view, setView, tasks, doneTasks, completing, entering, loading,
+    overview, view, setView, tasks, doneTasks, completing, entering, loading, loadError,
     reload, add, toggle, patch, remove, reorder, arrange, hydrate,
     checkAdd, checkToggle, checkRemove,
     beginEdit, endEdit, setDragging,

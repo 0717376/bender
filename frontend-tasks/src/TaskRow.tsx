@@ -5,10 +5,10 @@ import { Calendar, Check, Flag, History, Layers, ListChecks, Repeat, X } from "l
 import TaskDetail from "./TaskDetail";
 import { repeatLabel } from "./RepeatPopover";
 import { projectColor } from "./colors";
+import { isoToday } from "./dates";
 import { agoLabel, t } from "./i18n";
 import type { Area, Project, Task } from "./types";
 
-const isoToday = () => new Date().toISOString().slice(0, 10);
 const stop = (e: React.SyntheticEvent) => e.stopPropagation();
 
 /** Collapsed-row content (title + meta). Shared by the row and the drag overlay. */

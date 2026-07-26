@@ -3,11 +3,11 @@ import { Check, Flag, Folder, Hash, Layers, ListChecks, Moon, Plus, Repeat, Star
 import { DatePickerPopover } from "./DatePicker";
 import { MovePopover, type MoveDest } from "./Popover";
 import { RepeatPopover, repeatLabel } from "./RepeatPopover";
+import { isoToday } from "./dates";
 import { projectColor } from "./colors";
 import { t } from "./i18n";
 import type { Area, Project, Task } from "./types";
 
-const isoToday = () => new Date().toISOString().slice(0, 10);
 const fmt = (iso: string) => { const [, m, d] = iso.split("-"); return `${d}.${m}`; };
 
 type Editor = "when" | "deadline" | "project" | "tags" | "checklist" | null;

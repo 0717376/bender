@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowUp, ChevronRight, Sparkles, Wrench } from "lucide-react";
+import { ArrowUp, ChevronRight, Sparkles, TriangleAlert, Wrench } from "lucide-react";
 import MicButton from "./MicButton";
 import { t } from "./i18n";
 import { useChat } from "./useChat";
@@ -76,9 +76,9 @@ export default function ChatPane({
           </div>
         )}
         {messages.map((m) => (
-          <Bubble key={m.id} role={m.role} text={m.text} tools={m.tools} />
+          <Bubble key={m.id} role={m.role} text={m.text} tools={m.tools} error={m.error} />
         ))}
-        {streaming && <Bubble role="assistant" text={streaming.text} tools={streaming.tools} live />}
+        {streaming && <Bubble role="assistant" text={streaming.text} tools={streaming.tools} error={streaming.error} live />}
       </div>
 
       <div className="chat-foot">
@@ -106,9 +106,9 @@ export default function ChatPane({
   );
 }
 
-function Bubble({ role, text, tools, live }: { role: string; text: string; tools?: string[]; live?: boolean }) {
+function Bubble({ role, text, tools, live, error }: { role: string; text: string; tools?: string[]; live?: boolean; error?: boolean }) {
   return (
-    <div className={"bubble " + role}>
+    <div className={"bubble " + role + (error ? " error" : "")}>
       {tools && tools.length > 0 && (
         <div className="tools">
           {tools.map((t, i) => (
@@ -119,7 +119,12 @@ function Bubble({ role, text, tools, live }: { role: string; text: string; tools
           ))}
         </div>
       )}
-      {text && <div className="text">{text}</div>}
+      {text && (
+        <div className="text">
+          {error && <TriangleAlert size={13} strokeWidth={2.2} />}
+          {text}
+        </div>
+      )}
       {live && !text && <div className="dots"><span /><span /><span /></div>}
     </div>
   );

@@ -1,11 +1,11 @@
 import { useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Popover } from "./Popover";
+import { isoToday as todayISO } from "./dates";
 import { MONTHS, WEEKDAYS_SHORT as WD, t } from "./i18n";
 
 const iso = (y: number, m: number, d: number) =>
   `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-const todayISO = () => new Date().toISOString().slice(0, 10);
 
 type Cell = { y: number; m: number; d: number; out: boolean };
 
