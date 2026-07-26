@@ -1,0 +1,173 @@
+.rail {
+    position: relative;
+    flex-shrink: 0;
+    width: 34px;
+    display: flex;
+    justify-content: flex-end;
+    padding: 42px 0 24px;
+}
+
+/* Свёрнутое состояние: штрих на заголовок, отступ = уровень */
+.ticks {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    padding: 4px 12px 4px 4px;
+    border: none;
+    background: none;
+    cursor: pointer;
+}
+
+.ticks span {
+    display: block;
+    width: 14px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--border-light);
+    transition: background 0.15s ease, width 0.15s ease;
+}
+
+.ticks span[data-level="3"] {
+    width: 9px;
+}
+
+.rail:hover .ticks span {
+    background: var(--text-3);
+}
+
+.ticks span[data-active="true"],
+.rail:hover .ticks span[data-active="true"] {
+    width: 18px;
+    background: var(--accent);
+}
+
+.list {
+    display: none;
+    position: absolute;
+    top: 34px;
+    right: 8px;
+    z-index: 12;
+    width: 244px;
+    max-height: calc(100% - 60px);
+    overflow-y: auto;
+    padding: 8px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: var(--shadow-card);
+}
+
+.rail:hover .list,
+.rail[data-open="true"] .list {
+    display: block;
+}
+
+.title {
+    display: none;
+    padding: 0 0 8px 10px;
+    color: var(--text-3);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.list button {
+    display: block;
+    width: 100%;
+    padding: 5px 10px;
+    border: none;
+    border-radius: 8px;
+    background: none;
+    color: var(--text-3);
+    font-family: inherit;
+    font-size: 12.5px;
+    line-height: 1.45;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    transition: color 0.12s ease, background 0.12s ease;
+}
+
+.list button[data-level="3"] {
+    padding-left: 24px;
+    font-size: 12px;
+}
+
+.list button:hover {
+    background: var(--bg-3);
+    color: var(--text);
+}
+
+.list button[data-active="true"] {
+    color: var(--accent-ink);
+    font-weight: 650;
+}
+
+/* Панели хватает ширины — оглавление живёт открытой колонкой */
+@container pane (min-width: 1060px) {
+    .rail {
+        width: 232px;
+        padding: 42px 12px 28px 28px;
+    }
+
+    .ticks {
+        display: none;
+    }
+
+    .list {
+        display: block;
+        position: static;
+        width: 100%;
+        max-height: 100%;
+        padding: 0 0 0 14px;
+        background: none;
+        border: none;
+        border-left: 1px solid var(--border);
+        border-radius: 0;
+        box-shadow: none;
+    }
+
+    .title {
+        display: block;
+    }
+}
+
+/* Телефон: рейки нет, список открывается кнопкой в шапке */
+@media (max-width: 760px) {
+    .rail {
+        position: static;
+        width: 0;
+        padding: 0;
+    }
+
+    .ticks,
+    .rail:hover .list {
+        display: none;
+    }
+
+    .rail[data-open="true"] .list {
+        display: block;
+        position: absolute;
+        top: 10px;
+        left: 12px;
+        right: 12px;
+        width: auto;
+        max-height: 62vh;
+        z-index: 40;
+        box-shadow: var(--shadow-pop);
+    }
+
+    .list button {
+        padding: 9px 12px;
+        font-size: 14px;
+    }
+
+    .list button[data-level="3"] {
+        padding-left: 28px;
+        font-size: 13.5px;
+    }
+}

@@ -156,9 +156,32 @@
     cursor: default;
 }
 
-.view, .editor {
+/* Контейнер для @container-запросов оглавления: по ширине этой области
+   TOC решает, быть ему колонкой, штрихами или кнопкой в шапке. */
+.body {
+    position: relative;
     flex: 1;
     min-height: 0;
+    display: flex;
+    container: pane / inline-size;
+}
+
+.view {
+    flex: 1;
+    min-width: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.doc {
+    max-width: var(--max-w);
+    margin: 0 auto;
+    padding: 40px 44px 80px;
+}
+
+.editor {
+    flex: 1;
+    min-width: 0;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     width: 100%;
@@ -167,28 +190,66 @@
     padding: 40px 44px 80px;
 }
 
+/* Кнопка «Оглавление» в шапке — только на телефоне, где рейки нет */
+.tocBtn {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--text-2);
+    cursor: pointer;
+}
+
+.tocBtn:active {
+    background: var(--bg-3);
+}
+
 /* ── Bear-style reading typography ── */
-.view {
+.doc {
     font-size: 16px;
     line-height: 1.75;
     color: var(--text);
     letter-spacing: 0.005em;
 }
 
-.view :global(h1) { font-size: 30px; font-weight: 800; letter-spacing: -0.025em; margin: 0 0 18px; line-height: 1.2; }
-.view :global(h2) { font-size: 21px; font-weight: 800; letter-spacing: -0.015em; margin: 34px 0 12px; }
-.view :global(h3) { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; margin: 24px 0 10px; }
-.view :global(h1 + p), .view :global(h2 + p), .view :global(h3 + p) { margin-top: 0; }
-.view :global(p) { margin: 0 0 15px; }
-.view :global(ul), .view :global(ol) { padding-left: 26px; margin: 13px 0; }
-.view :global(li) { margin: 6px 0; }
-.view :global(li::marker) { color: var(--text-3); }
+.doc :global(h1) { font-size: 30px; font-weight: 800; letter-spacing: -0.025em; margin: 0 0 18px; line-height: 1.2; text-wrap: balance; }
+.doc :global(h2) { font-size: 21px; font-weight: 800; letter-spacing: -0.015em; margin: 34px 0 12px; text-wrap: balance; }
+.doc :global(h3) { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; margin: 24px 0 10px; text-wrap: balance; }
+.doc :global(h2), .doc :global(h3) { scroll-margin-top: 18px; }
+.doc :global(h1 + p), .doc :global(h2 + p), .doc :global(h3 + p) { margin-top: 0; }
+.doc :global(p) { margin: 0 0 15px; text-wrap: pretty; }
+.doc :global(ul), .doc :global(ol) { padding-left: 26px; margin: 13px 0; }
+.doc :global(li) { margin: 6px 0; }
+.doc :global(li::marker) { color: var(--text-3); }
 /* Ссылки читаются как текст, акцент проявляется на hover — страница-оглавление
    не превращается в море акцентного цвета. */
-.view :global(a) { color: inherit; text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); transition: color 0.12s ease, border-color 0.12s ease; }
-.view :global(a:hover) { color: var(--accent-ink); border-bottom-color: var(--accent); }
-.view :global(strong) { font-weight: 700; }
-.view :global(blockquote) {
+.doc :global(a) { color: inherit; text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); transition: color 0.12s ease, border-color 0.12s ease; }
+.doc :global(a:hover) { color: var(--accent-ink); border-bottom-color: var(--accent); }
+/* Ссылка в никуда: страницы с таким путём нет в дереве */
+.doc :global(a[data-dead]) {
+    color: var(--text-3);
+    border-bottom: 1px dashed var(--border-light);
+    cursor: default;
+}
+.doc :global(a[data-dead]:hover) { color: var(--text-3); border-bottom-color: var(--border-light); }
+/* Внешняя ссылка — со стрелкой, чтобы не путать с переходом внутри вики */
+.doc :global(a[data-ext])::after {
+    content: "";
+    display: inline-block;
+    width: 0.62em;
+    height: 0.62em;
+    margin-left: 0.24em;
+    vertical-align: 0.06em;
+    background: currentColor;
+    opacity: 0.55;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 17 17 7'/%3E%3Cpath d='M8 7h9v9'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.doc :global(strong) { font-weight: 700; }
+.doc :global(blockquote) {
     border-left: 3px solid var(--accent);
     background: var(--accent-soft);
     border-radius: 0 10px 10px 0;
@@ -196,7 +257,8 @@
     margin: 16px 0;
     color: var(--text-2);
 }
-.view :global(code) {
+.doc :global(blockquote p:last-child) { margin-bottom: 0; }
+.doc :global(code) {
     font-family: var(--mono);
     font-size: 13.5px;
     background: var(--code-bg);
@@ -204,7 +266,7 @@
     border-radius: 5px;
     color: var(--code-text);
 }
-.view :global(pre) {
+.doc :global(pre) {
     position: relative;
     background: var(--code-bg);
     padding: 16px 18px;
@@ -213,12 +275,51 @@
     overflow-x: auto;
     border: 1px solid var(--border);
 }
-.view :global(pre code) { background: none; padding: 0; font-size: 13px; }
-.view :global(table) { border-collapse: collapse; width: 100%; margin: 18px 0; font-size: 14.5px; }
-.view :global(th), .view :global(td) { border-bottom: 1px solid var(--border); padding: 9px 12px; text-align: left; }
-.view :global(th) { font-weight: 600; color: var(--text-2); }
-.view :global(hr) { border: none; border-top: 1px solid var(--border); margin: 28px 0; }
-.view :global(img) { max-width: 100%; border-radius: 8px; }
+.doc :global(pre code) { background: none; padding: 0; font-size: 13px; }
+.doc :global(table) { border-collapse: collapse; width: 100%; margin: 18px 0; font-size: 14.5px; }
+.doc :global(th), .doc :global(td) { border-bottom: 1px solid var(--border); padding: 9px 12px; text-align: left; vertical-align: top; }
+.doc :global(th) { font-weight: 600; color: var(--text-2); white-space: nowrap; }
+.doc :global(tbody tr:last-child td) { border-bottom: none; }
+.doc :global(hr) { border: none; border-top: 1px solid var(--border); margin: 28px 0; }
+.doc :global(img) { max-width: 100%; border-radius: 8px; cursor: zoom-in; }
+
+/* Списки задач: живые чекбоксы вместо мёртвых квадратиков */
+.doc :global(li:has(> input[type="checkbox"])) { list-style: none; margin-left: -22px; }
+.doc :global(input[type="checkbox"]) {
+    width: 15px;
+    height: 15px;
+    margin-right: 8px;
+    vertical-align: -2px;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+.doc :global(li:has(> input[type="checkbox"]:checked)) {
+    color: var(--text-3);
+    text-decoration: line-through;
+    text-decoration-color: var(--border-light);
+}
+
+.lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+    background: color-mix(in srgb, #000 72%, transparent);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    cursor: zoom-out;
+    animation: msgIn 0.16s ease;
+}
+
+.lightbox img {
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 10px;
+    box-shadow: var(--shadow-pop);
+}
 
 .editor {
     border: none;
@@ -239,10 +340,12 @@
     .crumbs { font-size: 15px; }
     .crumbLeaf { font-weight: 650; }
     .meta { display: none; }
-    .view, .editor { padding: 22px 18px 48px; }
-    .view { font-size: 16.5px; line-height: 1.7; }
-    .view :global(h1) { font-size: 25px; }
-    .view :global(h2) { font-size: 20px; }
+    .tocBtn { display: inline-flex; }
+    .doc, .editor { padding: 22px 18px 48px; }
+    .doc { font-size: 16.5px; line-height: 1.7; }
+    .doc :global(h1) { font-size: 25px; }
+    .doc :global(h2) { font-size: 20px; }
+    .doc :global(th) { white-space: normal; }
     /* 16px keeps iOS Safari from auto-zooming the textarea on focus */
     .editor { font-size: 16px; }
     .toggle { padding: 7px 14px; font-size: 13px; }

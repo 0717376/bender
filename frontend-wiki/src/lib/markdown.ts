@@ -1,4 +1,4 @@
-import { marked } from 'marked'
+import { marked, type Tokens } from 'marked'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
 import { t } from './i18n'
@@ -13,6 +13,26 @@ renderer.code = function ({ text, lang }: { text: string; lang?: string }) {
   return `<pre><code class="hljs language-${lang || ''}">${highlighted}</code></pre>`
 }
 
+// Якорь заголовка: marked сам id не проставляет, а без него нет ни оглавления,
+// ни ссылок вида `страница.md#раздел`.
+const slugSeen = new Map<string, number>()
+
+export function slugify(raw: string): string {
+  const base = raw
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '-')
+    .replace(/^-+|-+$/g, '')
+  return base || 'section'
+}
+
+renderer.heading = function (token: Tokens.Heading) {
+  const html = this.parser.parseInline(token.tokens)
+  const base = slugify(token.text)
+  const n = (slugSeen.get(base) ?? 0) + 1
+  slugSeen.set(base, n)
+  return `<h${token.depth} id="${n === 1 ? base : `${base}-${n}`}">${html}</h${token.depth}>`
+}
+
 marked.use({
   renderer,
   breaks: true,
@@ -20,7 +40,22 @@ marked.use({
 })
 
 export function renderMarkdown(text: string): string {
+  slugSeen.clear()
   return marked.parse(text) as string
+}
+
+export interface Heading {
+  id: string
+  text: string
+  level: number
+}
+
+export function collectHeadings(root: HTMLElement): Heading[] {
+  return Array.from(root.querySelectorAll<HTMLElement>('h2, h3')).map(el => ({
+    id: el.id,
+    text: el.textContent?.trim() || '',
+    level: el.tagName === 'H2' ? 2 : 3,
+  }))
 }
 
 // Resolve a relative markdown link (href) against the currently open file's path.
@@ -57,6 +92,55 @@ export function escapeHtml(str: string): string {
   const d = document.createElement('div')
   d.textContent = str
   return d.innerHTML
+}
+
+// Внутренние ссылки помечаем «битыми», если такой страницы нет в дереве, внешние —
+// стрелкой. Обработку кликов делает ContentPane, здесь только разметка.
+export function markLinks(
+  root: HTMLElement,
+  currentPath: string | null,
+  exists: (path: string) => boolean,
+  missingLabel: string,
+): void {
+  root.querySelectorAll<HTMLAnchorElement>('a[href]').forEach(a => {
+    const href = a.getAttribute('href') || ''
+    if (href.startsWith('storage:') || href.startsWith('#')) return
+    const target = resolveWikiPath(currentPath, href)
+    if (target === null) {
+      a.dataset.ext = ''
+      a.target = '_blank'
+      a.rel = 'noopener noreferrer'
+      return
+    }
+    if (target && !exists(target)) {
+      a.dataset.dead = ''
+      a.title = missingLabel
+    }
+  })
+}
+
+// Переключить n-й чекбокс в исходнике (порядок совпадает с порядком рендера;
+// строки внутри ``` пропускаем — там задачи не рендерятся).
+export function toggleTask(text: string, index: number): string | null {
+  const lines = text.split('\n')
+  let fenced = false
+  let n = 0
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\s*(```|~~~)/.test(lines[i])) {
+      fenced = !fenced
+      continue
+    }
+    if (fenced) continue
+    const m = lines[i].match(/^(\s*(?:[-*+]|\d+[.)])\s+\[)([ xX])(\])/)
+    if (!m) continue
+    if (n === index) {
+      const at = m[1].length
+      lines[i] = lines[i].slice(0, at) + (m[2] === ' ' ? 'x' : ' ') + lines[i].slice(at + 1)
+      return lines.join('\n')
+    }
+    n++
+  }
+  return null
 }
 
 export function enhanceCodeBlocks(container: HTMLElement): void {

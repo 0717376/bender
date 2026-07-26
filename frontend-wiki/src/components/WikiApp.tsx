@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { FolderTree, FileText, Sparkles, BookOpen, HardDrive } from 'lucide-react'
 import type { FileNode } from '../lib/types'
 import type { ChatContext } from '../hooks/useWebSocket'
 import { fetchTree, storageTree } from '../lib/api'
+import { parseHash, hashFor } from '../lib/route'
 import { clearToken } from '../lib/auth'
 import { FileTree } from './FileTree'
 import { StorageTree } from './StorageTree'
@@ -20,6 +21,14 @@ interface WikiAppProps {
 type Pane = 'tree' | 'content' | 'chat'
 type Section = 'wiki' | 'files'
 
+function collectPaths(nodes: FileNode[], into: Set<string>): Set<string> {
+  for (const n of nodes) {
+    into.add(n.path)
+    if (n.children) collectPaths(n.children, into)
+  }
+  return into
+}
+
 function findNode(nodes: FileNode[], path: string): FileNode | null {
   for (const n of nodes) {
     if (n.path === path) return n
@@ -34,6 +43,7 @@ function findNode(nodes: FileNode[], path: string): FileNode | null {
 export function WikiApp({ onLogout }: WikiAppProps) {
   const [tree, setTree] = useState<FileNode[]>([])
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
+  const [anchor, setAnchor] = useState('')
   const [section, setSection] = useState<Section>('wiki')
   const [storage, setStorage] = useState<FileNode[]>([])
   const [storagePath, setStoragePath] = useState<string | null>(null)
@@ -85,10 +95,35 @@ export function WikiApp({ onLogout }: WikiAppProps) {
   }, [palette])
 
   // Tapping a file in the tree opens it and slides to the content pane on mobile.
-  const selectPath = useCallback((p: string | null) => {
+  // Путь открытой страницы держим в адресе: перезагрузка и «назад» работают.
+  const selectPath = useCallback((p: string | null, to = '') => {
     setSelectedPath(p)
+    setAnchor(to)
     setPane('content')
+    const cur = parseHash()
+    if (!p) {
+      if (cur.path) history.replaceState(null, '', location.pathname + location.search)
+    } else if (cur.path !== p || cur.anchor !== to) {
+      location.hash = hashFor(p, to)
+    }
   }, [])
+
+  useEffect(() => {
+    const apply = () => {
+      const { path, anchor: to } = parseHash()
+      if (!path) return
+      setSection('wiki')
+      setSelectedPath(path)
+      setAnchor(to)
+      setPane('content')
+    }
+    apply()
+    window.addEventListener('hashchange', apply)
+    return () => window.removeEventListener('hashchange', apply)
+  }, [])
+
+  const wikiPaths = useMemo(() => collectPaths(tree, new Set<string>()), [tree])
+  const exists = useCallback((p: string) => wikiPaths.has(p), [wikiPaths])
 
   const getContext = useCallback((): ChatContext => ({
     path: selectedPath,
@@ -187,6 +222,8 @@ export function WikiApp({ onLogout }: WikiAppProps) {
             path={selectedPath}
             title={selectedPath ? findNode(tree, selectedPath)?.title : undefined}
             mtime={selectedPath ? findNode(tree, selectedPath)?.mtime : undefined}
+            anchor={anchor}
+            exists={exists}
             reloadSignal={reloadSignal}
             onSelectionChange={setSelText}
             onNavigate={selectPath}

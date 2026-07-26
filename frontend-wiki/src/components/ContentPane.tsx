@@ -1,7 +1,13 @@
 import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react'
-import { ChevronLeft, Eye, Pencil } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { ChevronLeft, Eye, List, Pencil } from 'lucide-react'
 import { fetchFile, saveFile, storageFileUrl } from '../lib/api'
-import { renderMarkdown, enhanceCodeBlocks, resolveWikiPath } from '../lib/markdown'
+import {
+  renderMarkdown, enhanceCodeBlocks, resolveWikiPath, markLinks, toggleTask,
+  collectHeadings, type Heading,
+} from '../lib/markdown'
+import { hashFor } from '../lib/route'
+import { Toc, TOC_MIN } from './Toc'
 import styles from './ContentPane.module.css'
 import { t, updatedAgo } from '../lib/i18n'
 
@@ -9,9 +15,11 @@ interface ContentPaneProps {
   path: string | null
   title?: string | null
   mtime?: number
+  anchor?: string
+  exists: (path: string) => boolean
   reloadSignal: number
   onSelectionChange: (text: string) => void
-  onNavigate: (path: string) => void
+  onNavigate: (path: string, anchor?: string) => void
   onBack: () => void
 }
 
@@ -22,13 +30,24 @@ export interface ContentPaneHandle {
 
 const HL = 'wiki-sel'
 const SAVE_DELAY = 600
+// Заголовок считается текущим, когда доходит до этой отметки от верха окна чтения.
+const ACTIVE_LINE = 76
 
 export const ContentPane = forwardRef<ContentPaneHandle, ContentPaneProps>(
-  function ContentPane({ path, title, mtime, reloadSignal, onSelectionChange, onNavigate, onBack }, ref) {
+  function ContentPane(
+    { path, title, mtime, anchor, exists, reloadSignal, onSelectionChange, onNavigate, onBack },
+    ref,
+  ) {
     const [text, setText] = useState('')
+    const [loadedPath, setLoadedPath] = useState<string | null>(null)
     const [mode, setMode] = useState<'view' | 'edit'>('view')
     const [dirty, setDirty] = useState(false)
     const [saving, setSaving] = useState(false)
+    const [headings, setHeadings] = useState<Heading[]>([])
+    const [activeId, setActiveId] = useState('')
+    const [tocOpen, setTocOpen] = useState(false)
+    const [zoom, setZoom] = useState<string | null>(null)
+    const scrollRef = useRef<HTMLDivElement>(null)
     const viewRef = useRef<HTMLDivElement>(null)
     const textareaRef = useRef<HTMLTextAreaElement>(null)
     const pinnedRef = useRef('')
@@ -38,6 +57,8 @@ export const ContentPane = forwardRef<ContentPaneHandle, ContentPaneProps>(
     const dirtyRef = useRef(false)
     dirtyRef.current = dirty
     const saveTimer = useRef<number | undefined>(undefined)
+    const wantRef = useRef<string | null>(null)
+    const renderedPath = useRef<string | null>(null)
 
     const clearHighlight = useCallback(() => {
       try { (CSS as unknown as { highlights?: Map<string, unknown> }).highlights?.delete(HL) } catch { /* unsupported */ }
@@ -68,19 +89,20 @@ export const ContentPane = forwardRef<ContentPaneHandle, ContentPaneProps>(
     }, [])
 
     const load = useCallback(async (p: string) => {
-      try {
-        const content = await fetchFile(p)
-        setText(content)
-        setDirty(false)
-      } catch {
-        setText('')
-      }
+      wantRef.current = p
+      let content = ''
+      try { content = await fetchFile(p) } catch { /* показываем пустую */ }
+      if (wantRef.current !== p) return // пока грузили, открыли другую страницу
+      setText(content)
+      setLoadedPath(p)
+      setDirty(false)
     }, [])
 
     useEffect(() => {
       clearSelection()
+      setTocOpen(false)
       if (path) load(path)
-      else setText('')
+      else { setText(''); setLoadedPath(null) }
       setMode('view')
     }, [path, load, clearSelection])
 
@@ -96,35 +118,107 @@ export const ContentPane = forwardRef<ContentPaneHandle, ContentPaneProps>(
       if (reloadSignal && path && !dirtyRef.current) { clearSelection(); load(path) }
     }, [reloadSignal, path, load, clearSelection])
 
-    useEffect(() => {
-      if (mode === 'view' && viewRef.current) {
-        viewRef.current.innerHTML = renderMarkdown(text)
-        enhanceCodeBlocks(viewRef.current)
-        // storage:Папка/скан.jpg → authorized /storage/file URL.
-        // marked percent-encodes hrefs; decode before storageFileUrl re-encodes.
-        const storagePath = (v: string) => {
-          const raw = v.slice('storage:'.length)
-          try { return decodeURIComponent(raw) } catch { return raw }
-        }
-        viewRef.current.querySelectorAll<HTMLImageElement>('img[src^="storage:"]').forEach(img => {
-          img.src = storageFileUrl(storagePath(img.getAttribute('src')!))
-        })
-        viewRef.current.querySelectorAll<HTMLAnchorElement>('a[href^="storage:"]').forEach(a => {
-          a.href = storageFileUrl(storagePath(a.getAttribute('href')!))
-          a.target = '_blank'
-          a.rel = 'noopener noreferrer'
-        })
-      }
-    }, [text, mode])
-
-    useEffect(() => { clearSelection() }, [mode, clearSelection])
-
-    const onEdit = (value: string) => {
+    const onEdit = useCallback((value: string) => {
       setText(value)
       setDirty(true)
       if (saveTimer.current) clearTimeout(saveTimer.current)
       if (path) saveTimer.current = window.setTimeout(() => doSave(path, value), SAVE_DELAY)
-    }
+    }, [path, doSave])
+
+    const scrollToId = useCallback((id: string, smooth: boolean): boolean => {
+      const sc = scrollRef.current
+      const el = viewRef.current?.querySelector<HTMLElement>(`[id="${CSS.escape(id)}"]`)
+      if (!sc || !el) return false
+      const top = sc.scrollTop + el.getBoundingClientRect().top - sc.getBoundingClientRect().top - 18
+      sc.scrollTo({ top: Math.max(0, top), behavior: smooth ? 'smooth' : 'auto' })
+      return true
+    }, [])
+
+    // Manrope приезжает с Google Fonts уже после первого рендера (display=swap) и
+    // сдвигает вёрстку — повторяем прицел, пока пользователь сам не начал листать.
+    const reaim = useCallback((id: string) => {
+      const sc = scrollRef.current
+      if (!sc) return
+      let at = sc.scrollTop
+      const again = () => {
+        if (!scrollRef.current || Math.abs(scrollRef.current.scrollTop - at) > 2) return
+        scrollToId(id, false)
+        at = scrollRef.current.scrollTop
+      }
+      requestAnimationFrame(again)
+      document.fonts?.ready.then(again).catch(() => {})
+    }, [scrollToId])
+
+    const updateActive = useCallback(() => {
+      const sc = scrollRef.current
+      const doc = viewRef.current
+      if (!sc || !doc) return
+      const top = sc.getBoundingClientRect().top
+      const hs = Array.from(doc.querySelectorAll<HTMLElement>('h2, h3'))
+      let cur = ''
+      for (const h of hs) {
+        if (h.getBoundingClientRect().top - top > ACTIVE_LINE) break
+        cur = h.id
+      }
+      setActiveId(cur || hs[0]?.id || '')
+    }, [])
+
+    useEffect(() => {
+      const doc = viewRef.current
+      if (mode !== 'view' || !doc || loadedPath !== path) return
+      doc.innerHTML = renderMarkdown(text)
+      enhanceCodeBlocks(doc)
+      markLinks(doc, path, exists, t('missingPage'))
+      // storage:Папка/скан.jpg → authorized /storage/file URL.
+      // marked percent-encodes hrefs; decode before storageFileUrl re-encodes.
+      const storagePath = (v: string) => {
+        const raw = v.slice('storage:'.length)
+        try { return decodeURIComponent(raw) } catch { return raw }
+      }
+      doc.querySelectorAll<HTMLImageElement>('img[src^="storage:"]').forEach(img => {
+        img.src = storageFileUrl(storagePath(img.getAttribute('src')!))
+      })
+      doc.querySelectorAll<HTMLAnchorElement>('a[href^="storage:"]').forEach(a => {
+        a.href = storageFileUrl(storagePath(a.getAttribute('href')!))
+        a.target = '_blank'
+        a.rel = 'noopener noreferrer'
+      })
+      doc.querySelectorAll<HTMLInputElement>('input[type="checkbox"]').forEach((box, i) => {
+        box.disabled = false
+        box.dataset.task = String(i)
+      })
+      setHeadings(collectHeadings(doc))
+      if (renderedPath.current !== path) {
+        renderedPath.current = path
+        if (anchor && scrollToId(anchor, false)) reaim(anchor)
+        else scrollRef.current!.scrollTop = 0
+      }
+      updateActive()
+    }, [text, mode, path, loadedPath, anchor, exists, scrollToId, reaim, updateActive])
+
+    // Ширина области чтения меняется (свернули чат, повернули экран) — текущий
+    // раздел пересчитываем: события скролла при этом не будет.
+    useEffect(() => {
+      const sc = scrollRef.current
+      if (!sc) return
+      const ro = new ResizeObserver(() => updateActive())
+      ro.observe(sc)
+      return () => ro.disconnect()
+    }, [mode, updateActive])
+
+    // Переход к разделу той же страницы (ссылка из другой вкладки, кнопка «назад»).
+    useEffect(() => {
+      if (anchor && mode === 'view') scrollToId(anchor, true)
+    }, [anchor, mode, scrollToId])
+
+    useEffect(() => { clearSelection() }, [mode, clearSelection])
+
+    useEffect(() => {
+      if (!zoom) return
+      const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setZoom(null) }
+      window.addEventListener('keydown', onKey)
+      return () => window.removeEventListener('keydown', onKey)
+    }, [zoom])
 
     const flushNow = useCallback(() => {
       if (saveTimer.current) clearTimeout(saveTimer.current)
@@ -148,26 +242,51 @@ export const ContentPane = forwardRef<ContentPaneHandle, ContentPaneProps>(
       onSelectionChange(txt)
     }, [onSelectionChange])
 
-    // Intercept clicks on internal markdown links and navigate via app state
-    // instead of letting the browser follow a dead relative URL.
+    // Адрес раздела — в строку браузера, но без новой записи в истории.
+    const rememberAnchor = useCallback((id: string) => {
+      if (path) history.replaceState(null, '', hashFor(path, id))
+    }, [path])
+
+    const pickHeading = useCallback((id: string) => {
+      scrollToId(id, true)
+      rememberAnchor(id)
+    }, [scrollToId, rememberAnchor])
+
     const onViewClick = useCallback((e: React.MouseEvent) => {
-      // Respect modifier clicks (open in new tab, etc.).
-      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
-      const anchor = (e.target as HTMLElement).closest('a')
-      if (!anchor) return
-      const href = anchor.getAttribute('href') || ''
-      const target = resolveWikiPath(path, href)
-      if (target === null) {
-        // External link: open in a new tab to keep the wiki open.
-        if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('//')) {
-          anchor.setAttribute('target', '_blank')
-          anchor.setAttribute('rel', 'noopener noreferrer')
-        }
+      const el = e.target as HTMLElement
+
+      if (el instanceof HTMLInputElement && el.type === 'checkbox' && el.dataset.task) {
+        const next = toggleTask(textRef.current, Number(el.dataset.task))
+        if (next !== null) onEdit(next)
         return
       }
+      if (el instanceof HTMLImageElement && !el.closest('a')) {
+        setZoom(el.src)
+        return
+      }
+
+      // Respect modifier clicks (open in new tab, etc.).
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+      const link = el.closest('a')
+      if (!link) return
+      if (link.dataset.dead !== undefined) { e.preventDefault(); return }
+
+      const href = link.getAttribute('href') || ''
+      if (href.startsWith('#')) {
+        e.preventDefault()
+        let id = href.slice(1)
+        try { id = decodeURIComponent(id) } catch { /* keep raw */ }
+        if (scrollToId(id, true)) rememberAnchor(id)
+        return
+      }
+      const target = resolveWikiPath(path, href)
+      if (target === null) return // внешняя ссылка: target=_blank уже проставлен
       e.preventDefault()
-      if (target) onNavigate(target)
-    }, [path, onNavigate])
+      if (!target) return
+      let frag = href.split('#')[1] || ''
+      try { frag = decodeURIComponent(frag) } catch { /* keep raw */ }
+      onNavigate(target, frag)
+    }, [path, onNavigate, onEdit, scrollToId, rememberAnchor])
 
     const captureEdit = useCallback(() => {
       const el = textareaRef.current
@@ -191,6 +310,7 @@ export const ContentPane = forwardRef<ContentPaneHandle, ContentPaneProps>(
     const segments = path.split('/')
     const leaf = title || segments[segments.length - 1].replace(/\.md$/, '')
     const folders = segments.slice(0, -1)
+    const hasToc = mode === 'view' && headings.length >= TOC_MIN
 
     return (
       <div className={styles.pane}>
@@ -205,6 +325,15 @@ export const ContentPane = forwardRef<ContentPaneHandle, ContentPaneProps>(
             <span className={styles.crumbLeaf}>{leaf}</span>
           </span>
           <div className={styles.barActions}>
+            {hasToc && (
+              <button
+                className={styles.tocBtn}
+                aria-label={t('toc')}
+                onClick={e => { e.stopPropagation(); setTocOpen(o => !o) }}
+              >
+                <List size={17} strokeWidth={2} />
+              </button>
+            )}
             {mode === 'edit' ? (
               <span className={styles.status}>{saving || dirty ? t('saving') : t('saved')}</span>
             ) : (
@@ -218,19 +347,45 @@ export const ContentPane = forwardRef<ContentPaneHandle, ContentPaneProps>(
             </button>
           </div>
         </div>
-        {mode === 'view' ? (
-          <div ref={viewRef} className={`${styles.view} scroll`} onMouseUp={captureView} onClick={onViewClick} />
-        ) : (
-          <textarea
-            ref={textareaRef}
-            className={`${styles.editor} scroll`}
-            value={text}
-            spellCheck={false}
-            onChange={e => onEdit(e.target.value)}
-            onKeyDown={onKeyDown}
-            onSelect={captureEdit}
-            onBlur={flushNow}
-          />
+        <div className={styles.body}>
+          {mode === 'view' ? (
+            <div
+              ref={scrollRef}
+              className={`${styles.view} scroll`}
+              onScroll={updateActive}
+              onMouseUp={captureView}
+              onClick={onViewClick}
+            >
+              <div ref={viewRef} className={styles.doc} />
+            </div>
+          ) : (
+            <textarea
+              ref={textareaRef}
+              className={`${styles.editor} scroll`}
+              value={text}
+              spellCheck={false}
+              onChange={e => onEdit(e.target.value)}
+              onKeyDown={onKeyDown}
+              onSelect={captureEdit}
+              onBlur={flushNow}
+            />
+          )}
+          {mode === 'view' && (
+            <Toc
+              items={headings}
+              activeId={activeId}
+              open={tocOpen}
+              onOpen={setTocOpen}
+              onPick={pickHeading}
+            />
+          )}
+        </div>
+
+        {zoom && createPortal(
+          <div className={styles.lightbox} onClick={() => setZoom(null)}>
+            <img src={zoom} alt="" />
+          </div>,
+          document.body,
         )}
       </div>
     )
