@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
 // Backend port is configurable so we can run on an unusual local port.
@@ -8,6 +8,7 @@ const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), 
 
 export default defineConfig({
   plugins: [react()],
+  test: { environment: "jsdom", setupFiles: ["./src/test-setup.ts"] },
   define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   server: {
     host: "127.0.0.1",
