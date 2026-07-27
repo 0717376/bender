@@ -38,9 +38,9 @@ async def lifespan(_app: FastAPI):
     storage_init()
     # Папки заводит не только интерфейс (агент через Bash, бэкапы) — выдаём им
     # страницы, иначе в дереве всплывёт «папка», которой в модели вики нет.
-    fixed = normalize_pages()
-    if fixed:
-        logger.info("Wiki: added index pages to %d folder(s)", fixed)
+    for path, how in normalize_pages():
+        logger.info("Wiki: %s → %s", path, "страница продвинута" if how == "promoted"
+                    else "заведена пустая страница раздела")
     tasks: list[asyncio.Task] = []
     if config.TELEGRAM_BOT_TOKEN:
         tasks.append(asyncio.create_task(telegram_poller()))

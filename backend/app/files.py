@@ -122,6 +122,17 @@ def page_title(abs_path: str) -> str | None:
     return None
 
 
+def page_label(rel: str) -> str:
+    """Как звать страницу, у которой нет заголовка `# ...`: родительскую — по её
+    папке (слово «index» пользователь видеть не должен), обычную — по имени файла."""
+    base = os.path.basename(rel)
+    if base.endswith(".md"):
+        base = base[:-3]
+    if base == "index" and "/" in rel:
+        return os.path.basename(os.path.dirname(rel))
+    return base
+
+
 def build_tree(abs_dir: str, rel_prefix: str) -> list[dict]:
     """Дерево страниц. Папка с `index.md` — это одна страница с детьми (как в
     Confluence), поэтому сам index.md отдельной строкой не показываем."""
@@ -266,7 +277,13 @@ def promote(rel: str) -> str:
 
 
 def ensure_page(rel_dir: str) -> str:
-    """Дать папке её страницу. Если рядом лежит `x.md` — это она и есть."""
+    """Дать папке её страницу. Если рядом лежит `x.md` — это она и есть.
+
+    Страница заводится пустой. Человеческого имени у папки нет — есть только слаг,
+    и написать `# notes` заголовком значило бы выдать идентификатор за название:
+    пользователю пришлось бы сначала стереть выдумку, а потом писать своё. Дерево
+    и поиск в отсутствие заголовка и так зовут страницу по папке (page_label).
+    """
     abs_dir = os.path.join(config.WIKI_DIR, rel_dir)
     index = os.path.join(abs_dir, "index.md")
     if os.path.isfile(index):
@@ -275,7 +292,7 @@ def ensure_page(rel_dir: str) -> str:
         return promote(f"{rel_dir}.md")
     os.makedirs(abs_dir, exist_ok=True)
     with open(index, "w", encoding="utf-8") as f:
-        f.write(f"# {os.path.basename(rel_dir)}\n")
+        f.write("")
     return f"{rel_dir}/index.md"
 
 
@@ -308,21 +325,27 @@ def ensure_parent(abs_path: str) -> None:
         ensure_page(cur)
 
 
-def normalize_pages() -> int:
+def normalize_pages() -> list[tuple[str, str]]:
     """Разовая починка при старте: папкам без страницы её выдать.
 
     Папки заводит не только интерфейс — их создаёт агент через Bash, они приезжают
     из бэкапов. Без этого в дереве всплыла бы «папка», которой в модели нет.
+
+    Возвращает [(путь страницы, 'promoted' | 'created')] — чтобы вмешательство в
+    чужой контент не было молчаливым: страницы, заведённые без спроса, должны быть
+    названы в логе поимённо.
     """
-    fixed = 0
+    made: list[tuple[str, str]] = []
     for dirpath, dirnames, _ in os.walk(config.WIKI_DIR):
         dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
         for name in dirnames:
-            rel = rel_path(os.path.join(dirpath, name))
-            if not os.path.isfile(os.path.join(dirpath, name, "index.md")):
-                ensure_page(rel)
-                fixed += 1
-    return fixed
+            abs_dir = os.path.join(dirpath, name)
+            if os.path.isfile(os.path.join(abs_dir, "index.md")):
+                continue
+            rel = rel_path(abs_dir)
+            how = "promoted" if os.path.isfile(abs_dir + ".md") else "created"
+            made.append((ensure_page(rel), how))
+    return made
 
 
 def move(src_rel: str, dst_rel: str) -> None:
@@ -440,7 +463,7 @@ async def files_search(q: str, limit: int = 30, _: bool = Depends(require_auth))
                 text = f.read()
         except OSError:
             continue
-        title = page_title(abs_path) or os.path.basename(rel)[:-3]
+        title = page_title(abs_path) or page_label(rel)
         hit = {"path": rel, "title": title, "snippet": snippet(text, needle)}
         if needle in title.lower() or needle in rel.lower():
             by_title.append(hit)

@@ -168,7 +168,11 @@ def test_ensure_page_gives_folder_its_own_page(wiki):
     (wiki.root / "notes").mkdir()
 
     assert wiki.ensure_page("notes") == "notes/index.md"
-    assert wiki.read("notes/index.md") == "# notes\n"
+    # Пустая, а не «# notes»: слаг папки — идентификатор, выдавать его за
+    # заголовок значит заставить человека сначала стереть выдумку.
+    assert wiki.read("notes/index.md") == ""
+    (node,) = wiki.build_tree(wiki.config.WIKI_DIR, "")
+    assert node["title"] == "notes"
 
 
 def test_ensure_page_prefers_existing_sibling(wiki):
@@ -209,13 +213,40 @@ def test_normalize_pages_fixes_folders_without_a_page(wiki):
     wiki.write("machines/timeweb.md", "# Timeweb\n")
     wiki.write("machines/timeweb/litellm.md", "# LiteLLM\n")
 
-    wiki.normalize_pages()
+    made = wiki.normalize_pages()
 
-    assert wiki.read("uchyoba/notes/index.md") == "# notes\n"
+    assert wiki.read("uchyoba/notes/index.md") == ""
     assert wiki.read("machines/timeweb/index.md") == "# Timeweb\n"
     assert [n.get("page") for n in wiki.build_tree(wiki.config.WIKI_DIR, "")] == [
         "machines/index.md", "uchyoba/index.md",
     ]
+    # Вмешательство в чужой контент должно быть поимённым, а не «починил 3 папки».
+    assert dict(made) == {
+        "machines/index.md": "created",
+        "machines/timeweb/index.md": "promoted",
+        "uchyoba/index.md": "created",
+        "uchyoba/notes/index.md": "created",
+    }
+
+
+@pytest.mark.parametrize(("rel", "want"), [
+    ("infra/machines/index.md", "machines"),
+    ("infra/hermes.md", "hermes"),
+    ("index.md", "index"),
+])
+def test_page_label(wiki, rel, want):
+    """Страницу без заголовка зовут по папке — «index» пользователь видеть не должен."""
+    assert wiki.page_label(rel) == want
+
+
+def test_search_titles_headless_page_by_folder(wiki):
+    wiki.write("uchyoba/notes/index.md", "конспекты с лекций")
+
+    import asyncio
+
+    res = asyncio.run(wiki.files_search(q="конспекты", limit=10, _=True))
+
+    assert [r["title"] for r in res["results"]] == ["notes"]
 
 
 def test_ensure_parent_promotes_page_on_the_way(wiki):
