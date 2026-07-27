@@ -67,6 +67,12 @@ def test_slug_path_normalizes_new_page(wiki):
     assert wiki.slug_path("Инфра/Машины/Гига-VPN.md") == "infra/mashiny/giga-vpn.md"
 
 
+def test_slug_path_keeps_reserved_names(wiki):
+    """CLAUDE.md — имя по договорённости: claude.md агент читать не станет."""
+    assert wiki.slug_path("CLAUDE.md") == "CLAUDE.md"
+    assert wiki.slug_path("Инфра/CLAUDE.md") == "infra/CLAUDE.md"
+
+
 def test_rel_path_survives_symlinked_root(tmp_path, monkeypatch):
     """Корень вики бывает симлинком (/tmp → /private/tmp) — иначе путь уезжает в «../..»."""
     from app import config, files
