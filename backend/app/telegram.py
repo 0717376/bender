@@ -36,6 +36,48 @@ TG_WELCOME = (
 DRAFT_CAP = 3500       # stop updating the live draft past this size
 DRAFT_THROTTLE = 1.0   # min seconds between sendMessageDraft calls
 
+
+class Draft:
+    """Живой черновик ответа (Bot API sendMessageDraft).
+
+    Вызовы с одним draft_id анимируют один и тот же превью; настоящее сообщение
+    потом отправляет tg_send. Черновик надо гасить руками: сам он не исчезает и
+    после ответа остаётся висеть в чате обрывком текста — обычно преамбулой
+    «сейчас посмотрю», на которой его застал троттлинг. Пустой текст стирает
+    черновик (Bot API 10.0).
+
+    Текст черновика — plain: markdown посреди потока ещё не дописан.
+    """
+
+    def __init__(self, client: httpx.AsyncClient, chat_id: int):
+        self.client = client
+        self.chat_id = chat_id
+        self.id = (time.time_ns() % 2_000_000_000) or 1
+        self.at = 0.0
+        self.ok: bool | None = None   # None — ещё не пробовали, False — метод недоступен
+        self.capped = False
+
+    async def update(self, acc: str) -> None:
+        if self.ok is False or self.capped or not acc.strip():
+            return
+        now = time.monotonic()
+        if now - self.at < DRAFT_THROTTLE:
+            return
+        self.at = now
+        res = await tg_api(self.client, "sendMessageDraft", chat_id=self.chat_id,
+                           draft_id=self.id, text=acc[:DRAFT_CAP])
+        if self.ok is None:
+            self.ok = bool(res.get("ok"))
+        self.capped = len(acc) > DRAFT_CAP
+
+    async def clear(self) -> None:
+        """Погасить черновик перед отправкой настоящего сообщения."""
+        if not self.ok:
+            return
+        self.ok = False
+        await tg_api(self.client, "sendMessageDraft", chat_id=self.chat_id,
+                     draft_id=self.id, text="")
+
 TG_LIMIT = 3500  # split markdown below Telegram's 4096-char cap (HTML adds length)
 
 
@@ -272,37 +314,19 @@ async def tg_handle(client: httpx.AsyncClient, update: dict):
 
     stop = asyncio.Event()
     typing = asyncio.create_task(tg_typing(client, chat_id, stop))
-    # Native streaming (Bot API 9.5 sendMessageDraft): calls with the same
-    # non-zero draft_id animate one live preview; the final tg_send persists
-    # the real message. Drafts are plain text — mid-stream markdown is
-    # incomplete. If the method is unavailable we silently fall back to the
-    # typing indicator alone.
-    draft = {"at": 0.0, "ok": None, "capped": False,
-             "id": (time.time_ns() % 2_000_000_000) or 1}
-
-    async def on_delta(acc: str) -> None:
-        if draft["ok"] is False or draft["capped"] or not acc.strip():
-            return
-        now = time.monotonic()
-        if now - draft["at"] < DRAFT_THROTTLE:
-            return
-        draft["at"] = now
-        res = await tg_api(client, "sendMessageDraft", chat_id=chat_id,
-                           draft_id=draft["id"], text=acc[:DRAFT_CAP])
-        if draft["ok"] is None:
-            draft["ok"] = bool(res.get("ok"))
-        draft["capped"] = len(acc) > DRAFT_CAP
+    draft = Draft(client, chat_id)
 
     try:
         async def on_tool(_name, _detail):
             await tg_api(client, "sendChatAction", chat_id=chat_id, action="typing")
-        reply = await run_collect(text, on_tool, on_delta=on_delta)
+        reply = await run_collect(text, on_tool, on_delta=draft.update)
     except Exception as e:
         logger.error("tg run error: %s", e)
         reply = "Что-то пошло не так при обработке запроса."
     finally:
         stop.set()
         await typing
+        await draft.clear()
 
     await tg_send(client, chat_id, reply)
 
