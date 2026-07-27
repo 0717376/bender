@@ -15,7 +15,22 @@ FILES_MAX_UPLOAD = int(os.environ.get("FILES_MAX_UPLOAD", str(500 * 1024 * 1024)
 SESSION_FILE = os.path.join(DATA_DIR, "session.json")
 # Agent persona (SOUL.md-style) — an ordinary wiki page the user can edit;
 # re-read on each new session.
-PERSONA_PATH = os.environ.get("PERSONA_PATH", os.path.join(WIKI_DIR, "Персона ассистента.md"))
+PERSONA_NAME = "persona.md"
+PERSONA_LEGACY = "Персона ассистента.md"
+
+
+def persona_path() -> str:
+    """Персона — обычная страница вики. Historically кириллицей с пробелом, поэтому
+    принимаем оба имени: путь ищется при каждом чтении, и страницу можно
+    переименовать на лету, не перезапуская бэкенд. Новую сеем уже слагом."""
+    env = os.environ.get("PERSONA_PATH")
+    if env:
+        return env
+    for name in (PERSONA_NAME, PERSONA_LEGACY):
+        path = os.path.join(WIKI_DIR, name)
+        if os.path.isfile(path):
+            return path
+    return os.path.join(WIKI_DIR, PERSONA_NAME)
 TG_MEDIA_DIR = os.path.join(DATA_DIR, "tg_media")
 
 # --- Auth ---

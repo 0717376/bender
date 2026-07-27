@@ -172,16 +172,17 @@ DEFAULT_PERSONA = (
 
 
 def _read_persona() -> str:
+    path = config.persona_path()
     try:
-        with open(config.PERSONA_PATH, encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             return f.read().strip()
     except FileNotFoundError:
         try:
-            os.makedirs(os.path.dirname(config.PERSONA_PATH), exist_ok=True)
-            with open(config.PERSONA_PATH, "w", encoding="utf-8") as f:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
                 f.write(DEFAULT_PERSONA)
         except OSError:
-            logger.warning("cannot seed persona file at %s", config.PERSONA_PATH)
+            logger.warning("cannot seed persona file at %s", path)
         return DEFAULT_PERSONA
     except OSError:
         return ""

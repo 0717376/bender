@@ -68,6 +68,11 @@ def slugify(raw: str) -> str:
     return slug or "page"
 
 
+# Имена по договорённости, а не человеческие: слаг сделал бы из CLAUDE.md
+# claude.md, и Claude Code перестал бы её читать (в контейнере ФС регистрозависима).
+RESERVED_NAMES = {"CLAUDE.md", "AGENTS.md", "index.md"}
+
+
 def slug_path(rel: str) -> str:
     """Слагифицировать каждый сегмент пути, сохранив расширение .md.
 
@@ -80,6 +85,8 @@ def slug_path(rel: str) -> str:
     parts = [p for p in rel.split("/") if p not in ("", ".", "..")]
     if not parts:
         return rel
+    if parts[-1] in RESERVED_NAMES:
+        return "/".join([slugify(p) for p in parts[:-1]] + [parts[-1]])
     tail = parts[-1]
     stem, dot, ext = tail.rpartition(".")
     if dot and ext.lower() == "md":
