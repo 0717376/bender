@@ -13,6 +13,10 @@ services:
     environment:
       - WIKI_PASSWORD=${WIKI_PASSWORD}
       - CLAUDE_MODEL=${CLAUDE_MODEL:-opus}
+      # Долгоживущий токен из `claude setup-token` (год). Задан — CLI авторизуется им и не
+      # зависит от OAuth-сессии в ~/.claude: на headless-хосте она однажды не обновляется
+      # и умирает молча, а агент начинает отвечать «Failed to authenticate».
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:-}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_ALLOWED_IDS=${TELEGRAM_ALLOWED_IDS:-}
       - TG_API_BASE=${TG_API_BASE:-https://api.telegram.org}

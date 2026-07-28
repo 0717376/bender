@@ -43,6 +43,8 @@ Storage is files and SQLite on a volume: `content/` (markdown wiki), `data/` (ta
 
 You need Docker and an authenticated [Claude CLI](https://docs.anthropic.com/en/docs/claude-code) (the agent uses its OAuth credentials from `~/.claude`).
 
+On a browser-less server, don't rely on the mounted session — issue a long-lived token instead: run `claude setup-token` (valid for a year) and put the resulting string into `.env` as `CLAUDE_CODE_OAUTH_TOKEN`. A regular OAuth session eventually stops refreshing, after which the agent answers with "Failed to authenticate".
+
 ```bash
 git clone https://github.com/0717376/bender && cd bender
 
@@ -95,6 +97,7 @@ The backend detects the local server via `TG_API_BASE` and reads incoming files 
 | `REVIEWER_ENABLED` / `REVIEWER_MODEL` | `1` / `sonnet` | background memory/skills reviewer |
 | `CURATOR_ENABLED` / `CURATOR_INTERVAL_HOURS` | `1` / `168` | skill-library curator |
 | `CLAUDE_DIR` / `CLAUDE_JSON` | `~/.claude` / `~/.claude.json` | Claude CLI credentials mounted into the container |
+| `CLAUDE_CODE_OAUTH_TOKEN` | — | long-lived token from `claude setup-token`; when set, used instead of the OAuth session in `~/.claude` |
 | `WIKI_PORT` / `TASKS_PORT` | `8842` / `8851` | frontend ports |
 | `TZ` | `Europe/Moscow` | timezone (matters for cron) |
 

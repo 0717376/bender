@@ -43,6 +43,8 @@ frontend-tasks/   React: задачи, dnd-kit, темы и палитры, ча
 
 Понадобится Docker и авторизованный [Claude CLI](https://docs.anthropic.com/en/docs/claude-code) (агент работает через его OAuth-креды из `~/.claude`).
 
+На сервере без браузера надёжнее не полагаться на смонтированную сессию, а выдать долгоживущий токен: `claude setup-token` (годный год) и полученную строку — в `.env` как `CLAUDE_CODE_OAUTH_TOKEN`. Обычная OAuth-сессия рано или поздно перестаёт обновляться, и агент начинает отвечать «Failed to authenticate».
+
 ```bash
 git clone https://github.com/0717376/bender && cd bender
 
@@ -95,6 +97,7 @@ Backend определяет локальный сервер по `TG_API_BASE` 
 | `REVIEWER_ENABLED` / `REVIEWER_MODEL` | `1` / `sonnet` | фоновый ревьюер памяти и навыков |
 | `CURATOR_ENABLED` / `CURATOR_INTERVAL_HOURS` | `1` / `168` | куратор библиотеки навыков |
 | `CLAUDE_DIR` / `CLAUDE_JSON` | `~/.claude` / `~/.claude.json` | креды Claude CLI, монтируются в контейнер |
+| `CLAUDE_CODE_OAUTH_TOKEN` | — | долгоживущий токен `claude setup-token`; задан — используется вместо OAuth-сессии из `~/.claude` |
 | `WIKI_PORT` / `TASKS_PORT` | `8842` / `8851` | порты фронтендов |
 | `TZ` | `Europe/Moscow` | часовой пояс (важен для cron) |
 
