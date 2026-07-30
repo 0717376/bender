@@ -151,8 +151,13 @@ export async function mountRendition(at) {
   });
   applyTheme();
   wireContent();
+  // Книгу могут закрыть, пока она ещё раскладывается: после каждого ожидания проверяем,
+  // что это по-прежнему наш rendition, иначе дорисовываем в пустоту и падаем.
+  const mine = state.rendition;
   await state.rendition.display(at || undefined);
+  if (state.rendition !== mine) return;
   await fitLines();
+  if (state.rendition !== mine) return;
   live().forEach(drawHighlight);
   syncSpread();
 

@@ -11,6 +11,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 COVER = b"\x89PNG\r\n\x1a\n" + b"0" * 40
+JPEG = b"\xff\xd8\xff" + b"0" * 200          # миниатюра: важно только начало файла
 
 
 def make_epub(title="Проверка чтения", author="Тестовый Автор", *, script=False,
@@ -194,3 +195,45 @@ def test_битый_файл_при_переезде_не_ломает_запу�
     books.init()
     assert books.catalog() == []
     assert os.path.exists(os.path.join(root, "broken.epub"))   # оставили как есть, не выбросили
+
+
+# ── Миниатюра обложки ──
+
+
+def test_миниатюра_кладётся_и_попадает_в_каталог(books):
+    meta = books.ingest(make_epub(), "book.epub")
+    assert meta["thumb"] == ""
+    path = os.path.join(str(books.config.BOOKS_DIR), meta["id"], books.THUMB)
+    with open(path, "wb") as f:
+        f.write(JPEG)
+    saved = dict(meta, thumb=books.THUMB)
+    with open(os.path.join(str(books.config.BOOKS_DIR), meta["id"], "meta.json"), "w", encoding="utf-8") as f:
+        json.dump(saved, f, ensure_ascii=False)
+    assert books.catalog()[0]["thumb"] == books.THUMB
+
+
+def test_не_jpeg_миниатюрой_не_считается(books):
+    import asyncio
+
+    from fastapi import HTTPException
+
+    meta = books.ingest(make_epub(), "book.epub")
+
+    class Req:
+        def __init__(self, data):
+            self._data = data
+
+        async def body(self):
+            return self._data
+
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(books.put_thumb(meta["id"], Req(b"<html>not a picture"), True))
+    assert e.value.status_code == 400
+
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(books.put_thumb(meta["id"], Req(b"\xff\xd8\xff" + b"0" * (books.THUMB_MAX + 1)), True))
+    assert e.value.status_code == 413
+
+    updated = asyncio.run(books.put_thumb(meta["id"], Req(JPEG), True))
+    assert updated["thumb"] == books.THUMB
+    assert books.catalog()[0]["thumb"] == books.THUMB

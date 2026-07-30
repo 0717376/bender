@@ -4,6 +4,7 @@
     <id>/book.epub      сам файл, уже без скриптов (см. sanitize)
     <id>/meta.json      название, автор, размер, когда добавлена
     <id>/cover.<ext>    обложка из epub, как есть
+    <id>/thumb.jpg      её же миниатюра: полке хватает, а качать в двадцать раз меньше
     <id>/text/NNN.txt   текст глав: кэш, чтобы агент не разбирал zip на каждый вопрос
 
 id — первые 8 байт SHA-256 файла: одна и та же книга, залитая дважды, не двоится.
@@ -25,7 +26,7 @@ import zipfile
 from html.parser import HTMLParser
 from xml.etree import ElementTree
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 
 from . import config
@@ -39,6 +40,8 @@ NS_CONTAINER = "urn:oasis:names:tc:opendocument:xmlns:container"
 NS_OPF = "http://www.idpf.org/2007/opf"
 NS_DC = "http://purl.org/dc/elements/1.1/"
 MARKUP = (".xhtml", ".html", ".htm", ".svg")
+THUMB = "thumb.jpg"
+THUMB_MAX = 512 * 1024
 
 
 def init() -> None:
@@ -256,6 +259,7 @@ def ingest(data: bytes, filename: str = "", book_id: str | None = None) -> dict:
         "size": len(clean),
         "chapters": len(book["chapters"]),
         "cover": cover_name,
+        "thumb": "",          # появится, когда клиент пришлёт уменьшенную (см. put_thumb)
     }
     with open(os.path.join(tmp, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=1)
@@ -321,6 +325,31 @@ async def book_cover(book_id: str, token: str = ""):
     if not cover:
         raise HTTPException(404, "Обложки нет")
     return _send(book_id, cover, token)
+
+
+@router.api_route("/{book_id}/thumb", methods=["GET", "HEAD"])
+async def book_thumb(book_id: str, token: str = ""):
+    if not meta_of(book_id).get("thumb"):
+        raise HTTPException(404, "Миниатюры нет")
+    return _send(book_id, THUMB, token)
+
+
+@router.put("/{book_id}/thumb")
+async def put_thumb(book_id: str, request: Request, _: bool = Depends(require_auth)):
+    """Миниатюру уменьшает тот, кто книгу добавил: у него файл уже в руках, а серверу
+    для этого понадобилась бы библиотека картинок. Остальные устройства качают маленькое."""
+    data = await request.body()
+    if not data.startswith(b"\xff\xd8\xff"):
+        raise HTTPException(400, "Миниатюра должна быть jpeg")
+    if len(data) > THUMB_MAX:
+        raise HTTPException(413, "Миниатюра слишком большая")
+    meta = meta_of(book_id)
+    with open(os.path.join(book_dir(book_id), THUMB), "wb") as f:
+        f.write(data)
+    meta["thumb"] = THUMB
+    with open(os.path.join(book_dir(book_id), "meta.json"), "w", encoding="utf-8") as f:
+        json.dump(meta, f, ensure_ascii=False, indent=1)
+    return meta
 
 
 @router.delete("/{book_id}")

@@ -44,13 +44,13 @@ const STUB = () => {
 const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' }
 let syncDoc = null, puts = 0
 /* Подставная библиотека: одна на все контексты — как настоящая на сервере. */
-let library = []
+let library = [], thumbs = [], thumbBytes = null
 const BOOK_ID = 'bk1test'
 const booksRoute = async r => {
   const req = r.request()
   const path = new URL(req.url()).pathname
   const json = body => r.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify(body) })
-  const m = path.match(/^\/books(?:\/([^/]+))?(?:\/(file|cover))?$/)
+  const m = path.match(/^\/books(?:\/([^/]+))?(?:\/(file|cover|thumb))?$/)
   if (!m) return r.fulfill({ status: 404, headers: CORS, contentType: 'application/json', body: '{"detail":"нет"}' })
   const [, id, kind] = m
   if (req.method() === 'POST') {
@@ -61,6 +61,17 @@ const booksRoute = async r => {
     return json(meta)
   }
   if (req.method() === 'DELETE') { library = library.filter(b => b.id !== id); return json({ ok: true }) }
+  if (req.method() === 'PUT' && kind === 'thumb') {
+    const body = req.postDataBuffer()
+    thumbs.push({ id, bytes: body ? body.length : 0, jpeg: !!body && body[0] === 0xff && body[1] === 0xd8 })
+    thumbBytes = body
+    const b = library.find(x => x.id === id)
+    if (b) b.thumb = 'thumb.jpg'
+    return json(b || { thumb: 'thumb.jpg' })
+  }
+  if (kind === 'thumb') return thumbBytes
+    ? r.fulfill({ status: 200, headers: CORS, contentType: 'image/jpeg', body: thumbBytes })
+    : r.fulfill({ status: 404, headers: CORS, contentType: 'application/json', body: '{"detail":"нет"}' })
   if (kind === 'file') return r.fulfill({ status: 200, headers: CORS, contentType: 'application/epub+zip', body: BOOK })
   if (kind === 'cover') return r.fulfill({ status: 200, headers: CORS, contentType: 'image/png', body: COVER })
   return json(library)
@@ -202,6 +213,16 @@ const shelf = await page.evaluate(() => {
 check('полка: книга с обложкой и названием', shelf.title === FIXTURE.title && shelf.author === FIXTURE.author,
   `${shelf.title} / ${shelf.author}`)
 check('полка: есть плитка «Добавить»', shelf.cards === 2)
+// Миниатюра делается в фоне, не задерживая книгу, — дожидаемся её обновлением полки.
+await page.evaluate(() => refreshShelf())
+const shownThumb = await page.waitForFunction(() => {
+  const i = document.querySelector('.card .cover-wrap img')
+  return i && /\/thumb\?token=/.test(i.src) && i.naturalWidth > 0
+}, null, { timeout: 15000 }).then(() => true).catch(() => false)
+check('обложка: клиент уменьшил и отправил на сервер',
+  thumbs.length === 1 && thumbs[0].jpeg && thumbs[0].bytes > 0 && thumbs[0].bytes < 60000,
+  thumbs.length ? `${thumbs[0].bytes} байт, jpeg: ${thumbs[0].jpeg}` : 'ничего не отправлено')
+check('полка: показывает миниатюру, а не оригинал', shownThumb)
 await page.screenshot({ path: shot('shelf') })
 
 // 3. Читалка
