@@ -85,6 +85,7 @@ export function drawHighlight(h) {
 }
 
 export function save() {
+  if (!state.entry) return;      // книгу закрыли, пока дописывалась заметка
   const now = Date.now();
   state.hl.forEach(h => { if (!h.upd) h.upd = h.ts || now; });
   ls.set('hl:' + state.entry.id, state.hl);

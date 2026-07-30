@@ -43,15 +43,22 @@ const STUB = () => {
    удаление живёт надгробием. Один на все контексты: так проверяется, что прогресс переезжает. */
 const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' }
 const srv = { pos: {}, hl: {} }
-let pushes = 0
+let pushes = 0, states = 0
 
 /* Подставная библиотека: одна на все контексты — как настоящая на сервере. */
 let library = [], thumbs = [], thumbBytes = null
+let liveTick = null            // что отдаст поток событий при следующем подключении
 const BOOK_ID = 'bk1test'
 const booksRoute = async r => {
   const req = r.request()
   const path = new URL(req.url()).pathname
   const json = body => r.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify(body) })
+  /* Поток живой синхронизации. Держать соединение открытым route не умеет, поэтому
+     отдаём накопленное событие и закрываемся — EventSource переподключится сам. */
+  if (path === '/books/events') {
+    return r.fulfill({ status: 200, headers: CORS, contentType: 'text/event-stream',
+                       body: liveTick ? `event: books\ndata: ${JSON.stringify(liveTick)}\n\n` : '' })
+  }
   const m = path.match(/^\/books(?:\/([^/]+))?(?:\/(file|cover|thumb|state|highlights|position))?$/)
   if (!m) return r.fulfill({ status: 404, headers: CORS, contentType: 'application/json', body: '{"detail":"нет"}' })
   const [, id, kind] = m
@@ -89,7 +96,10 @@ const booksRoute = async r => {
     if (!cur || (cur.updated || 0) <= (p.updated || 0)) srv.pos[id] = { ...p, updated: p.updated || Date.now() }
     return json(srv.pos[id])
   }
-  if (kind === 'state') return json({ position: srv.pos[id] || null, highlights: Object.values(srv.hl[id] || {}) })
+  if (kind === 'state') {
+    states++
+    return json({ position: srv.pos[id] || null, highlights: Object.values(srv.hl[id] || {}) })
+  }
   if (kind === 'file') return r.fulfill({ status: 200, headers: CORS, contentType: 'application/epub+zip', body: BOOK })
   if (kind === 'cover') return r.fulfill({ status: 200, headers: CORS, contentType: 'image/png', body: COVER })
   if (kind === 'thumb') return thumbBytes
@@ -350,20 +360,105 @@ await page.unroute('**/books/*/file')
 
 // 7c. Сервер недоступен: правка не теряется, а ждёт следующей попытки
 const hlBefore = Object.keys(srv.hl[BOOK_ID] || {}).length
-await page.route('**/books/*/highlights', r => r.abort())
+await page.route('**/books/*/highlights*', r => r.abort())
 await selectByDrag(page)
 await page.evaluate(() => paint('no'))
 await page.waitForTimeout(2600)                       // отложенная отправка успевает сработать и упасть
 const stuck = await page.evaluate(() => JSON.parse(localStorage.getItem('dirty') || '[]'))
 check('офлайн: правка помечена неотправленной', stuck.includes(BOOK_ID), `помечено: ${JSON.stringify(stuck)}`)
 check('офлайн: на сервере её пока нет', Object.keys(srv.hl[BOOK_ID] || {}).length === hlBefore)
-await page.unroute('**/books/*/highlights')
+await page.unroute('**/books/*/highlights*')
 await page.evaluate(() => sync.run())
 await page.waitForTimeout(400)
 check('офлайн: следующая попытка её доносит',
   Object.keys(srv.hl[BOOK_ID] || {}).length === hlBefore + 1
     && (await page.evaluate(() => JSON.parse(localStorage.getItem('dirty') || '[]'))).length === 0,
   `выписок на сервере: ${Object.keys(srv.hl[BOOK_ID] || {}).length}`)
+
+// 7d. Живая синхронизация: правка с другого устройства приезжает сама, без нашего действия
+const anyCfi = Object.values(srv.hl[BOOK_ID])[0].cfi
+srv.hl[BOOK_ID]['remote-hl'] = { id: 'remote-hl', cfi: anyCfi, text: 'выписка с другого устройства',
+  color: 'imp', chapter: '', note: 'и заметка к ней', thread: [],
+  created: Date.now(), updated: Date.now() }
+liveTick = { v: 1, book: BOOK_ID, src: 'другое-устройство' }
+const arrived = await page.waitForFunction(() => live().some(h => h.id === 'remote-hl'), null, { timeout: 20000 })
+  .then(() => true).catch(() => false)
+check('живая синхронизация: чужая выписка приехала сама', arrived)
+check('живая синхронизация: с заметкой',
+  arrived && await page.evaluate(() => live().find(h => h.id === 'remote-hl').note) === 'и заметка к ней')
+
+// И удаление доезжает так же: на том устройстве выписку стёрли — здесь она гаснет сама
+srv.hl[BOOK_ID]['remote-hl'].deleted = true
+srv.hl[BOOK_ID]['remote-hl'].updated = Date.now()
+liveTick = { v: 2, book: BOOK_ID, src: 'другое-устройство' }
+check('живая синхронизация: чужое удаление тоже',
+  await page.waitForFunction(() => !live().some(h => h.id === 'remote-hl'), null, { timeout: 20000 })
+    .then(() => true).catch(() => false))
+
+// А своё же эхо забирать не нужно: сервер вернул наше имя — состояние не перечитываем
+const me = await page.evaluate(() => JSON.parse(localStorage.getItem('client')))
+liveTick = { v: 3, book: BOOK_ID, src: me }
+const statesBefore = states
+await page.waitForTimeout(5000)                       // хватает на пару переподключений
+check('живая синхронизация: своё же эхо не забираем', states === statesBefore,
+  `запросов состояния: ${states - statesBefore}`)
+liveTick = null
+
+// 7e. Поиск по книге: находка не просто показывается, а открывается
+await page.locator('#btnFind').click()
+await page.waitForSelector('#drawer.on')
+await page.locator('.findbox input').fill('возражение')
+const found = await page.waitForFunction(() => document.querySelectorAll('#drawerBody .item').length > 0,
+  null, { timeout: 25000 }).then(() => true).catch(() => false)
+check('поиск: по книге что-то нашлось', found, `находок: ${await page.locator('#drawerBody .item').count()}`)
+check('поиск: искомое подсвечено в находке', await page.locator('#drawerBody .item mark').count() > 0)
+await page.locator('#drawerBody .item').first().click()
+await page.waitForTimeout(1000)
+const jumped = await page.evaluate(() => ({
+  text: (document.querySelector('#viewer iframe').contentDocument.body.innerText || '').includes('возражение'),
+  drawer: document.querySelector('#drawer').classList.contains('on'),
+}))
+check('поиск: находка открывается в книге', jumped.text && !jumped.drawer,
+  `на странице: ${jumped.text}, ящик закрыт: ${!jumped.drawer}`)
+
+// 7f. Ползунок прогресса
+const scrub = await page.evaluate(async () => {
+  const s = document.querySelector('#scrub')
+  if (s.disabled) return { on: false }
+  const at = () => { const c = state.rendition.currentLocation(); return c && c.start ? c.start.cfi : '' }
+  const before = at()
+  s.value = 700
+  s.dispatchEvent(new Event('input', { bubbles: true }))
+  const label = document.querySelector('#chapLabel').textContent
+  const pct = document.querySelector('#pct').textContent
+  s.dispatchEvent(new Event('change', { bubbles: true }))
+  await new Promise(r => setTimeout(r, 1200))
+  return { on: true, moved: before !== at(), label, pct }
+})
+check('ползунок: включается, когда посчитаны локации', scrub.on)
+check('ползунок: пока тянут — видно главу и процент', !!scrub.label && /\d+%/.test(scrub.pct || ''),
+  `${scrub.label} · ${scrub.pct}`)
+check('ползунок: отпустили — книга перешла', scrub.moved)
+
+// 7g. Своя заметка к выписке
+const noted = await page.evaluate(async () => {
+  const h = live()[0]
+  openHighlight(h)
+  await new Promise(r => setTimeout(r, 300))
+  const box = document.querySelector('#sheetNote')
+  const shown = getComputedStyle(box).display !== 'none'
+  box.value = 'вернуться к этому месту'
+  box.dispatchEvent(new Event('input', { bubbles: true }))
+  await new Promise(r => setTimeout(r, 1000))          // отложенное сохранение
+  closeSheet()
+  const saved = JSON.parse(localStorage.getItem('hl:' + state.entry.id)).find(x => x.id === h.id)
+  return { shown, id: h.id, note: saved.note }
+})
+check('заметка: поле показано у сохранённой выписки', noted.shown)
+check('заметка: сохранилась к выписке', noted.note === 'вернуться к этому месту', noted.note)
+await page.evaluate(() => sync.run({ force: true }))
+await page.waitForTimeout(500)
+check('заметка: уехала на сервер', (srv.hl[BOOK_ID][noted.id] || {}).note === 'вернуться к этому месту')
 
 // 7b. Синхронизация: уходим со страницы — прогресс должен уехать на сервер
 await page.evaluate(async () => {
@@ -405,7 +500,9 @@ await dpage.waitForFunction(() => !!document.querySelector('#viewer iframe'), nu
 await dpage.waitForTimeout(1500)
 const dsynced = await dpage.evaluate(() => {
   const id = lib()[0].id
-  return { pos: localStorage.getItem('pos:' + id), hl: JSON.parse(localStorage.getItem('hl:' + id) || '[]').length }
+  // Считаем живые: надгробия удалённых хранятся тут же, но выписками уже не считаются.
+  return { pos: localStorage.getItem('pos:' + id),
+           hl: JSON.parse(localStorage.getItem('hl:' + id) || '[]').filter(h => !h.del).length }
 })
 check('синхронизация: второе устройство забрало позицию', dsynced.pos && JSON.parse(dsynced.pos) === JSON.parse(phonePos.pos),
   `${(JSON.parse(dsynced.pos || '""') || '').slice(-22)}`)

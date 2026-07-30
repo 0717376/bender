@@ -11,6 +11,7 @@ from . import books_store, config, cron_store, mcp_server, session_log, skill_st
 from .asr import router as asr_router
 from .auth import require_auth
 from .books_api import init as books_init
+from .books_api import events_router as books_events_router
 from .books_api import router as books_router
 from .chat import router as chat_router
 from .files import normalize_pages
@@ -97,6 +98,7 @@ app.include_router(chat_router)
 app.include_router(files_events_router)  # /files/events: SSE без auth-зависимости (токен в query)
 app.include_router(files_router)
 app.include_router(storage_router)
+app.include_router(books_events_router)   # /books/events: SSE без auth-зависимости (токен в query)
 app.include_router(books_router)
 app.include_router(asr_router)
 app.include_router(tasks_events_router)  # before tasks_router so /tasks/events isn't shadowed by /tasks/{id}

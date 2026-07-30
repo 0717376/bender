@@ -81,6 +81,7 @@ def api(books, monkeypatch):
     monkeypatch.setattr(config, "WIKI_PASSWORD", "пароль")
     monkeypatch.setattr(config, "AUTH_TOKEN", "tok3n")
     app = FastAPI()
+    app.include_router(books.events_router)
     app.include_router(books.router)
     return TestClient(app)
 
@@ -366,6 +367,82 @@ def test_чужая_книга_из_старого_состояния_не_со�
         json.dump({"books": {"неизвестная": {"pos": "cfi", "hl": []}}}, f, ensure_ascii=False)
     assert books.migrate_legacy_state() == 0
     assert books.store.position("неизвестная") is None
+
+
+def test_заметка_к_выписке_хранится_и_переживает_склейку(books):
+    meta = books.ingest(make_epub(), "book.epub")
+    books.store.save_highlights(meta["id"], [
+        {"id": "h1", "cfi": "c", "text": "цитата", "note": "перечитать перед разговором",
+         "updated": 100}])
+    assert books.store.highlights(meta["id"])[0]["note"] == "перечитать перед разговором"
+    # Отставшее устройство присылает свою версию без заметки — она не должна её стереть
+    books.store.save_highlights(meta["id"], [{"id": "h1", "cfi": "c", "text": "цитата", "updated": 50}])
+    assert books.store.highlights(meta["id"])[0]["note"] == "перечитать перед разговором"
+    # А своя правка — должна
+    books.store.save_highlights(meta["id"], [
+        {"id": "h1", "cfi": "c", "text": "цитата", "note": "передумал", "updated": 200}])
+    assert books.store.highlights(meta["id"])[0]["note"] == "передумал"
+
+
+def test_заметка_доезжает_до_агента(books):
+    from app import books_tools
+
+    meta = books.ingest(make_epub(), "book.epub")
+    books.store.save_highlights(meta["id"], [
+        {"id": "h1", "cfi": "c", "text": "цитата", "color": "q", "note": "а как же обратное?"}])
+    assert books_tools.highlights(meta["id"])[0]["note"] == "а как же обратное?"
+
+
+def test_база_без_заметок_обновляется_на_месте(books):
+    """Колонку добавляем ALTER TABLE — выписки, записанные прошлой версией, целы."""
+    import sqlite3
+
+    from app import books_store, config
+
+    path = os.path.join(str(config.DATA_DIR), "books.db")
+    books_store._conn.close()
+    os.unlink(path)
+    old = sqlite3.connect(path)
+    old.executescript("""
+      CREATE TABLE highlights (id TEXT PRIMARY KEY, book_id TEXT NOT NULL, cfi TEXT NOT NULL,
+        text TEXT NOT NULL DEFAULT '', color TEXT NOT NULL DEFAULT '',
+        chapter TEXT NOT NULL DEFAULT '', thread TEXT NOT NULL DEFAULT '[]',
+        created INTEGER NOT NULL DEFAULT 0, updated INTEGER NOT NULL DEFAULT 0,
+        deleted INTEGER NOT NULL DEFAULT 0);
+      INSERT INTO highlights (id, book_id, cfi, text) VALUES ('h1', 'bk', 'c', 'старая выписка');
+    """)
+    old.commit(); old.close()
+
+    books_store.init()
+    got = books_store.highlights("bk")
+    assert [h["text"] for h in got] == ["старая выписка"]
+    assert got[0]["note"] == ""
+    books_store.save_highlights("bk", [{"id": "h1", "cfi": "c", "text": "старая выписка",
+                                        "note": "теперь с заметкой", "updated": 999}])
+    assert books_store.highlights("bk")[0]["note"] == "теперь с заметкой"
+
+
+# ── Живая синхронизация ──
+
+
+def test_правка_двигает_счётчик_и_помнит_чья_она(api, books):
+    meta = books.ingest(make_epub(), "book.epub")
+    head = {"Authorization": "Bearer tok3n"}
+    was = books.books_store.tick()["v"]
+    api.put(f"/books/{meta['id']}/position?client=phone", json={"cfi": "c", "pct": 0.1}, headers=head)
+    t = books.books_store.tick()
+    assert t["v"] == was + 1 and t["book"] == meta["id"] and t["src"] == "phone"
+    api.put(f"/books/{meta['id']}/highlights?client=laptop", json=[
+        {"id": "h1", "cfi": "c", "text": "т"}], headers=head)
+    t = books.books_store.tick()
+    assert t["v"] == was + 2 and t["src"] == "laptop"
+    # Чтение состояния счётчик не двигает — иначе устройства будили бы друг друга без повода
+    api.get(f"/books/{meta['id']}/state", headers=head)
+    assert books.books_store.tick()["v"] == was + 2
+
+
+def test_поток_событий_без_токена_не_открывается(api):
+    assert api.get("/books/events").status_code == 401
 
 
 # ── Отдача файлов ──
