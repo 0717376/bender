@@ -59,6 +59,8 @@ def highlights(book_id: str, color: str | None = None) -> list[dict]:
             continue
         item = {"text": h["text"], "meaning": COLORS.get(h["color"], h["color"]),
                 "chapter": h["chapter"], "date": _day(h["created"])}
+        if h.get("note"):
+            item["note"] = h["note"]       # своими словами — ценнее всей ветки разговора
         if h["thread"]:
             item["talk"] = [{"role": t.get("role"), "text": t.get("text")} for t in h["thread"]]
         out.append(item)
@@ -153,7 +155,7 @@ async def search_book(args):
 @tool(
     "list_highlights",
     "Выписки пользователя из книги: цитата, цвет-смысл (Важное, Не согласен, Вопрос, "
-    "В вики, Красиво сказано), глава, дата и разговор о ней, если он был.",
+    "В вики, Красиво сказано), глава, дата, своя заметка и разговор о ней, если он был.",
     {
         "type": "object",
         "properties": {

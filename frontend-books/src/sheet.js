@@ -62,6 +62,7 @@ export function wikiPrompt(h) {
     `Сохрани выписку из книги «${m.title || state.entry.title || ''}»`
       + (m.creator ? ` (${m.creator})` : '') + (h.chapter ? `, глава «${h.chapter}»` : '') + '.',
     '', 'Цитата:', '<<<', h.text, '>>>',
+    h.note ? '\nМоя заметка к ней:\n' + h.note : '',
     talk ? '\nНаш разговор о ней:\n' + talk : '',
     '', 'Положи в подходящую страницу вики (или заведи новую про эту книгу), '
       + 'оформи цитату аккуратно и ответь одной строкой — куда положил.',
@@ -96,6 +97,41 @@ export function sheetHead(kind, h) {
   $('#sheetTitle').textContent = TITLES[kind] || 'Агент';
   $('#sheetQuote').textContent = h.text;
   $('#sheetInput').value = '';
+  showNote(null);
+}
+
+/* ── Своя заметка ──
+   Ответ агента — это разговор, а заметка — то, что человек подумал сам. Поэтому она
+   отдельным полем, а не первой репликой в ветке. Пишется у сохранённой выписки:
+   заметку к невыделенному фрагменту негде было бы держать. */
+let noteTimer = null;
+
+export function showNote(h) {
+  const box = $('#sheetNote');
+  clearTimeout(noteTimer);
+  if (!h || !live().find(x => x.id === h.id)) { box.style.display = 'none'; return; }
+  box.style.display = '';
+  box.value = h.note || '';
+  fitNote();
+  box.oninput = () => {
+    fitNote();
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(() => {
+      if ((h.note || '') === box.value) return;
+      h.note = box.value; touch(h); save();
+    }, 700);
+  };
+  box.onblur = () => {
+    clearTimeout(noteTimer);
+    if ((h.note || '') === box.value) return;
+    h.note = box.value; touch(h); save();
+  };
+}
+
+function fitNote() {
+  const box = $('#sheetNote');
+  box.style.height = 'auto';
+  box.style.height = Math.min(box.scrollHeight, 160) + 'px';
 }
 
 export async function askAgent(kind, question) {
@@ -239,6 +275,7 @@ export function chips(list, withActions) {
     keep.onclick = () => {
       h.color = h.color || 'q';
       state.hl.push(h); drawHighlight(h); save();
+      showNote(h);                       // выписка появилась — есть куда писать заметку
       toast('Сохранено в выписки'); chips(list, true);
     };
     box.appendChild(keep);
@@ -295,6 +332,7 @@ export function openHighlight(h) {
   sheet.kind = 'ask';
   $('#sheetTitle').textContent = colorOf(h.color).name;
   $('#sheetQuote').textContent = h.text;
+  showNote(h);
   $('#sheetBody').innerHTML = '';
   renderThread(h);
   const box = $('#sheetChips'); box.innerHTML = '';

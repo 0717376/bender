@@ -113,9 +113,21 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   transition: transform .22s ease, opacity .22s ease; }
 #topbar { top: 0; padding: max(8px, env(safe-area-inset-top)) 6px 8px; border-bottom: 1px solid var(--border);
   display: flex; align-items: center; gap: 2px; }
-#botbar { bottom: 0; padding: 8px 16px calc(8px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border);
-  display: flex; align-items: center; gap: 10px; font-size: 11.5px; color: var(--text-3); }
+#botbar { bottom: 0; padding: 4px 16px calc(8px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 2px; font-size: 11.5px; color: var(--text-3); }
+.botline { display: flex; align-items: center; gap: 10px; }
 #botbar .mid { flex: 1; text-align: center; }
+/* Ползунок прогресса: полоса во всю ширину полосы состояния, бегунок побольше —
+   в него надо попадать пальцем, а не мышью. */
+#scrub { -webkit-appearance: none; appearance: none; width: 100%; height: 22px; background: none; }
+#scrub:disabled { opacity: .45; }
+#scrub::-webkit-slider-runnable-track { height: 3px; border-radius: 2px; background: var(--border-3); }
+#scrub::-moz-range-track { height: 3px; border-radius: 2px; background: var(--border-3); }
+#scrub::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 15px; height: 15px;
+  border-radius: 50%; background: var(--accent); border: 2px solid var(--panel); margin-top: -6px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+#scrub::-moz-range-thumb { width: 13px; height: 13px; border-radius: 50%; background: var(--accent);
+  border: 2px solid var(--panel); }
 #chapLabel { max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #reader.immersive .chrome { opacity: 0; pointer-events: none; }
 #reader.immersive #topbar { transform: translateY(-100%); }
@@ -188,6 +200,23 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .quote { margin: 0 16px 12px; padding: 10px 13px; border-left: 3px solid var(--accent);
   background: var(--accent-soft); border-radius: 0 8px 8px 0; font-family: var(--serif);
   font-size: 14.5px; line-height: 1.45; color: var(--text-2); max-height: 116px; overflow: auto; flex: none; }
+/* Заметка человека — не реплика в разговоре: своё поле сразу под цитатой, растёт по тексту. */
+.note { margin: 0 16px 12px; padding: 9px 12px; width: calc(100% - 32px); flex: none; resize: none;
+  border: 1px solid var(--border); border-radius: 9px; background: var(--bg-2); color: var(--text);
+  font: inherit; font-size: 14px; line-height: 1.45; overflow: auto; }
+.note::placeholder { color: var(--text-3); }
+.note:focus { outline: none; border-color: var(--accent); background: var(--panel); }
+.note-line { font-size: 12.5px; color: var(--text-2); margin-top: 5px; display: flex; gap: 5px;
+  align-items: flex-start; line-height: 1.4; }
+.note-line .icon { width: 13px; height: 13px; flex: none; margin-top: 2px; color: var(--text-3); }
+
+/* Поиск по книге */
+.findbox { padding: 10px 16px 6px; border-bottom: 1px solid var(--border); }
+.findbox input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--bg-2); color: var(--text); font: inherit; font-size: 15px; }
+.findbox input:focus { outline: none; border-color: var(--accent); background: var(--panel); }
+.item mark { background: var(--accent-soft); color: var(--text); font-weight: 700; border-radius: 3px; }
+
 /* Разговор забирает свободную высоту сам: иначе шторка дёргается по высоте на каждый
    абзац, который дописывает агент. Прокрутка — внутри, кнопки внизу стоят на месте. */
 #sheetBody { flex: 1 1 auto; min-height: 0; padding: 0 16px 12px; overflow: auto;

@@ -14,14 +14,21 @@ export const live = () => state.hl.filter(h => !h.del);
 
 const head = () => ({ Authorization: 'Bearer ' + auth.token, 'Content-Type': 'application/json' });
 
+/* У устройства своё имя: сервер возвращает его в событии, и своё же эхо забирать не надо. */
+export const CLIENT = (() => {
+  let id = ls.get('client', '');
+  if (!id) { id = Math.random().toString(36).slice(2, 10); ls.set('client', id); }
+  return id;
+})();
+
 /* На клиенте выписки исторически с полями ts/upd/del, на сервере — created/updated/deleted. */
 const toServer = h => ({
-  id: h.id, cfi: h.cfi, text: h.text, color: h.color, chapter: h.chapter,
+  id: h.id, cfi: h.cfi, text: h.text, color: h.color, chapter: h.chapter, note: h.note || '',
   thread: h.thread || [], created: h.ts || 0, updated: h.upd || h.ts || 0, deleted: !!h.del,
 });
 const fromServer = h => {
   const out = { id: h.id, cfi: h.cfi, text: h.text, color: h.color, chapter: h.chapter,
-                thread: h.thread || [], ts: h.created, upd: h.updated };
+                note: h.note || '', thread: h.thread || [], ts: h.created, upd: h.updated };
   if (h.deleted) out.del = 1;
   return out;
 };
@@ -82,7 +89,7 @@ export const sync = {
 
   /** Отдать своё и получить обратно склеенное: сервер оставляет более позднюю версию. */
   async push(id, keepalive) {
-    const r = await fetch(`${API}/books/${id}/highlights`, {
+    const r = await fetch(`${API}/books/${id}/highlights?client=${CLIENT}`, {
       method: 'PUT', headers: head(), keepalive: !!keepalive,
       body: JSON.stringify(ls.get('hl:' + id, []).map(toServer)),
     });
@@ -91,7 +98,7 @@ export const sync = {
 
     const cfi = ls.get('pos:' + id, null);
     if (cfi) {
-      const p = await fetch(`${API}/books/${id}/position`, {
+      const p = await fetch(`${API}/books/${id}/position?client=${CLIENT}`, {
         method: 'PUT', headers: head(), keepalive: !!keepalive,
         body: JSON.stringify({ cfi, pct: ls.get('pct:' + id, 0), chapter: ls.get('chap:' + id, ''),
                                updated: ls.get('at:' + id, 0) || undefined }),
@@ -132,5 +139,31 @@ export const sync = {
   later(ms) {
     clearTimeout(this.timer);
     this.timer = setTimeout(() => this.run().catch(() => {}), ms || 4000);
+  },
+
+  /* ── Живая синхронизация ──
+     Сервер шлёт тик на каждое изменение — что именно менялось, забираем сами. Так
+     выписка, сделанная на телефоне, появляется в открытой на ноутбуке книге, а не
+     через полчаса «когда-нибудь синхронизируется». */
+  es: null,
+  onRemote: null,        // ставит main.js: обновить полку
+
+  listen() {
+    if (this.es || !auth.token || typeof EventSource === 'undefined') return;
+    const es = new EventSource(`${API}/books/events?token=${encodeURIComponent(auth.token)}`);
+    es.addEventListener('books', e => {
+      let d;
+      try { d = JSON.parse(e.data); } catch { return; }
+      if (d.src === CLIENT) return;                     // это мы сами и наделали
+      const open = state.entry && state.entry.id;
+      if (d.book && d.book === open) this.pull(d.book).catch(() => {});
+      else if (this.onRemote) this.onRemote(d);
+    });
+    // Обрыв EventSource чинит сам; закрытый наглухо (пароль сменили) — не наше дело.
+    this.es = es;
+  },
+
+  stop() {
+    if (this.es) { this.es.close(); this.es = null; }
   },
 };

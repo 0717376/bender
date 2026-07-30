@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS highlights (
   text     TEXT NOT NULL DEFAULT '',
   color    TEXT NOT NULL DEFAULT '',
   chapter  TEXT NOT NULL DEFAULT '',
+  note     TEXT NOT NULL DEFAULT '',
   thread   TEXT NOT NULL DEFAULT '[]',
   created  INTEGER NOT NULL DEFAULT 0,
   updated  INTEGER NOT NULL DEFAULT 0,
@@ -48,6 +49,10 @@ def init() -> None:
     _conn.row_factory = sqlite3.Row
     _conn.execute("PRAGMA journal_mode=WAL")
     _conn.executescript(SCHEMA)
+    # База завелась до заметок — колонку добавляем на месте, выписки при этом целы.
+    have = {r["name"] for r in _conn.execute("PRAGMA table_info(highlights)")}
+    if "note" not in have:
+        _conn.execute("ALTER TABLE highlights ADD COLUMN note TEXT NOT NULL DEFAULT ''")
     _conn.commit()
 
 
@@ -121,13 +126,14 @@ def save_highlights(book_id: str, items: list[dict]) -> list[dict]:
             if row and row["updated"] > stamp:
                 continue
             _conn.execute(
-                "INSERT INTO highlights (id, book_id, cfi, text, color, chapter, thread, "
-                "created, updated, deleted) VALUES (?,?,?,?,?,?,?,?,?,?) "
+                "INSERT INTO highlights (id, book_id, cfi, text, color, chapter, note, thread, "
+                "created, updated, deleted) VALUES (?,?,?,?,?,?,?,?,?,?,?) "
                 "ON CONFLICT(id) DO UPDATE SET cfi=excluded.cfi, text=excluded.text, "
-                "color=excluded.color, chapter=excluded.chapter, thread=excluded.thread, "
-                "updated=excluded.updated, deleted=excluded.deleted",
+                "color=excluded.color, chapter=excluded.chapter, note=excluded.note, "
+                "thread=excluded.thread, updated=excluded.updated, deleted=excluded.deleted",
                 (hid, book_id, h.get("cfi") or "", h.get("text") or "", h.get("color") or "",
-                 h.get("chapter") or "", json.dumps(h.get("thread") or [], ensure_ascii=False),
+                 h.get("chapter") or "", h.get("note") or "",
+                 json.dumps(h.get("thread") or [], ensure_ascii=False),
                  int(h.get("created") or stamp), stamp, 1 if h.get("deleted") else 0))
         _conn.commit()
     return highlights(book_id, with_deleted=True)
@@ -141,6 +147,25 @@ def counts() -> dict[str, int]:
 def positions() -> dict[str, dict]:
     return {r["book_id"]: dict(r) for r in
             _q("SELECT book_id, cfi, pct, chapter, updated FROM positions")}
+
+
+# ── Что изменилось ──
+#
+# Живая синхронизация: вкладки слушают поток событий и забирают состояние сами. Хранить
+# журнал изменений незачем — достаточно счётчика: он изменился, значит есть что забрать.
+# `src` — устройство, чья правка это была: своё же эхо ему забирать не нужно.
+
+_tick = {"v": 0, "book": "", "src": ""}
+
+
+def touch(book_id: str = "", src: str = "") -> None:
+    _tick["v"] += 1
+    _tick["book"] = book_id
+    _tick["src"] = src or ""
+
+
+def tick() -> dict:
+    return dict(_tick)
 
 
 def forget(book_id: str) -> None:

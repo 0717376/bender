@@ -3,8 +3,8 @@ import { paint } from './highlights.js'
 import { caretAt, commitSel, sel, wordAt } from './selection.js'
 import { auth, showAuth } from './auth.js'
 import { $, state } from './core.js'
-import { allToWiki, closeDrawer, drawerHighlights, drawerPrefs, drawerSettings, drawerToc, openDrawer } from './drawers.js'
-import { applyTheme, closeBook, openBook, wireGlobal } from './reader.js'
+import { allToWiki, closeDrawer, drawerFind, drawerHighlights, drawerPrefs, drawerSettings, drawerToc, openDrawer } from './drawers.js'
+import { applyTheme, closeBook, openBook, wireGlobal, wireScrub } from './reader.js'
 import { bubbleMe, closeSheet, contextAround, followUp, openHighlight, promptFor, send, wireScrim } from './sheet.js'
 import { buildShelf, pickFile, refreshShelf } from './shelf.js'
 import { lib } from './store.js'
@@ -14,6 +14,7 @@ import { live, sync } from './sync.js'
 
 function wireUI() {
   $('#btnBack').onclick = closeBook;
+  $('#btnFind').onclick = () => openDrawer('Поиск', drawerFind);
   $('#btnToc').onclick = () => openDrawer('Оглавление', drawerToc);
   $('#btnHl').onclick = () => openDrawer('Выписки', drawerHighlights,
     { icon: 'i-wiki', title: 'Собрать всё в вики', run: allToWiki });
@@ -63,11 +64,17 @@ export async function start() {
   await refreshShelf();         // и то, что на сервере
   // Что не доехало в прошлый раз — уходит сейчас, а прогресс приезжает вместе с полкой.
   sync.run().then(ok => { if (ok) refreshShelf(); }).catch(() => {});
+  // Правку с другого устройства ждём событием, а не следующим открытием приложения.
+  sync.onRemote = () => { clearTimeout(shelfTimer); shelfTimer = setTimeout(refreshShelf, 800); };
+  sync.listen();
 }
+
+let shelfTimer = null;
 
 async function boot() {
   wireGlobal();
   wireUI();
+  wireScrub();
   applyTheme();
   if (await auth.check()) start();
   else showAuth('');

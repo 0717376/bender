@@ -17,6 +17,7 @@ export async function openBook(entry) {
   $('#splash').classList.remove('off');
   $('#splash').textContent = 'открываю книгу…';
   hideMenu();
+  $('#scrub').disabled = true; $('#scrub').value = 0;
   try {
     // Позиция с другого устройства нужна до показа страницы, но ждать сервер бесконечно нельзя.
     await Promise.race([sync.pull(entry.id).catch(() => false), new Promise(r => setTimeout(r, 3500))]);
@@ -49,6 +50,7 @@ export async function openBook(entry) {
 
 export function closeBook() {
   clearSel();
+  scrubbing = false;
   clearTimeout(sync.timer);
   sync.run().catch(() => {});
   $('#reader').classList.remove('on');
@@ -178,6 +180,7 @@ export async function mountRendition(at) {
       const p = state.book.locations.percentageFromCfi(loc.start.cfi) || 0;
       ls.set('pct:' + id, p);
       $('#pct').textContent = Math.round(p * 100) + '%';
+      if (!scrubbing) $('#scrub').value = Math.round(p * 1000);
     }
     clearSel();
     syncSpread();
@@ -214,21 +217,86 @@ export async function reopen() {
 
 /* Локации считаются медленно — раз на книгу, дальше из кэша. */
 export async function buildLocations() {
-  const id = state.entry.id;
+  // Считаются они долго, и книгу за это время могут закрыть или сменить.
+  const mine = state.entry;
+  if (!mine) return;
+  const id = mine.id;
   const cached = ls.get('loc:' + id, null);
   try {
     if (cached) state.book.locations.load(cached);
     else {
       await state.book.locations.generate(1600);
+      if (state.entry !== mine) return;
       ls.set('loc:' + id, state.book.locations.save());
     }
   } catch { return; }
+  if (state.entry !== mine) return;
   const cur = state.rendition && state.rendition.currentLocation();
   if (cur && cur.start) {
     const p = state.book.locations.percentageFromCfi(cur.start.cfi) || 0;
     ls.set('pct:' + id, p);
     $('#pct').textContent = Math.round(p * 100) + '%';
+    $('#scrub').value = Math.round(p * 1000);
   }
+  // Без локаций проценты не посчитать, а значит и тащить ползунок некуда.
+  $('#scrub').disabled = false;
+}
+
+/* Ползунок прогресса: долистать до нужного места — занятие на весь вечер, а
+   «примерно на трети» человек помнит лучше, чем номер главы. */
+export let scrubbing = false;
+
+export function wireScrub() {
+  const s = $('#scrub');
+  const ready = () => state.book && state.book.locations && state.book.locations.length();
+  s.addEventListener('input', () => {
+    if (!ready()) return;
+    scrubbing = true;
+    const p = s.value / 1000;
+    $('#pct').textContent = Math.round(p * 100) + '%';
+    const cfi = state.book.locations.cfiFromPercentage(p);
+    // Пока тянут — показываем, куда попадём: проценты без главы ни о чём не говорят.
+    const item = cfi && state.book.spine.get(cfi);
+    if (item) $('#chapLabel').textContent = chapterName(item.href) || '';
+  });
+  const jump = async () => {
+    if (!ready() || !scrubbing) return;
+    scrubbing = false;
+    const cfi = state.book.locations.cfiFromPercentage(s.value / 1000);
+    if (cfi) await state.rendition.display(cfi);
+  };
+  s.addEventListener('change', jump);
+  // Safari на тач-экране до change доходит не всегда — отпустили палец, значит прыгаем.
+  s.addEventListener('touchend', jump, { passive: true });
+}
+
+/* ── Поиск по книге ──
+   Ищем по самой книге, а не по тексту с сервера: только так у находки есть CFI, то есть
+   на неё можно перейти. Главы грузятся по одной и тут же выгружаются — иначе книга
+   целиком окажется в памяти телефона. */
+export async function findInBook(q, cancelled, limit = 80) {
+  const out = [];
+  for (const item of state.book.spine.spineItems) {
+    if (cancelled && cancelled()) return out;
+    try {
+      await item.load(state.book.load.bind(state.book));
+      const chapter = chapterName(item.href) || '';
+      (item.find(q) || []).forEach(h => out.push({ cfi: h.cfi, excerpt: h.excerpt, chapter }));
+    } catch { /* глава не разобралась — ищем дальше по остальным */ }
+    try { item.unload(); } catch {}
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/** Подсветить находку на пару секунд: иначе на странице непонятно, куда смотреть. */
+export function flashFind(cfi) {
+  if (live().some(h => h.cfi === cfi)) return;      // там уже своя выписка — не трогаем
+  try {
+    state.rendition.annotations.highlight(cfi, {}, () => {}, 'hl-find',
+      { fill: '#F5C64A', 'fill-opacity': '.45' });
+    setTimeout(() => { try { state.rendition.annotations.remove(cfi, 'highlight'); } catch {} }, 2600);
+  } catch {}
 }
 
 export function chapterName(href) {

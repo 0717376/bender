@@ -1,6 +1,6 @@
 import { auth, showAuth } from './auth.js'
 import { $, COLORS, colorOf, el, escapeHtml, ls, plural, state, toast, when } from './core.js'
-import { applyTheme, fitLines, reopen } from './reader.js'
+import { applyTheme, findInBook, fitLines, flashFind, reopen } from './reader.js'
 import { chips, inline, openHighlight, openSheet, resetScrim, send, sheet, sheetHead } from './sheet.js'
 import { buildShelf } from './shelf.js'
 import { live, sync } from './sync.js'
@@ -39,6 +39,51 @@ export function drawerToc(body) {
   if (!toc.length) body.appendChild(el('div', 'empty', 'В книге нет оглавления'));
 }
 
+export function drawerFind(body) {
+  const box = el('div', 'findbox');
+  const input = el('input');
+  input.type = 'search'; input.placeholder = 'Искать в книге'; input.autocomplete = 'off';
+  box.appendChild(input);
+  body.appendChild(box);
+  const out = el('div');
+  body.appendChild(out);
+
+  let gen = 0, timer = null;
+  const run = async q => {
+    const mine = ++gen;
+    out.innerHTML = '';
+    if (q.length < 3) {
+      if (q) out.appendChild(el('div', 'empty', 'Хотя бы три буквы'));
+      return;
+    }
+    out.appendChild(el('div', 'empty', 'Ищу по книге…'));
+    const hits = await findInBook(q, () => gen !== mine);
+    if (gen !== mine) return;                    // пока искали, запрос сменился
+    out.innerHTML = '';
+    if (!hits.length) { out.appendChild(el('div', 'empty', 'Ничего не нашлось')); return; }
+    out.appendChild(el('div', 'empty', plural(hits.length, 'находка', 'находки', 'находок')));
+    hits.forEach(h => {
+      const b = el('button', 'item');
+      const text = (h.excerpt || '').trim();
+      const at = text.toLowerCase().indexOf(q.toLowerCase());
+      b.innerHTML = `<div class="s">${at < 0 ? escapeHtml(text)
+        : escapeHtml(text.slice(0, at)) + '<mark>' + escapeHtml(text.slice(at, at + q.length))
+          + '</mark>' + escapeHtml(text.slice(at + q.length))}</div>
+        ${h.chapter ? `<div class="m">${escapeHtml(h.chapter)}</div>` : ''}`;
+      b.onclick = async () => {
+        closeDrawer();
+        await state.rendition.display(h.cfi);
+        flashFind(h.cfi);
+      };
+      out.appendChild(b);
+    });
+  };
+
+  input.oninput = () => { clearTimeout(timer); timer = setTimeout(() => run(input.value.trim()), 350); };
+  input.onkeydown = e => { if (e.key === 'Enter') { clearTimeout(timer); run(input.value.trim()); } };
+  setTimeout(() => input.focus(), 260);
+}
+
 export function drawerHighlights(body) {
   if (!live().length) {
     body.appendChild(el('div', 'empty', 'Пока пусто.<br>Выдели фрагмент в тексте и выбери цвет.'));
@@ -52,6 +97,7 @@ export function drawerHighlights(body) {
       const b = el('button', 'item');
       const talk = (h.thread || []).filter(t => t.role === 'ai').length;
       b.innerHTML = `<div class="s">${escapeHtml(h.text.slice(0, 200))}${h.text.length > 200 ? '…' : ''}</div>
+        ${h.note ? `<div class="note-line"><svg class="icon"><use href="#i-note"/></svg>${escapeHtml(h.note)}</div>` : ''}
         <div class="m"><i style="background:${colorOf(h.color).hex}"></i>${escapeHtml(colorOf(h.color).name)}
         ${h.chapter ? ' · ' + escapeHtml(h.chapter) : ''}${talk ? ' · ' + plural(talk, 'ответ', 'ответа', 'ответов') + ' агента' : ''}</div>`;
       b.onclick = () => { state.rendition.display(h.cfi); closeDrawer(); setTimeout(() => openHighlight(h), 400); };
@@ -74,7 +120,8 @@ export function allToWiki() {
   const m = state.meta || {};
   const lines = live().slice().sort((a, b) => a.ts - b.ts).map(h => {
     const talk = (h.thread || []).map(t => (t.role === 'me' ? 'Я: ' : 'Агент: ') + t.text).join('\n');
-    return `— ${colorOf(h.color).name}${h.chapter ? ', ' + h.chapter : ''}\n«${h.text}»${talk ? '\n' + talk : ''}`;
+    return `— ${colorOf(h.color).name}${h.chapter ? ', ' + h.chapter : ''}\n«${h.text}»`
+      + (h.note ? `\nМоя заметка: ${h.note}` : '') + (talk ? '\n' + talk : '');
   }).join('\n\n');
   closeDrawer();
   const h = { text: 'Все выписки из книги', chapter: '', thread: [] };

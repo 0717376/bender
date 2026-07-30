@@ -12,6 +12,7 @@ id — первые 8 байт SHA-256 файла: одна и та же кни�
 Удаление — в .trash/, а не rm.
 """
 
+import asyncio
 import hashlib
 import io
 import json
@@ -30,12 +31,16 @@ from xml.etree import ElementTree
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from sse_starlette.sse import EventSourceResponse
 
 from . import books_store, config
 from .auth import check_token, require_auth
 
 logger = logging.getLogger("wiki")
 router = APIRouter(prefix="/books", tags=["books"])
+# Поток событий — отдельным роутером без auth-зависимости: EventSource не умеет
+# ставить заголовки, токен приходит в query (как у задач и вики).
+events_router = APIRouter(prefix="/books", tags=["books"])
 
 CONTAINER = "META-INF/container.xml"
 NS_CONTAINER = "urn:oasis:names:tc:opendocument:xmlns:container"
@@ -493,13 +498,15 @@ async def list_books(_: bool = Depends(require_auth)):
 
 
 @router.post("")
-async def upload(file: UploadFile, _: bool = Depends(require_auth)):
+async def upload(file: UploadFile, client: str = "", _: bool = Depends(require_auth)):
     data = await file.read()
     if not data:
         raise HTTPException(400, "Пустой файл")
     if len(data) > config.BOOKS_MAX_UPLOAD:
         raise HTTPException(413, "Книга слишком большая")
-    return ingest(data, file.filename or "")
+    meta = ingest(data, file.filename or "")
+    books_store.touch("", client)          # полка изменилась у всех
+    return meta
 
 
 def _send(book_id: str, name: str, download: str = "") -> FileResponse:
@@ -571,15 +578,45 @@ async def get_state(book_id: str, _: bool = Depends(require_auth)):
 
 
 @router.put("/{book_id}/position")
-async def put_position(book_id: str, req: PositionReq, _: bool = Depends(require_auth)):
+async def put_position(book_id: str, req: PositionReq, client: str = "",
+                       _: bool = Depends(require_auth)):
     meta_of(book_id)
-    return books_store.set_position(book_id, req.cfi, req.pct, req.chapter, req.updated)
+    saved = books_store.set_position(book_id, req.cfi, req.pct, req.chapter, req.updated)
+    books_store.touch(book_id, client)
+    return saved
 
 
 @router.put("/{book_id}/highlights")
-async def put_highlights(book_id: str, items: list[dict], _: bool = Depends(require_auth)):
+async def put_highlights(book_id: str, items: list[dict], client: str = "",
+                         _: bool = Depends(require_auth)):
     meta_of(book_id)
-    return books_store.save_highlights(book_id, items)
+    saved = books_store.save_highlights(book_id, items)
+    books_store.touch(book_id, client)
+    return saved
+
+
+# ── Живая синхронизация ──
+
+
+@events_router.get("/events")
+async def books_events(request: Request, token: str = ""):
+    """Тик на каждое изменение: вкладка сама решает, забирать ли состояние. Гонять по
+    потоку сами выписки незачем — их всё равно склеивать с локальными."""
+    if not check_token(token):
+        raise HTTPException(401, "Unauthorized")
+
+    async def gen():
+        last = books_store.tick()["v"]      # прошлое не пересылаем: подписались — значит с этого места
+        while True:
+            if await request.is_disconnected():
+                break
+            t = books_store.tick()
+            if t["v"] != last:
+                last = t["v"]
+                yield {"event": "books", "data": json.dumps(t, ensure_ascii=False)}
+            await asyncio.sleep(1.5)
+
+    return EventSourceResponse(gen())
 
 
 @router.put("/{book_id}/thumb")
@@ -601,5 +638,7 @@ async def put_thumb(book_id: str, request: Request, _: bool = Depends(require_au
 
 
 @router.delete("/{book_id}")
-async def delete_book(book_id: str, _: bool = Depends(require_auth)):
-    return remove(book_id)
+async def delete_book(book_id: str, client: str = "", _: bool = Depends(require_auth)):
+    gone = remove(book_id)
+    books_store.touch("", client)
+    return gone
