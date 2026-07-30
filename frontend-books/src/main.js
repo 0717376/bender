@@ -1,14 +1,13 @@
-import ePub from 'epubjs'
 import './style.css'
 import { paint } from './highlights.js'
 import { caretAt, commitSel, sel, wordAt } from './selection.js'
 import { auth, showAuth } from './auth.js'
-import { $, BUILTIN, state } from './core.js'
+import { $, state } from './core.js'
 import { allToWiki, closeDrawer, drawerHighlights, drawerPrefs, drawerSettings, drawerToc, openDrawer } from './drawers.js'
 import { applyTheme, closeBook, openBook, wireGlobal } from './reader.js'
 import { bubbleMe, closeSheet, contextAround, followUp, openHighlight, promptFor, send, wireScrim } from './sheet.js'
-import { buildShelf, pickFile, thumbFrom } from './shelf.js'
-import { lib, saveLib } from './store.js'
+import { buildShelf, pickFile, refreshShelf } from './shelf.js'
+import { lib } from './store.js'
 import { live, sync } from './sync.js'
 
 /* ── Проводка ── */
@@ -58,40 +57,12 @@ async function doLogin() {
   }
 }
 
-/* Книги, лежащие рядом со статикой, на полку попадают только если файл действительно есть:
-   он приходит с хоста, а не из сборки. Пропавший файл убираем с полки, но лишь по честному 404 —
-   офлайн запрос не удаётся вовсе, и книгу в этом случае трогать нельзя. */
-async function seedLibrary() {
-  const list = lib();
-  for (const b of BUILTIN) {
-    // Отсутствующий файл статика умеет отдавать и как index.html с кодом 200 — по типу видно.
-    const st = await fetch(b.url, { method: 'HEAD' })
-      .then(r => (r.ok && /html/.test(r.headers.get('content-type') || '') ? 404 : r.status))
-      .catch(() => 0);
-    const i = list.findIndex(x => x.id === b.id);
-    if (st === 200 && i < 0) list.push({ ...b, title: '', author: '', added: Date.now() });
-    if (st === 404 && i >= 0) list.splice(i, 1);
-  }
-  saveLib(list);
-}
-
 export async function start() {
-  await seedLibrary();
   applyTheme();
-  buildShelf();
-  // Прогресс с других устройств подтягиваем сразу — до того, как книгу откроют.
+  buildShelf();                 // сразу то, что помним с прошлого раза
+  await refreshShelf();         // и то, что на сервере
+  // Прогресс с других устройств подтягиваем до того, как книгу откроют.
   sync.run().then(ok => { if (ok && !state.entry) buildShelf(); }).catch(() => {});
-  // Встроенную книгу разбираем один раз, чтобы полка знала её обложку и название.
-  const need = lib().find(e => e.builtin && (!e.title || !e.cover));
-  if (need) {
-    const probe = ePub(need.url);
-    probe.ready.then(async () => {
-      const m = await probe.loaded.metadata;
-      const entry = { ...need, title: (m.title || '').trim(), author: (m.creator || '').trim(), cover: await thumbFrom(probe) };
-      saveLib(lib().map(x => x.id === entry.id ? entry : x));
-      if ($('#shelf').classList.contains('on')) buildShelf();
-    }).catch(() => {});
-  }
 }
 
 async function boot() {
@@ -108,7 +79,7 @@ async function boot() {
 /* Единственная связь с внешним миром помимо DOM: набор проверок (tests/smoke.mjs) работает
    изнутри страницы и ему нужны те же функции, что и интерфейсу. */
 window.__books = {
-  state, sel, sync, lib, live,
+  state, sel, sync, lib, live, refreshShelf,
   commitSel, paint, wordAt, caretAt,
   openBook, closeBook, openHighlight, closeSheet, closeDrawer, applyTheme,
 };

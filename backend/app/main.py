@@ -10,6 +10,8 @@ from starlette.routing import Route
 from . import config, cron_store, mcp_server, session_log, skill_store, tasks_store
 from .asr import router as asr_router
 from .auth import require_auth
+from .books_api import init as books_init
+from .books_api import router as books_router
 from .chat import router as chat_router
 from .files import normalize_pages
 from .files import router as files_router
@@ -36,6 +38,7 @@ async def lifespan(_app: FastAPI):
     session_log.init()
     skill_store.init()  # scaffold learned-skills plugin + migrate legacy flat skills once
     storage_init()
+    books_init()
     # Папки заводит не только интерфейс (агент через Bash, бэкапы) — выдаём им
     # страницы, иначе в дереве всплывёт «папка», которой в модели вики нет.
     for path, how in normalize_pages():
@@ -93,6 +96,7 @@ app.include_router(chat_router)
 app.include_router(files_events_router)  # /files/events: SSE без auth-зависимости (токен в query)
 app.include_router(files_router)
 app.include_router(storage_router)
+app.include_router(books_router)
 app.include_router(asr_router)
 app.include_router(tasks_events_router)  # before tasks_router so /tasks/events isn't shadowed by /tasks/{id}
 app.include_router(tasks_router)

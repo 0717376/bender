@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { webkit, devices } from 'playwright'
 import { build, preview } from 'vite'
-import { makeEpub, FIXTURE } from './fixtures/epub.mjs'
+import { makeEpub, COVER, FIXTURE } from './fixtures/epub.mjs'
 
 /* Проверяем собранное приложение, а не исходники: собираем и поднимаем превью сами. */
 const ROOT = new URL('..', import.meta.url).pathname
@@ -43,6 +43,28 @@ const STUB = () => {
    «устройств» — так проверяется, что прогресс действительно переезжает. */
 const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' }
 let syncDoc = null, puts = 0
+/* Подставная библиотека: одна на все контексты — как настоящая на сервере. */
+let library = []
+const BOOK_ID = 'bk1test'
+const booksRoute = async r => {
+  const req = r.request()
+  const path = new URL(req.url()).pathname
+  const json = body => r.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify(body) })
+  const m = path.match(/^\/books(?:\/([^/]+))?(?:\/(file|cover))?$/)
+  if (!m) return r.fulfill({ status: 404, headers: CORS, contentType: 'application/json', body: '{"detail":"нет"}' })
+  const [, id, kind] = m
+  if (req.method() === 'POST') {
+    const meta = { id: BOOK_ID, title: FIXTURE.title, author: FIXTURE.author,
+                   added: Math.round(Date.now() / 1000), size: BOOK.length, chapters: FIXTURE.chapters.length, cover: 'cover.png' }
+    if (library.find(b => b.id === meta.id)) return json({ ...meta, known: true })
+    library.push(meta)
+    return json(meta)
+  }
+  if (req.method() === 'DELETE') { library = library.filter(b => b.id !== id); return json({ ok: true }) }
+  if (kind === 'file') return r.fulfill({ status: 200, headers: CORS, contentType: 'application/epub+zip', body: BOOK })
+  if (kind === 'cover') return r.fulfill({ status: 200, headers: CORS, contentType: 'image/png', body: COVER })
+  return json(library)
+}
 const syncRoute = async r => {
   const req = r.request()
   if (req.method() === 'PUT') {
@@ -60,6 +82,8 @@ const ctx = await browser.newContext({ ...devices['iPhone 13'], hasTouch: false 
 await ctx.route('**/auth/login', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{"token":"T"}' }))
 await ctx.route('**/auth/me', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' }))
 await ctx.route('**/files/content**', syncRoute)
+await ctx.route('**/books', booksRoute)
+await ctx.route('**/books/**', booksRoute)
 await ctx.addInitScript(STUB)
 const page = await ctx.newPage()
 page.on('pageerror', e => console.log('  [pageerror]', e.message))
@@ -275,6 +299,17 @@ const back = await page.evaluate(() => ({
 check('перезагрузка: выписка вернулась', back.hl > 0, `групп: ${back.hl}`)
 check('перезагрузка: позиция и проценты', /\d/.test(back.pct), `${back.pct} · ${back.chap}`)
 
+// 7a. Офлайн: файл книги лежит в своём кэше, сервер для чтения уже не нужен
+await page.evaluate(() => closeBook())
+await page.waitForSelector('#shelf.on')
+await page.route('**/books/*/file', r => r.abort())
+await page.locator('.card').first().click()
+await page.waitForSelector('#reader.on')
+const offline = await page.waitForFunction(() => !!document.querySelector('#viewer iframe'), null, { timeout: 20000 })
+  .then(() => true).catch(() => false)
+check('офлайн: книга открывается без сервера', offline)
+await page.unroute('**/books/*/file')
+
 // 7b. Синхронизация: уходим со страницы — прогресс должен уехать на сервер
 await page.evaluate(async () => {
   await state.rendition.next(); await state.rendition.next();
@@ -296,6 +331,8 @@ check('синхронизация: позиция и выписка в доку�
 const dctx = await browser.newContext({ viewport: { width: 1440, height: 900 } })
 await dctx.route('**/auth/**', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{"token":"T","ok":true}' }))
 await dctx.route('**/files/content**', syncRoute)
+await dctx.route('**/books', booksRoute)
+await dctx.route('**/books/**', booksRoute)
 await dctx.addInitScript(STUB)
 const dpage = await dctx.newPage()
 dpage.on('pageerror', e => console.log('  [pageerror desktop]', e.message))
@@ -304,8 +341,11 @@ await dpage.waitForSelector('#auth.on')
 await expose(dpage)
 await dpage.fill('#authPass', 'secret'); await dpage.click('#authGo')
 await dpage.waitForSelector('#shelf.on')
-// Тот же файл даёт тот же id (хеш содержимого) — на этом и сходятся два устройства.
-await addBook(dpage)
+// Библиотека на сервере — книга на полке уже есть, добавлять нечего.
+check('полка: второе устройство видит книгу с сервера', await dpage.locator('.card .t').first().textContent() === FIXTURE.title)
+await dpage.locator('.card').first().click()
+await dpage.waitForSelector('#reader.on')
+await dpage.waitForFunction(() => !!document.querySelector('#viewer iframe'), null, { timeout: 30000 })
 await dpage.waitForTimeout(1500)
 const dsynced = await dpage.evaluate(() => {
   const id = lib()[0].id
@@ -417,6 +457,8 @@ check('PWA: манифест отдаётся', man === 200)
 const tctx = await browser.newContext({ ...devices['iPhone 13'], hasTouch: true })
 await tctx.route('**/auth/**', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{"token":"T","ok":true}' }))
 await tctx.route('**/files/content**', syncRoute)
+await tctx.route('**/books', booksRoute)
+await tctx.route('**/books/**', booksRoute)
 await tctx.addInitScript(STUB)
 const tpage = await tctx.newPage()
 tpage.on('pageerror', e => console.log('  [pageerror touch]', e.message))
@@ -425,7 +467,9 @@ await tpage.waitForSelector('#auth.on')
 await expose(tpage)
 await tpage.fill('#authPass', 'secret'); await tpage.click('#authGo')
 await tpage.waitForSelector('#shelf.on', { timeout: 15000 })
-await addBook(tpage)
+await tpage.locator('.card').first().click()
+await tpage.waitForSelector('#reader.on')
+await tpage.waitForFunction(() => !!document.querySelector('#viewer iframe'), null, { timeout: 30000 })
 await toProse(tpage)
 await tpage.waitForTimeout(600)
 const tmarked = await paintAt(tpage)

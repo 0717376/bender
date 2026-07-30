@@ -6,8 +6,9 @@ import { closeDrawer } from './drawers.js'
 import { drawHighlight, hideSelbar, touch } from './highlights.js'
 import { clearSel, onSelected, sel, wireSelection } from './selection.js'
 import { closeSheet, openHighlight, sheet } from './sheet.js'
-import { buildShelf, hideMenu, thumbFrom } from './shelf.js'
-import { fileGet, lib, saveLib } from './store.js'
+import { buildShelf, hideMenu } from './shelf.js'
+import { bookBytes } from './library.js'
+import { lib, saveLib } from './store.js'
 import { live, sync } from './sync.js'
 
 /* ── Читалка ── */
@@ -19,26 +20,12 @@ export async function openBook(entry) {
   try {
     // Позиция с другого устройства нужна до показа страницы, но ждать сервер бесконечно нельзя.
     await Promise.race([sync.run().catch(() => false), new Promise(r => setTimeout(r, 3500))]);
-    let src = entry.url;
-    if (!entry.builtin) {
-      const saved = await fileGet(entry.id);
-      if (!saved) throw new Error('файл книги пропал');
-      // Раньше складывали File — старые полки читаем как есть.
-      src = saved.arrayBuffer ? await saved.arrayBuffer() : saved;
-    }
     state.entry = entry;
-    state.book = ePub(src);
+    state.book = ePub(await bookBytes(entry.id));
     await state.book.ready;
     state.meta = await state.book.loaded.metadata;
     state.hl = ls.get('hl:' + entry.id, []);
 
-    // Метаданные встроенной книги узнаём при первом открытии — полка их запомнит.
-    if (!entry.title || !entry.cover) {
-      entry.title = entry.title || (state.meta.title || '').trim();
-      entry.author = entry.author || (state.meta.creator || '').trim();
-      if (!entry.cover) entry.cover = await thumbFrom(state.book);
-      saveLib(lib().map(x => x.id === entry.id ? entry : x));
-    }
     entry.opened = Date.now();
     saveLib(lib().map(x => x.id === entry.id ? entry : x));
 
