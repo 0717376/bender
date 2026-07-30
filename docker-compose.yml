@@ -63,3 +63,15 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+  frontend-books:
+    build:
+      context: .
+      dockerfile: frontend-books/Dockerfile
+    ports:
+      - "${BOOKS_PORT:-8899}:80"
+    volumes:
+      - ./books:/usr/share/nginx/html/books:ro   # сами книги — данные, не код (в gitignore)
+    depends_on:
+      - backend
+    restart: unless-stopped

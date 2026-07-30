@@ -35,6 +35,7 @@ backend/          FastAPI + claude-agent-sdk (один процесс)
   agent_skills/     доменные навыки агента (wiki/tasks)
 frontend-wiki/    React: три панели, markdown, чат
 frontend-tasks/   React: задачи, dnd-kit, темы и палитры, чат
+frontend-books/   читалка epub: полка, выделения, агент по цитате (PWA, без фреймворка)
 ```
 
 Хранилище — файлы и SQLite на volume: `content/` (markdown-вики), `data/` (задачи, cron, память, навыки, сессия) и `files/` (файловое хранилище). Ничего из этого в репозитории нет — это личные данные.
@@ -61,6 +62,7 @@ docker compose up -d --build
 
 - Задачи: http://localhost:8851
 - Вики: http://localhost:8842
+- Книги: http://localhost:8899 (полку наполняете сами — файлы книг в репозитории не лежат)
 
 Первое сообщение боту в Telegram подскажет ваш ID — впишите его в `TELEGRAM_ALLOWED_IDS` и перезапустите backend.
 
@@ -98,7 +100,7 @@ Backend определяет локальный сервер по `TG_API_BASE` 
 | `CURATOR_ENABLED` / `CURATOR_INTERVAL_HOURS` | `1` / `168` | куратор библиотеки навыков |
 | `CLAUDE_DIR` / `CLAUDE_JSON` | `~/.claude` / `~/.claude.json` | креды Claude CLI, монтируются в контейнер |
 | `CLAUDE_CODE_OAUTH_TOKEN` | — | долгоживущий токен `claude setup-token`; задан — используется вместо OAuth-сессии из `~/.claude` |
-| `WIKI_PORT` / `TASKS_PORT` | `8842` / `8851` | порты фронтендов |
+| `WIKI_PORT` / `TASKS_PORT` / `BOOKS_PORT` | `8842` / `8851` / `8899` | порты фронтендов |
 | `TZ` | `Europe/Moscow` | часовой пояс (важен для cron) |
 
 ## Лицензия
