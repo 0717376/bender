@@ -30,3 +30,5 @@ docs/PLAN.md
 *.tsbuildinfo
 files/
 tg-bot-api/
+books/
+frontend-books/public/books/

@@ -1,0 +1,273 @@
+/* Палитры, тени, радиусы — в общем design/tokens.css (один на все фронтенды). */
+@import "../../design/tokens.css";
+
+/* Своё у читалки — бумага страницы и сепия: в общих токенах их нет. */
+:root { --page: #FBFAF8; --page-ink: #1A1A1F; }
+:root[data-theme="sepia"] {
+  --page: #F6EEDC; --page-ink: #43382B; --bg: #F6EEDC; --bg-2: #EFE5D0; --bg-3: #E7DBC2;
+  --panel: #FBF5E9; --text: #43382B; --text-2: #6B5B47; --text-3: #9A8A72;
+  --border: rgba(67,56,43,.12); --border-3: rgba(67,56,43,.18);
+}
+:root[data-theme="dark"] { --page: #16151A; --page-ink: #E8E4DE; }
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+/* Пока читаем, родительская страница не должна прокручиваться: iframe книги не скроллится
+   сам, и iOS уводит жест наверх — палец «выделяет», а под ним едет полка. */
+html.reading, html.reading body { overflow: hidden; height: 100%; }
+body {
+  font-family: var(--sans); background: var(--bg); color: var(--text);
+  -webkit-font-smoothing: antialiased; overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+.icon { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8;
+  stroke-linecap: round; stroke-linejoin: round; display: block; }
+.screen { display: none; }
+.screen.on { display: block; }
+
+/* ── Вход ── */
+#auth { position: fixed; inset: 0; z-index: 90; display: none; place-items: center;
+  background: var(--bg); padding: 24px; }
+#auth.on { display: grid; }
+.auth-box { width: 100%; max-width: 320px; text-align: center; }
+.auth-box .mark { width: 62px; height: 62px; border-radius: 16px; margin: 0 auto 18px;
+  background: linear-gradient(135deg, #D9824F, #C05A39); display: grid; place-items: center;
+  box-shadow: var(--shadow-card); color: #fff; }
+.auth-box .mark .icon { width: 32px; height: 32px; stroke-width: 1.6; }
+.auth-box h1 { font-size: 22px; font-weight: 700; letter-spacing: -.02em; margin: 0 0 6px; }
+.auth-box p { font-size: 13.5px; color: var(--text-3); margin: 0 0 22px; line-height: 1.5; }
+.field { display: flex; gap: 8px; }
+.field input { flex: 1; min-width: 0; padding: 12px 15px; border-radius: var(--r-pill);
+  border: 1px solid var(--border-3); background: var(--panel); color: var(--text);
+  font-size: 16px; outline: none; }
+.field input:focus { border-color: var(--accent); }
+.btn { padding: 12px 18px; border-radius: var(--r-pill); background: var(--accent);
+  color: var(--on-accent); font-size: 14.5px; font-weight: 700; }
+.btn:active { background: var(--accent-ink); }
+.btn.ghost { background: var(--bg-2); color: var(--text); }
+.auth-err { color: #C0454A; font-size: 13px; margin-top: 14px; min-height: 18px; }
+
+/* ── Полка ── */
+#shelf { min-height: 100%; padding: max(18px, env(safe-area-inset-top)) 20px calc(28px + env(safe-area-inset-bottom)); }
+.wrap { max-width: 1140px; margin: 0 auto; }
+.shelf-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 6px 0 20px; }
+.shelf-head h1 { font-size: 28px; font-weight: 700; letter-spacing: -.025em; margin: 0; }
+.shelf-head .sub { color: var(--text-3); font-size: 12.5px; margin-top: 2px; }
+.head-acts { display: flex; gap: 4px; }
+
+.hero { display: flex; gap: 16px; align-items: center; width: 100%; text-align: left;
+  padding: 14px; border-radius: var(--r-card); background: var(--panel);
+  box-shadow: var(--shadow-card); margin-bottom: 26px; }
+.hero:active { transform: scale(.995); }
+.hero .cv { width: 74px; flex: none; aspect-ratio: 2/3; border-radius: 7px; overflow: hidden;
+  background: var(--bg-2); box-shadow: 0 6px 14px -6px rgba(0,0,0,.4); }
+.hero .cv img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.hero .info { min-width: 0; flex: 1; }
+.hero .lbl { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--accent); margin-bottom: 5px; }
+.hero .t { font-size: 16px; font-weight: 700; line-height: 1.25; margin-bottom: 3px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.hero .a { font-size: 12.5px; color: var(--text-3); margin-bottom: 10px; }
+.hero .line { height: 4px; border-radius: 2px; background: var(--bg-3); overflow: hidden; }
+.hero .line i { display: block; height: 100%; background: var(--accent); }
+.hero .m { font-size: 11.5px; color: var(--text-3); margin-top: 7px; }
+
+.sec { font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--text-3); margin: 0 0 12px; }
+.grid { display: grid; gap: 24px 18px; grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)); }
+.card { text-align: left; display: flex; flex-direction: column; gap: 9px; position: relative; }
+.cover-wrap { position: relative; aspect-ratio: 2/3; border-radius: 9px; overflow: hidden;
+  background: var(--bg-2); box-shadow: var(--shadow-card); transition: transform .14s ease; }
+.card:active .cover-wrap { transform: scale(.97); }
+.cover-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Обложка-заглушка: корешок и название, чтобы полка не пестрела серыми плитками. */
+.cover-wrap .none { position: absolute; inset: 0; padding: 14px 12px; display: flex; align-items: flex-end;
+  background: linear-gradient(150deg, #8A6A55, #5E463A); color: #fff; font-size: 13px;
+  font-weight: 700; line-height: 1.25; }
+.cover-wrap .none::before { content: ''; position: absolute; left: 7px; top: 0; bottom: 0; width: 2px;
+  background: rgba(255,255,255,.22); }
+.bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(0,0,0,.18); }
+.bar i { display: block; height: 100%; background: var(--accent); }
+.card .t { font-size: 13.5px; font-weight: 600; line-height: 1.3;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card .a { font-size: 12px; color: var(--text-3); }
+.card .more { position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; border-radius: 50%;
+  background: rgba(20,16,14,.5); color: #fff; display: grid; place-items: center;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); opacity: 0; transition: opacity .15s; }
+.card:hover .more { opacity: 1; }
+/* На тачскрине наведения нет — кнопку меню видно всегда, иначе книгу не удалить. */
+@media (hover: none) { .card .more { opacity: .85; } }
+.add { display: flex; flex-direction: column; gap: 6px; align-items: center; justify-content: center;
+  aspect-ratio: 2/3; border: 1.5px dashed var(--border-3); border-radius: 9px; color: var(--text-3);
+  font-size: 12.5px; font-weight: 600; }
+
+/* ── Читалка ── */
+/* Полосы лежат поверх текста, а место под них держит паддинг самого reader:
+   иначе прятанье хрома меняло бы высоту страницы и перебивало пагинацию. */
+#reader { position: fixed; inset: 0; display: none; flex-direction: column; background: var(--page);
+  padding-top: calc(46px + env(safe-area-inset-top)); padding-bottom: calc(32px + env(safe-area-inset-bottom)); }
+#reader.on { display: flex; }
+.chrome { position: absolute; left: 0; right: 0; z-index: 30; background: color-mix(in srgb, var(--panel) 86%, transparent);
+  backdrop-filter: saturate(1.6) blur(14px); -webkit-backdrop-filter: saturate(1.6) blur(14px);
+  transition: transform .22s ease, opacity .22s ease; }
+#topbar { top: 0; padding: max(8px, env(safe-area-inset-top)) 6px 8px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 2px; }
+#botbar { bottom: 0; padding: 8px 16px calc(8px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px; font-size: 11.5px; color: var(--text-3); }
+#botbar .mid { flex: 1; text-align: center; }
+#chapLabel { max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#reader.immersive .chrome { opacity: 0; pointer-events: none; }
+#reader.immersive #topbar { transform: translateY(-100%); }
+#reader.immersive #botbar { transform: translateY(100%); }
+.tb { padding: 9px; border-radius: 9px; color: var(--text-2); }
+.tb:active { background: var(--bg-3); }
+#bookTitle { flex: 1; font-size: 13px; font-weight: 600; text-align: center; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; padding: 0 4px; }
+/* На большом экране колонка во всю ширину нечитаема: строка в 200 знаков глаз не держит.
+   Поэтому полосу текста ограничиваем и центрируем, а поля по бокам листают страницы. */
+#viewer { flex: 1; min-height: 0; width: 100%; max-width: min(1700px, max(1180px, 62vw));
+  margin: 0 auto; position: relative; }
+#viewer iframe { border: 0; }
+#viewer.spread::after { content: ''; position: absolute; left: 50%; top: 7%; bottom: 7%; width: 1px;
+  background: var(--border); opacity: .8; pointer-events: none; }
+#reader.immersive #viewer.spread::after { opacity: .3; }
+/* Подсветку epub.js рисует не внутри книги, а слоем в родительском документе. */
+#viewer svg g[class^="hl-"] { mix-blend-mode: multiply; }
+:root[data-theme="dark"] #viewer svg g[class^="hl-"] { mix-blend-mode: screen; }
+
+/* ── Панель над выделением ──
+   Два ряда, а не один: пять цветов и три действия в строку дают 550px — в телефон не лезет. */
+#selbar { position: fixed; z-index: 60; display: none; background: var(--panel); border: 1px solid var(--border);
+  border-radius: 16px; box-shadow: var(--shadow-pop); padding: 9px 11px; max-width: calc(100vw - 16px); }
+#selbar.on { display: block; animation: pop .14s ease-out; }
+@keyframes pop { from { opacity: 0; transform: translateY(4px) scale(.97); } }
+#selbar .colors { display: flex; align-items: center; justify-content: center; gap: 12px; padding-bottom: 9px; }
+#selbar .acts { display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding-top: 9px; border-top: 1px solid var(--border); }
+
+/* ── Своё выделение ──
+   Системное меню iOS («Скопировать / Найти / Поделиться») не прячется ничем: это не callout,
+   а редактор-меню, и API для него нет. Поэтому выделения у браузера нет вовсе — текст
+   невыделяемый, а подсветку и маркеры мы рисуем сами поверх книги. */
+#selLayer { position: fixed; inset: 0; z-index: 50; pointer-events: none; }
+#selLayer .selrect { position: fixed; background: rgba(var(--accent-rgb), .26); border-radius: 2px; }
+#selLayer .handle { position: fixed; pointer-events: auto; touch-action: none; width: 40px; margin-left: -20px; }
+#selLayer .handle::before { content: ''; position: absolute; left: 50%; margin-left: -1px; width: 2px;
+  top: 0; bottom: 0; background: var(--accent); }
+#selLayer .handle::after { content: ''; position: absolute; left: 50%; width: 13px; height: 13px;
+  margin-left: -6.5px; border-radius: 50%; background: var(--accent); box-shadow: 0 1px 4px rgba(0,0,0,.3); }
+#selLayer .handle.start::after { top: -9px; }
+#selLayer .handle.end::after { bottom: -9px; }
+
+.dot { width: 27px; height: 27px; border-radius: 50%; border: 1.5px solid rgba(0,0,0,.10); position: relative; }
+.dot:active { transform: scale(.9); }
+.dot.sel::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--accent); }
+.act { display: flex; align-items: center; gap: 5px; padding: 7px 12px; border-radius: var(--r-pill);
+  font-size: 13px; font-weight: 600; background: var(--bg-2); white-space: nowrap; }
+.act:active { background: var(--bg-3); }
+.act.primary { background: var(--accent); color: var(--on-accent); }
+.act .icon { width: 15px; height: 15px; stroke-width: 2; }
+
+/* ── Шторка ── */
+#scrim { position: fixed; inset: 0; z-index: 70; background: var(--overlay); opacity: 0;
+  pointer-events: none; transition: opacity .2s; }
+#scrim.on { opacity: 1; pointer-events: auto; }
+/* Закрытая шторка не просто уезжает вниз, а гасится: на десктопе она отступает от края,
+   и «уехала на свою высоту» оставляет её шапку с тенью поверх нижней полосы. */
+.sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 80; background: var(--panel);
+  border-radius: 20px 20px 0 0; box-shadow: var(--shadow-pop); transform: translateY(calc(100% + 40px));
+  visibility: hidden; transition: transform .26s cubic-bezier(.32,.72,0,1), visibility 0s .26s;
+  max-height: 88vh; display: flex; flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom); }
+.sheet.on { transform: none; visibility: visible; transition: transform .26s cubic-bezier(.32,.72,0,1), visibility 0s 0s; }
+@media (min-width: 760px) { .sheet { left: auto; right: 22px; bottom: 22px; width: 440px; border-radius: 16px; max-height: 78vh; } }
+.grab { width: 36px; height: 4px; border-radius: 2px; background: var(--border-3); margin: 9px auto 4px; flex: none; }
+.sheet-head { display: flex; align-items: center; gap: 8px; padding: 4px 14px 10px; flex: none; }
+.sheet-head .h { flex: 1; font-size: 13.5px; font-weight: 700; }
+.quote { margin: 0 16px 12px; padding: 10px 13px; border-left: 3px solid var(--accent);
+  background: var(--accent-soft); border-radius: 0 8px 8px 0; font-family: var(--serif);
+  font-size: 14.5px; line-height: 1.45; color: var(--text-2); max-height: 116px; overflow: auto; flex: none; }
+/* Разговор забирает свободную высоту сам: иначе шторка дёргается по высоте на каждый
+   абзац, который дописывает агент. Прокрутка — внутри, кнопки внизу стоят на месте. */
+#sheetBody { flex: 1 1 auto; min-height: 0; padding: 0 16px 12px; overflow: auto;
+  font-size: 15px; line-height: 1.6; -webkit-overflow-scrolling: touch; }
+#sheetBody p { margin: 0 0 11px; }
+#sheetBody ul { margin: 0 0 11px; padding-left: 20px; }
+#sheetBody li { margin: 0 0 5px; }
+#sheetBody b.h { display: block; margin: 14px 0 6px; font-size: 14px; }
+#sheetBody pre { background: var(--bg-2); border-radius: 9px; padding: 10px 12px; overflow: auto;
+  font-size: 12.5px; line-height: 1.5; margin: 0 0 11px; }
+#sheetBody code { background: var(--bg-2); border-radius: 5px; padding: 1px 5px; font-size: .9em; }
+#sheetBody .me { background: var(--bg-2); border-radius: 13px; padding: 9px 12px; margin: 0 0 12px;
+  font-size: 14.5px; }
+#sheetBody .tool { font-size: 11.5px; color: var(--text-3); margin: 0 0 9px; display: flex;
+  align-items: center; gap: 6px; }
+#sheetBody .err { color: #C0454A; font-size: 13.5px; margin: 0 0 10px; }
+.cursor { display: inline-block; width: 7px; height: 1.05em; vertical-align: -.16em;
+  background: var(--accent); border-radius: 1px; animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.sheet-foot { display: flex; gap: 8px; padding: 9px 12px 12px; border-top: 1px solid var(--border);
+  flex: none; align-items: center; }
+.sheet-foot input { flex: 1; min-width: 0; padding: 10px 14px; border-radius: var(--r-pill);
+  border: 1px solid var(--border-3); background: var(--bg); color: var(--text); font-size: 16px; outline: none; }
+.sheet-foot input:focus { border-color: var(--accent); }
+.send { width: 38px; height: 38px; border-radius: 50%; background: var(--accent); color: var(--on-accent);
+  display: grid; place-items: center; flex: none; }
+.send[disabled] { opacity: .45; }
+.chips { display: flex; gap: 7px; padding: 0 16px 12px; flex-wrap: wrap; flex: none; }
+.chip { padding: 7px 13px; border-radius: var(--r-pill); background: var(--bg-2);
+  font-size: 12.5px; font-weight: 600; display: flex; align-items: center; gap: 5px; }
+.chip:active { background: var(--bg-3); }
+.chip.strong { background: var(--accent-soft); color: var(--accent-ink); }
+:root[data-theme="dark"] .chip.strong { color: var(--accent); }
+.chip .icon { width: 14px; height: 14px; stroke-width: 2; }
+
+/* ── Ящики (оглавление, выписки, настройки) ── */
+.drawer { position: fixed; inset: 0; z-index: 80; background: var(--panel); transform: translateX(calc(100% + 40px));
+  visibility: hidden; transition: transform .26s cubic-bezier(.32,.72,0,1), visibility 0s .26s;
+  display: flex; flex-direction: column; padding-top: env(safe-area-inset-top); }
+.drawer.on { transform: none; visibility: visible; transition: transform .26s cubic-bezier(.32,.72,0,1), visibility 0s 0s; }
+@media (min-width: 760px) { .drawer { left: auto; width: 390px; border-left: 1px solid var(--border); box-shadow: var(--shadow-pop); } }
+.drawer-head { display: flex; align-items: center; gap: 8px; padding: 10px 10px 10px 16px;
+  border-bottom: 1px solid var(--border); flex: none; }
+.drawer-head .h { flex: 1; font-size: 15px; font-weight: 700; }
+.drawer-body { overflow: auto; padding: 6px 0 calc(20px + env(safe-area-inset-bottom)); -webkit-overflow-scrolling: touch; }
+.item { display: block; width: 100%; text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.item:active { background: var(--bg-2); }
+.item .s { font-size: 14px; line-height: 1.4; }
+.item .m { font-size: 11.5px; color: var(--text-3); margin-top: 4px; display: flex;
+  align-items: center; gap: 6px; flex-wrap: wrap; }
+.item .m i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+.item.cur .s { color: var(--accent); font-weight: 700; }
+.toc-l1 { font-weight: 600; }
+.toc-l2 { padding-left: 18px; color: var(--text-2); font-size: 13.5px; }
+.setrow { display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 13px 16px; border-bottom: 1px solid var(--border); }
+.setrow .lbl { font-size: 14px; }
+.setrow .hint { font-size: 11.5px; color: var(--text-3); margin-top: 3px; max-width: 200px; line-height: 1.4; }
+.seg { display: flex; background: var(--bg-2); border-radius: 10px; padding: 2px; gap: 2px; flex: none; }
+.seg button { padding: 6px 11px; border-radius: 8px; font-size: 12.5px; font-weight: 600; color: var(--text-2); }
+.seg button.on { background: var(--panel); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.10); }
+
+.empty { padding: 44px 26px; text-align: center; color: var(--text-3); font-size: 13.5px; line-height: 1.6; }
+#toast { position: fixed; left: 50%; bottom: calc(30px + env(safe-area-inset-bottom));
+  transform: translate(-50%, 16px); z-index: 95; background: var(--text); color: var(--bg);
+  padding: 10px 16px; border-radius: var(--r-pill); font-size: 13px; font-weight: 600;
+  opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; max-width: calc(100vw - 40px); }
+#toast.on { opacity: .96; transform: translate(-50%, 0); }
+#splash { position: fixed; inset: 0; display: grid; place-items: center; background: var(--bg);
+  z-index: 100; font-size: 13px; color: var(--text-3); }
+#splash.off { display: none; }
+.spin { width: 15px; height: 15px; border-radius: 50%; border: 2px solid var(--border-3);
+  border-top-color: var(--accent); animation: rot .7s linear infinite; flex: none; }
+@keyframes rot { to { transform: rotate(360deg); } }
+
+/* Меню на карточке книги */
+#menu { position: fixed; z-index: 96; background: var(--panel); border: 1px solid var(--border);
+  border-radius: 13px; box-shadow: var(--shadow-pop); padding: 5px; display: none; min-width: 180px; }
+#menu.on { display: block; }
+#menu button { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
+  padding: 10px 12px; border-radius: 9px; font-size: 14px; }
+#menu button:active { background: var(--bg-2); }
+#menu button.danger { color: #C0454A; }

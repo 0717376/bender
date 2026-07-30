@@ -1,0 +1,402 @@
+import ePub from 'epubjs'
+import { agent } from './agent.js'
+import { auth } from './auth.js'
+import { $, ls, state, toast } from './core.js'
+import { closeDrawer } from './drawers.js'
+import { drawHighlight, hideSelbar, touch } from './highlights.js'
+import { clearSel, onSelected, sel, wireSelection } from './selection.js'
+import { closeSheet, openHighlight, sheet } from './sheet.js'
+import { buildShelf, hideMenu, thumbFrom } from './shelf.js'
+import { fileGet, lib, saveLib } from './store.js'
+import { live, sync } from './sync.js'
+
+/* ── Читалка ── */
+
+export async function openBook(entry) {
+  $('#splash').classList.remove('off');
+  $('#splash').textContent = 'открываю книгу…';
+  hideMenu();
+  try {
+    // Позиция с другого устройства нужна до показа страницы, но ждать сервер бесконечно нельзя.
+    await Promise.race([sync.run().catch(() => false), new Promise(r => setTimeout(r, 3500))]);
+    let src = entry.url;
+    if (!entry.builtin) {
+      const saved = await fileGet(entry.id);
+      if (!saved) throw new Error('файл книги пропал');
+      // Раньше складывали File — старые полки читаем как есть.
+      src = saved.arrayBuffer ? await saved.arrayBuffer() : saved;
+    }
+    state.entry = entry;
+    state.book = ePub(src);
+    await state.book.ready;
+    state.meta = await state.book.loaded.metadata;
+    state.hl = ls.get('hl:' + entry.id, []);
+
+    // Метаданные встроенной книги узнаём при первом открытии — полка их запомнит.
+    if (!entry.title || !entry.cover) {
+      entry.title = entry.title || (state.meta.title || '').trim();
+      entry.author = entry.author || (state.meta.creator || '').trim();
+      if (!entry.cover) entry.cover = await thumbFrom(state.book);
+      saveLib(lib().map(x => x.id === entry.id ? entry : x));
+    }
+    entry.opened = Date.now();
+    saveLib(lib().map(x => x.id === entry.id ? entry : x));
+
+    $('#bookTitle').textContent = entry.title || state.meta.title || '';
+    $('#shelf').classList.remove('on');
+    $('#reader').classList.add('on');
+    document.documentElement.classList.add('reading');
+
+    await mountRendition(ls.get('pos:' + entry.id, null));
+    $('#splash').classList.add('off');
+    buildLocations();
+    if (auth.token) agent.connect().catch(() => {});   // прогреваем связь, пока читается первая страница
+  } catch (e) {
+    console.warn(e);
+    $('#splash').classList.add('off');
+    toast('Книга не открылась');
+  }
+}
+
+export function closeBook() {
+  clearSel();
+  clearTimeout(sync.timer);
+  sync.run().catch(() => {});
+  $('#reader').classList.remove('on');
+  $('#reader').classList.remove('immersive');
+  document.documentElement.classList.remove('reading');
+  $('#viewer').innerHTML = '';
+  state.rendition = null; state.book = null; state.entry = null;
+  buildShelf();
+}
+
+/* Разворот в две страницы — как в iBooks на широком экране: epub.js делит колонку сам,
+   от нас нужен только порог, ниже которого разворот бессмысленен. */
+export const SPREAD_MIN = 900;
+export const PAGE_PAD_Y = 14;
+
+/* Место под полосы держит паддинг #reader, и высоту полос нельзя угадывать константой:
+   у них свои отступы, кегль и безопасная зона — промах прячет строку под шапкой. */
+export function syncChrome() {
+  const r = $('#reader');
+  r.style.paddingTop = $('#topbar').offsetHeight + 'px';
+  r.style.paddingBottom = $('#botbar').offsetHeight + 'px';
+}
+
+/* Видимая высота — не то же, что высота раскладки: в Safari адресная строка то прячется,
+   то возвращается, и `inset: 0` продолжает считать её частью страницы. Колонка, посчитанная
+   по раскладке, оказывается на строку выше видимого — эту строку и режет край экрана. */
+export function availHeight() {
+  const h = $('#viewer').clientHeight;
+  const vv = window.visualViewport;
+  if (!vv) return h;
+  const chrome = $('#topbar').offsetHeight + $('#botbar').offsetHeight;
+  return Math.min(h, Math.floor(vv.height) - chrome);
+}
+
+/* Колонка epub.js ровно во всю высоту окна, и нижняя строка почти всегда обрезана пополам.
+   Подгоняем высоту под целое число строк — этим читалка и отличается от скролла в браузере.
+   Плюс держим внизу запас в одну строку: любой промах на строку (смена кегля, уехавшая
+   адресная строка, переполнение колонки движком) тогда просто попадёт в поле,
+   а не будет обрезан пополам. */
+export let pageReserve = 0;
+
+export async function fitLines() {
+  const v = $('#viewer');
+  v.style.flex = ''; v.style.height = '';
+  if (state.flow !== 'paginated' || !state.rendition) return;
+  const c = state.rendition.getContents()[0];
+  if (!c) return;
+  const lh = lineHeight(c);
+  const avail = availHeight();
+  if (!lh || avail < lh * 5) return;
+  setPageReserve(Math.ceil(lh));
+  const pad = 2 * PAGE_PAD_Y + pageReserve;
+  const want = Math.round(pad + Math.floor((avail - pad) / lh) * lh);
+  v.style.flex = 'none'; v.style.height = want + 'px';
+  const frame = $('#viewer iframe');
+  const now = frame ? Math.round(frame.getBoundingClientRect().height) : 0;
+  if (Math.abs(now - want) <= 1) return;            // уже нужной высоты — не трогаем
+  const cur = state.rendition.currentLocation();
+  const cfi = cur && cur.start ? cur.start.cfi : null;
+  // Менеджер на ресайзе выбрасывает страницы и возвращает их сам — но только если уже
+  // знает текущую позицию. Сразу после display он её ещё не посчитал, тогда рисуем мы.
+  const knows = !!(state.rendition.location && state.rendition.location.start);
+  state.rendition.resize();
+  if (!knows) await state.rendition.display(cfi || undefined);
+}
+
+export function setPageReserve(px) {
+  if (px === pageReserve) return;
+  pageReserve = px;
+  applyTouchRules();
+}
+
+export function lineHeight(contents) {
+  const doc = contents.document;
+  const p = [...doc.body.querySelectorAll('p')].find(x => x.textContent.trim().length > 120)
+    || doc.body.querySelector('p, li, div');
+  if (!p) return 0;
+  const cs = contents.window.getComputedStyle(p);
+  let lh = parseFloat(cs.lineHeight);          // line-height: normal → NaN
+  if (!lh) {
+    const rects = p.getClientRects();
+    lh = rects.length > 1 ? rects[0].height : parseFloat(cs.fontSize) * 1.4;
+  }
+  return lh > 4 ? lh : 0;
+}
+
+export function syncSpread() {
+  const on = state.flow === 'paginated' && state.spread === 'auto' && $('#viewer').clientWidth >= SPREAD_MIN;
+  $('#viewer').classList.toggle('spread', on);
+}
+
+/** Создать rendition и навесить всё, что к нему прилагается. Общее для открытия и пересборки. */
+export async function mountRendition(at) {
+  $('#viewer').innerHTML = '';
+  syncChrome();
+  state.rendition = state.book.renderTo('viewer', {
+    width: '100%', height: '100%',
+    flow: state.flow === 'scrolled' ? 'scrolled-doc' : 'paginated',
+    spread: state.flow === 'paginated' && state.spread === 'auto' ? 'auto' : 'none',
+    minSpreadWidth: SPREAD_MIN,
+    allowScriptedContent: true,
+  });
+  applyTheme();
+  wireContent();
+  await state.rendition.display(at || undefined);
+  await fitLines();
+  live().forEach(drawHighlight);
+  syncSpread();
+
+  state.rendition.on('relocated', loc => {
+    const id = state.entry.id;
+    ls.set('pos:' + id, loc.start.cfi);
+    ls.set('at:' + id, Date.now());
+    sync.later(5000);
+    const chap = chapterName(loc.start.href) || '';
+    ls.set('chap:' + id, chap);
+    $('#chapLabel').textContent = chap;
+    const d = loc.start.displayed;
+    $('#pageInfo').textContent = state.flow === 'paginated' && d && d.total ? `${d.page} из ${d.total}` : '';
+    if (state.book.locations.length()) {
+      const p = state.book.locations.percentageFromCfi(loc.start.cfi) || 0;
+      ls.set('pct:' + id, p);
+      $('#pct').textContent = Math.round(p * 100) + '%';
+    }
+    clearSel();
+    syncSpread();
+  });
+  state.rendition.on('selected', onSelected);
+}
+
+/* Попадание по выписке считаем сами. Свой markClicked epub.js зовёт ещё на touchstart —
+   шторка встаёт под палец, и click, прилетающий следом, попадает уже в затемнение. */
+export function hlAt(x, y) {
+  for (const g of document.querySelectorAll('#viewer svg g[data-id]')) {
+    for (const r of g.children) {
+      const b = r.getBoundingClientRect();
+      if (!b.width) continue;
+      if (x >= b.left - 2 && x <= b.right + 2 && y >= b.top - 2 && y <= b.bottom + 2) {
+        const h = live().find(v => v.id === g.dataset.id);
+        if (h) return h;
+      }
+    }
+  }
+  return null;
+}
+
+/** Точку внутри книги — в координаты окна: полоса выписок живёт в родителе. */
+export function inWindow(contents, x, y) {
+  const fr = contents.document.defaultView.frameElement.getBoundingClientRect();
+  return [fr.left + x, fr.top + y];
+}
+
+export async function reopen() {
+  clearSel();
+  await mountRendition(ls.get('pos:' + state.entry.id, null));
+}
+
+/* Локации считаются медленно — раз на книгу, дальше из кэша. */
+export async function buildLocations() {
+  const id = state.entry.id;
+  const cached = ls.get('loc:' + id, null);
+  try {
+    if (cached) state.book.locations.load(cached);
+    else {
+      await state.book.locations.generate(1600);
+      ls.set('loc:' + id, state.book.locations.save());
+    }
+  } catch { return; }
+  const cur = state.rendition && state.rendition.currentLocation();
+  if (cur && cur.start) {
+    const p = state.book.locations.percentageFromCfi(cur.start.cfi) || 0;
+    ls.set('pct:' + id, p);
+    $('#pct').textContent = Math.round(p * 100) + '%';
+  }
+}
+
+export function chapterName(href) {
+  const toc = (state.book.navigation && state.book.navigation.toc) || [];
+  const flat = [];
+  const walk = items => items.forEach(i => { flat.push(i); if (i.subitems) walk(i.subitems); });
+  walk(toc);
+  const hit = flat.find(i => i.href && href && i.href.split('#')[0].endsWith(href.split('/').pop()));
+  return hit ? hit.label.trim() : '';
+}
+
+export function resolvedTheme() {
+  if (state.theme !== 'auto') return state.theme;
+  return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+export function applyTheme() {
+  const th = resolvedTheme();
+  document.documentElement.dataset.theme = th;
+  const ink = th === 'dark' ? '#E8E4DE' : th === 'sepia' ? '#43382B' : '#1A1A1F';
+  const paper = th === 'dark' ? '#16151A' : th === 'sepia' ? '#F6EEDC' : '#FBFAF8';
+  const r = state.rendition;
+  if (!r) return;
+  r.themes.register('reader', {
+    /* Вертикальные поля страницы: epub.js делает body контейнером колонок, поэтому
+       padding-top/bottom одинаково отступает во всех колонках разворота. */
+    'body': { 'color': ink + ' !important', 'background': paper + ' !important',
+              'padding': PAGE_PAD_Y + 'px 4px !important', '-webkit-text-size-adjust': '100%' },
+    'p, li, td, div, span, h1, h2, h3, h4': { 'color': ink + ' !important' },
+    'a': { 'color': '#C05A39 !important' },
+    /* Без ограничения по высоте картинка на всю страницу вылезает за экран и режется. */
+    'img, svg': { 'max-width': '100% !important', 'max-height': '96vh !important',
+                  'height': 'auto !important', 'object-fit': 'contain' },
+    'table': { 'max-width': '100% !important' },
+    'pre, code': { 'white-space': 'pre-wrap !important', 'word-break': 'break-word' },
+  });
+  r.themes.select('reader');
+  r.themes.fontSize(state.fontSize + '%');
+  applyTouchRules();
+}
+
+/* Своим <style>, а не темой epub.js: та вставляет правила через insertRule один раз,
+   и переключение на лету до книги не доезжает. */
+export function applyTouchRules() {
+  if (!state.rendition) return;
+  state.rendition.getContents().forEach(c => {
+    const doc = c.document;
+    let st = doc.getElementById('reader-touch');
+    if (!st) { st = doc.createElement('style'); st.id = 'reader-touch'; doc.head.appendChild(st); }
+    // Браузер не должен уметь выделять: нет выделения — нечего и показывать поверх.
+    // touch-action забирает у него и жест: иначе он объявляет касание прокруткой,
+    // шлёт pointercancel — и удержание не доживает до своих 330 мс.
+    const pan = state.flow === 'scrolled' ? 'pan-y' : 'none';
+    st.textContent =
+      '* { -webkit-touch-callout: none !important; -webkit-user-select: none !important; user-select: none !important; }'
+      + 'html, body { touch-action: ' + pan + ' !important; overscroll-behavior: none !important; }'
+      // Запас внизу страницы — в пару к fitLines; селектор с html, чтобы перебить тему epub.js.
+      + (state.flow === 'paginated' && pageReserve
+        ? 'html body { padding-bottom: ' + (PAGE_PAD_Y + pageReserve) + 'px !important; }' : '');
+  });
+}
+
+export function wireContent() {
+  state.rendition.hooks.content.register(contents => {
+    const doc = contents.document;
+    applyTouchRules();
+    wireSelection(contents);
+    // Фокус живёт внутри книги, и до родителя её клавиши не долетают.
+    doc.addEventListener('keydown', onKey);
+
+    let sx = 0, sy = 0;
+    doc.addEventListener('touchstart', e => {
+      sx = e.changedTouches[0].clientX; sy = e.changedTouches[0].clientY;
+      sel.markJust = false;                     // новый жест — прошлый флаг больше не в счёт
+    }, { passive: true });
+    // Пока тянем выделение — страница стоит. Слушатель непассивный, иначе preventDefault не в счёт.
+    doc.addEventListener('touchmove', e => { if (sel.on) e.preventDefault(); }, { passive: false });
+    doc.addEventListener('touchend', e => {
+      if (sel.on) return;                       // тянем выделение — не листаем
+      const t = e.changedTouches[0];
+      const dx = t.clientX - sx, dy = t.clientY - sy;
+      if (state.flow === 'paginated' && Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.6) {
+        return dx < 0 ? state.rendition.next() : state.rendition.prev();
+      }
+      // Тап по выписке открываем в конце жеста, а не в начале: пока палец на экране,
+      // ничего поверх книги вставать не должно — иначе оно и съест этот тап.
+      const h = hlAt(...inWindow(contents, t.clientX, t.clientY));
+      if (h) { sel.markJust = true; openHighlight(h); }
+    }, { passive: true });
+    doc.addEventListener('click', e => {
+      if (sel.justEnded) { sel.justEnded = false; return; }
+      if (sel.dismissed) { sel.dismissed = false; return; }   // этим тапом сняли выделение — и хватит с него
+      if (sel.markJust) { sel.markJust = false; return; }     // выписку уже открыли на touchend
+      const hit = hlAt(...inWindow(contents, e.clientX, e.clientY));
+      if (hit) return openHighlight(hit);
+      const w = contents.window.innerWidth;
+      if (state.flow === 'paginated' && e.clientX < w * 0.22) return state.rendition.prev();
+      if (state.flow === 'paginated' && e.clientX > w * 0.78) return state.rendition.next();
+      $('#reader').classList.toggle('immersive');
+      hideSelbar();
+    });
+  });
+}
+
+/* Родительские слушатели вешаются один раз: rendition пересобирается при смене вида,
+   а вместе с ним удвоились бы и перелистывания. */
+export function wireGlobal() {
+  document.addEventListener('keydown', onKey);
+  let rt = null;
+  const relayout = () => {
+    if (sel.on || sel.drag) return;      // тянут выделение — не перекладывать под рукой
+    clearSel(); hideMenu();
+    clearTimeout(rt);
+    rt = setTimeout(() => { syncChrome(); fitLines(); syncSpread(); }, 180);
+  };
+  window.addEventListener('resize', relayout);
+  // Прятанье адресной строки меняет видимую область, но не всегда шлёт window.resize.
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', relayout);
+    window.visualViewport.addEventListener('scroll', relayout);
+  }
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (state.theme === 'auto') applyTheme();
+  });
+
+  // Уходя со страницы — дописать прогресс, возвращаясь — забрать чужой.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') { clearTimeout(sync.timer); sync.run({ keepalive: true }).catch(() => {}); }
+    else if (Date.now() - sync.last > 30000) sync.later(600);
+  });
+  window.addEventListener('pagehide', () => { clearTimeout(sync.timer); sync.run({ keepalive: true }).catch(() => {}); });
+
+  // Нажатие мимо книги — по хрому, по полям, по чему угодно в родителе — снимает выделение.
+  document.addEventListener('pointerdown', e => {
+    if (!e.target.closest || !e.target.closest('#menu')) hideMenu();
+    const had = sel.on || $('#selbar').classList.contains('on');
+    sel.dismissed = false;
+    if (!had) return;
+    if (e.target.closest('#selbar, #selLayer')) return;
+    clearSel();
+    sel.dismissed = true;
+  }, true);
+
+  // На широком экране полоса текста уже окна: поля по бокам — тоже листалка.
+  $('#reader').addEventListener('click', e => {
+    if (e.target !== e.currentTarget) return;
+    if (sel.dismissed) { sel.dismissed = false; return; }
+    if (state.flow !== 'paginated' || !state.rendition) return;
+    e.clientX < window.innerWidth / 2 ? state.rendition.prev() : state.rendition.next();
+  });
+}
+
+export function onKey(e) {
+  if (e.key === 'Escape') {
+    if (sel.on || $('#selbar').classList.contains('on')) return clearSel();
+    if ($('#sheet').classList.contains('on')) return closeSheet();
+    if ($('#drawer').classList.contains('on')) return closeDrawer();
+    $('#reader').classList.remove('immersive');
+    return;
+  }
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (!state.rendition || state.flow !== 'paginated') return;
+  if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); state.rendition.next(); }
+  if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); state.rendition.prev(); }
+}

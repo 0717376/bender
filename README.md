@@ -35,6 +35,7 @@ backend/          FastAPI + claude-agent-sdk (single process)
   agent_skills/     the agent's domain skills (wiki/tasks)
 frontend-wiki/    React: three panes, markdown, chat
 frontend-tasks/   React: tasks, dnd-kit, themes & palettes, chat
+frontend-books/   epub reader: shelf, highlights, agent on a quote (PWA, no framework)
 ```
 
 Storage is files and SQLite on a volume: `content/` (markdown wiki), `data/` (tasks, cron, memory, skills, session) and `files/` (personal file storage). None of it is in the repository — that's personal data.
@@ -61,6 +62,7 @@ docker compose up -d --build
 
 - Tasks: http://localhost:8851
 - Wiki: http://localhost:8842
+- Books: http://localhost:8899 (you fill the shelf yourself — book files are not in the repo)
 
 The first message to the Telegram bot will tell you your ID — put it into `TELEGRAM_ALLOWED_IDS` and restart the backend.
 
@@ -98,7 +100,7 @@ The backend detects the local server via `TG_API_BASE` and reads incoming files 
 | `CURATOR_ENABLED` / `CURATOR_INTERVAL_HOURS` | `1` / `168` | skill-library curator |
 | `CLAUDE_DIR` / `CLAUDE_JSON` | `~/.claude` / `~/.claude.json` | Claude CLI credentials mounted into the container |
 | `CLAUDE_CODE_OAUTH_TOKEN` | — | long-lived token from `claude setup-token`; when set, used instead of the OAuth session in `~/.claude` |
-| `WIKI_PORT` / `TASKS_PORT` | `8842` / `8851` | frontend ports |
+| `WIKI_PORT` / `TASKS_PORT` / `BOOKS_PORT` | `8842` / `8851` / `8899` | frontend ports |
 | `TZ` | `Europe/Moscow` | timezone (matters for cron) |
 
 ## License
