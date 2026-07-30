@@ -28,8 +28,9 @@ from xml.etree import ElementTree
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
-from . import config
+from . import books_store, config
 from .auth import check_token, require_auth
 
 logger = logging.getLogger("wiki")
@@ -59,6 +60,44 @@ def init() -> None:
             logger.info("Books: %s → %s", name, meta["id"])
         except Exception as e:  # noqa: BLE001 — одна битая книга не должна ронять запуск
             logger.warning("Books: %s не разобралась (%s)", name, e)
+    moved = migrate_legacy_state()
+    if moved:
+        logger.info("Books: прогресс перенесён из вики, книг: %d", moved)
+
+
+LEGACY_STATE = os.path.join(".reader", "state.json")
+
+
+def migrate_legacy_state() -> int:
+    """Первая версия читалки держала прогресс одним json в скрытой странице вики.
+    Переносим в базу и переименовываем файл, чтобы больше не возвращаться."""
+    path = os.path.join(config.WIKI_DIR, LEGACY_STATE)
+    if not os.path.isfile(path):
+        return 0
+    moved = 0
+    try:
+        with open(path, encoding="utf-8") as f:
+            doc = json.load(f)
+        for book_id, st in (doc.get("books") or {}).items():
+            if not os.path.isdir(os.path.join(config.BOOKS_DIR, book_id)):
+                continue
+            if st.get("pos"):
+                books_store.set_position(book_id, st["pos"], st.get("pct") or 0,
+                                         st.get("chap") or "", st.get("at") or None)
+            items = [{
+                "id": h.get("id"), "cfi": h.get("cfi"), "text": h.get("text"),
+                "color": h.get("color"), "chapter": h.get("chapter"),
+                "thread": h.get("thread") or [], "created": h.get("ts"),
+                "updated": h.get("upd") or h.get("ts"), "deleted": bool(h.get("del")),
+            } for h in (st.get("hl") or []) if h.get("id")]
+            if items:
+                books_store.save_highlights(book_id, items)
+            moved += 1
+        os.rename(path, path.replace("state.json", "state.migrated.json"))
+    except Exception as e:  # noqa: BLE001 — не переехало, так не переехало: файл на месте
+        logger.warning("Books: старое состояние не перенеслось (%s)", e)
+        return 0
+    return moved
 
 
 # ── Разбор epub ──
@@ -213,13 +252,18 @@ def meta_of(book_id: str) -> dict:
 
 def catalog() -> list[dict]:
     out = []
+    pos, hl = books_store.positions(), books_store.counts()
     for name in os.listdir(config.BOOKS_DIR) if os.path.isdir(config.BOOKS_DIR) else []:
         if name.startswith(".") or not os.path.isdir(os.path.join(config.BOOKS_DIR, name)):
             continue
         try:
-            out.append(meta_of(name))
+            meta = meta_of(name)
         except HTTPException:
             continue
+        # Полке нужны и проценты, и число выписок — пусть приезжают вместе со списком.
+        meta["position"] = pos.get(name)
+        meta["highlights"] = hl.get(name, 0)
+        out.append(meta)
     return sorted(out, key=lambda m: m.get("added", 0), reverse=True)
 
 
@@ -276,6 +320,7 @@ def remove(book_id: str) -> dict:
     dest = os.path.join(trash, f"{int(time.time())}-{safe_id(book_id)}")
     shutil.rmtree(dest, ignore_errors=True)
     shutil.move(path, dest)
+    books_store.forget(book_id)
     return {"ok": True, "trashed": os.path.basename(dest)}
 
 
@@ -313,14 +358,23 @@ def _send(book_id: str, name: str, token: str, download: str = "") -> FileRespon
     return FileResponse(path, media_type=media, headers=headers)
 
 
+def _guard(token: str) -> None:
+    # Проверяем до того, как заглянуть в библиотеку: иначе по коду ответа видно,
+    # какие книги на сервере есть, а какие нет.
+    if not check_token(token):
+        raise HTTPException(401, "Unauthorized")
+
+
 @router.api_route("/{book_id}/file", methods=["GET", "HEAD"])
 async def book_file(book_id: str, token: str = ""):
+    _guard(token)
     meta = meta_of(book_id)
     return _send(book_id, "book.epub", token, f"{meta.get('title') or book_id}.epub")
 
 
 @router.api_route("/{book_id}/cover", methods=["GET", "HEAD"])
 async def book_cover(book_id: str, token: str = ""):
+    _guard(token)
     cover = meta_of(book_id).get("cover")
     if not cover:
         raise HTTPException(404, "Обложки нет")
@@ -329,9 +383,39 @@ async def book_cover(book_id: str, token: str = ""):
 
 @router.api_route("/{book_id}/thumb", methods=["GET", "HEAD"])
 async def book_thumb(book_id: str, token: str = ""):
+    _guard(token)
     if not meta_of(book_id).get("thumb"):
         raise HTTPException(404, "Миниатюры нет")
     return _send(book_id, THUMB, token)
+
+
+# ── Прогресс и выписки ──
+
+
+class PositionReq(BaseModel):
+    cfi: str = ""
+    pct: float = 0
+    chapter: str = ""
+    updated: int | None = None
+
+
+@router.get("/{book_id}/state")
+async def get_state(book_id: str, _: bool = Depends(require_auth)):
+    meta_of(book_id)
+    return {"position": books_store.position(book_id),
+            "highlights": books_store.highlights(book_id, with_deleted=True)}
+
+
+@router.put("/{book_id}/position")
+async def put_position(book_id: str, req: PositionReq, _: bool = Depends(require_auth)):
+    meta_of(book_id)
+    return books_store.set_position(book_id, req.cfi, req.pct, req.chapter, req.updated)
+
+
+@router.put("/{book_id}/highlights")
+async def put_highlights(book_id: str, items: list[dict], _: bool = Depends(require_auth)):
+    meta_of(book_id)
+    return books_store.save_highlights(book_id, items)
 
 
 @router.put("/{book_id}/thumb")

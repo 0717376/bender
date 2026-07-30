@@ -7,7 +7,9 @@ import { fileDel, filePut, lib, saveLib } from './store.js'
 
 export function bookLabel(e) {
   const pct = ls.get('pct:' + e.id, 0);
-  const n = (ls.get('hl:' + e.id, []) || []).filter(h => !h.del).length;
+  // Книгу могли читать на другом устройстве — тогда счёт выписок знает только сервер.
+  const mine = ls.get('hl:' + e.id, null);
+  const n = mine ? mine.filter(h => !h.del).length : (e.highlights || 0);
   const bits = [];
   if (pct > 0.005) bits.push(Math.round(pct * 100) + '%');
   if (n) bits.push(plural(n, 'выписка', 'выписки', 'выписок'));

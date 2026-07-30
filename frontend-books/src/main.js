@@ -61,8 +61,8 @@ export async function start() {
   applyTheme();
   buildShelf();                 // сразу то, что помним с прошлого раза
   await refreshShelf();         // и то, что на сервере
-  // Прогресс с других устройств подтягиваем до того, как книгу откроют.
-  sync.run().then(ok => { if (ok && !state.entry) buildShelf(); }).catch(() => {});
+  // Что не доехало в прошлый раз — уходит сейчас, а прогресс приезжает вместе с полкой.
+  sync.run().then(ok => { if (ok) refreshShelf(); }).catch(() => {});
 }
 
 async function boot() {

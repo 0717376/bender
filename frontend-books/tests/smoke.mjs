@@ -39,10 +39,12 @@ const STUB = () => {
   window.WebSocket = FakeWS
 }
 
-/* Подставная вики: состояние синхронизации живёт в памяти теста и общее для обоих
-   «устройств» — так проверяется, что прогресс действительно переезжает. */
+/* Подставной сервер состояния: та же склейка, что в books.db — побеждает более позднее,
+   удаление живёт надгробием. Один на все контексты: так проверяется, что прогресс переезжает. */
 const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' }
-let syncDoc = null, puts = 0
+const srv = { pos: {}, hl: {} }
+let pushes = 0
+
 /* Подставная библиотека: одна на все контексты — как настоящая на сервере. */
 let library = [], thumbs = [], thumbBytes = null
 const BOOK_ID = 'bk1test'
@@ -50,12 +52,14 @@ const booksRoute = async r => {
   const req = r.request()
   const path = new URL(req.url()).pathname
   const json = body => r.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify(body) })
-  const m = path.match(/^\/books(?:\/([^/]+))?(?:\/(file|cover|thumb))?$/)
+  const m = path.match(/^\/books(?:\/([^/]+))?(?:\/(file|cover|thumb|state|highlights|position))?$/)
   if (!m) return r.fulfill({ status: 404, headers: CORS, contentType: 'application/json', body: '{"detail":"нет"}' })
   const [, id, kind] = m
+
   if (req.method() === 'POST') {
     const meta = { id: BOOK_ID, title: FIXTURE.title, author: FIXTURE.author,
-                   added: Math.round(Date.now() / 1000), size: BOOK.length, chapters: FIXTURE.chapters.length, cover: 'cover.png' }
+                   added: Math.round(Date.now() / 1000), size: BOOK.length,
+                   chapters: FIXTURE.chapters.length, cover: 'cover.png', thumb: '' }
     if (library.find(b => b.id === meta.id)) return json({ ...meta, known: true })
     library.push(meta)
     return json(meta)
@@ -69,30 +73,39 @@ const booksRoute = async r => {
     if (b) b.thumb = 'thumb.jpg'
     return json(b || { thumb: 'thumb.jpg' })
   }
+  // Склейка как на сервере: побеждает более позднее, удаление живёт надгробием.
+  if (req.method() === 'PUT' && kind === 'highlights') {
+    pushes++
+    const box = srv.hl[id] || (srv.hl[id] = {})
+    for (const h of JSON.parse(req.postData() || '[]')) {
+      const cur = box[h.id]
+      if (!cur || (cur.updated || 0) <= (h.updated || 0)) box[h.id] = h
+    }
+    return json(Object.values(box))
+  }
+  if (req.method() === 'PUT' && kind === 'position') {
+    const p = JSON.parse(req.postData() || '{}')
+    const cur = srv.pos[id]
+    if (!cur || (cur.updated || 0) <= (p.updated || 0)) srv.pos[id] = { ...p, updated: p.updated || Date.now() }
+    return json(srv.pos[id])
+  }
+  if (kind === 'state') return json({ position: srv.pos[id] || null, highlights: Object.values(srv.hl[id] || {}) })
+  if (kind === 'file') return r.fulfill({ status: 200, headers: CORS, contentType: 'application/epub+zip', body: BOOK })
+  if (kind === 'cover') return r.fulfill({ status: 200, headers: CORS, contentType: 'image/png', body: COVER })
   if (kind === 'thumb') return thumbBytes
     ? r.fulfill({ status: 200, headers: CORS, contentType: 'image/jpeg', body: thumbBytes })
     : r.fulfill({ status: 404, headers: CORS, contentType: 'application/json', body: '{"detail":"нет"}' })
-  if (kind === 'file') return r.fulfill({ status: 200, headers: CORS, contentType: 'application/epub+zip', body: BOOK })
-  if (kind === 'cover') return r.fulfill({ status: 200, headers: CORS, contentType: 'image/png', body: COVER })
-  return json(library)
-}
-const syncRoute = async r => {
-  const req = r.request()
-  if (req.method() === 'PUT') {
-    puts++
-    syncDoc = JSON.parse(JSON.parse(req.postData()).text)
-    return r.fulfill({ status: 200, headers: CORS, contentType: 'application/json', body: '{"ok":true}' })
-  }
-  if (!syncDoc) return r.fulfill({ status: 404, headers: CORS, contentType: 'application/json', body: '{"detail":"нет"}' })
-  return r.fulfill({ status: 200, headers: CORS, contentType: 'application/json',
-    body: JSON.stringify({ path: '.reader/state.json', text: JSON.stringify(syncDoc) }) })
+  return json(library.map(b => ({
+    ...b,
+    position: srv.pos[b.id] || null,
+    highlights: Object.values(srv.hl[b.id] || {}).filter(h => !h.deleted).length,
+  })))
 }
 
 const browser = await webkit.launch()
 const ctx = await browser.newContext({ ...devices['iPhone 13'], hasTouch: false })
 await ctx.route('**/auth/login', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{"token":"T"}' }))
 await ctx.route('**/auth/me', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' }))
-await ctx.route('**/files/content**', syncRoute)
 await ctx.route('**/books', booksRoute)
 await ctx.route('**/books/**', booksRoute)
 await ctx.addInitScript(STUB)
@@ -145,7 +158,9 @@ async function addBook(p) {
 const markCenter = p => p.evaluate(() => {
   for (const g of document.querySelectorAll('#viewer svg g[data-id]')) {
     const b = g.children[0].getBoundingClientRect()
-    if (b.width > 8 && b.top > 70 && b.bottom < window.innerHeight - 140)
+    // Соседние колонки книги живут за краем экрана — метки оттуда тапать бессмысленно.
+    if (b.width > 8 && b.top > 70 && b.bottom < window.innerHeight - 140
+        && b.left > 8 && b.right < window.innerWidth - 8)
       return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2), id: g.dataset.id }
   }
   return null
@@ -331,6 +346,23 @@ const offline = await page.waitForFunction(() => !!document.querySelector('#view
 check('офлайн: книга открывается без сервера', offline)
 await page.unroute('**/books/*/file')
 
+// 7c. Сервер недоступен: правка не теряется, а ждёт следующей попытки
+const hlBefore = Object.keys(srv.hl[BOOK_ID] || {}).length
+await page.route('**/books/*/highlights', r => r.abort())
+await selectByDrag(page)
+await page.evaluate(() => paint('no'))
+await page.waitForTimeout(2600)                       // отложенная отправка успевает сработать и упасть
+const stuck = await page.evaluate(() => JSON.parse(localStorage.getItem('dirty') || '[]'))
+check('офлайн: правка помечена неотправленной', stuck.includes(BOOK_ID), `помечено: ${JSON.stringify(stuck)}`)
+check('офлайн: на сервере её пока нет', Object.keys(srv.hl[BOOK_ID] || {}).length === hlBefore)
+await page.unroute('**/books/*/highlights')
+await page.evaluate(() => sync.run())
+await page.waitForTimeout(400)
+check('офлайн: следующая попытка её доносит',
+  Object.keys(srv.hl[BOOK_ID] || {}).length === hlBefore + 1
+    && (await page.evaluate(() => JSON.parse(localStorage.getItem('dirty') || '[]'))).length === 0,
+  `выписок на сервере: ${Object.keys(srv.hl[BOOK_ID] || {}).length}`)
+
 // 7b. Синхронизация: уходим со страницы — прогресс должен уехать на сервер
 await page.evaluate(async () => {
   await state.rendition.next(); await state.rendition.next();
@@ -338,20 +370,21 @@ await page.evaluate(async () => {
 })
 await page.evaluate(() => closeBook())
 await page.waitForTimeout(1200)
+const phoneHl = await page.evaluate(() => live().length)
 const phonePos = await page.evaluate(() => {
   const id = lib()[0].id
   return { id, pos: localStorage.getItem('pos:' + id), pct: JSON.parse(localStorage.getItem('pct:' + id) || '0') }
 })
-check('синхронизация: состояние ушло на сервер', !!syncDoc && !!syncDoc.books[phonePos.id],
-  `книг в документе: ${syncDoc ? Object.keys(syncDoc.books).length : 0}, записей: ${puts}`)
-check('синхронизация: позиция и выписка в документе',
-  syncDoc.books[phonePos.id].pos === JSON.parse(phonePos.pos) && syncDoc.books[phonePos.id].hl.length === 1,
-  `выписок: ${syncDoc ? syncDoc.books[phonePos.id].hl.length : 0}`)
+check('синхронизация: состояние ушло на сервер', !!srv.pos[phonePos.id],
+  `отправок выписок: ${pushes}`)
+check('синхронизация: позиция и выписка на сервере',
+  srv.pos[phonePos.id].cfi === JSON.parse(phonePos.pos)
+    && Object.values(srv.hl[phonePos.id] || {}).filter(h => !h.deleted).length === phoneHl,
+  `выписок: ${Object.values(srv.hl[phonePos.id] || {}).length}, на телефоне ${phoneHl}`)
 
 // 8. Большой экран — второе «устройство»: подхватывает позицию и выписки телефона
 const dctx = await browser.newContext({ viewport: { width: 1440, height: 900 } })
 await dctx.route('**/auth/**', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{"token":"T","ok":true}' }))
-await dctx.route('**/files/content**', syncRoute)
 await dctx.route('**/books', booksRoute)
 await dctx.route('**/books/**', booksRoute)
 await dctx.addInitScript(STUB)
@@ -374,7 +407,7 @@ const dsynced = await dpage.evaluate(() => {
 })
 check('синхронизация: второе устройство забрало позицию', dsynced.pos && JSON.parse(dsynced.pos) === JSON.parse(phonePos.pos),
   `${(JSON.parse(dsynced.pos || '""') || '').slice(-22)}`)
-check('синхронизация: и выписки тоже', dsynced.hl === 1, `выписок: ${dsynced.hl}`)
+check('синхронизация: и выписки тоже', dsynced.hl === phoneHl, `выписок: ${dsynced.hl}, на телефоне ${phoneHl}`)
 
 const dopened = await dpage.evaluate(() => {
   const cur = state.rendition.currentLocation()
@@ -477,7 +510,6 @@ check('PWA: манифест отдаётся', man === 200)
 // под палец, и click, прилетающий после отпускания, попадает уже в затемнение.
 const tctx = await browser.newContext({ ...devices['iPhone 13'], hasTouch: true })
 await tctx.route('**/auth/**', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{"token":"T","ok":true}' }))
-await tctx.route('**/files/content**', syncRoute)
 await tctx.route('**/books', booksRoute)
 await tctx.route('**/books/**', booksRoute)
 await tctx.addInitScript(STUB)

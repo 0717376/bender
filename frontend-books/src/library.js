@@ -1,6 +1,7 @@
 import { API, ls } from './core.js'
 import { auth } from './auth.js'
 import { fileGet, filePut, lib, saveLib } from './store.js'
+import { applyPosition } from './sync.js'
 
 /* ── Библиотека ──
    Книгами владеет сервер: список, файлы и обложки живут в корне books/. Локально
@@ -86,6 +87,8 @@ export async function bookBytes(id) {
 export function mergeShelf(remote) {
   const known = new Map(lib().map(e => [e.id, e]));
   const list = remote.map(m => Object.assign({}, known.get(m.id), m));
+  // Прогресс приезжает вместе со списком — полке больше ничего спрашивать не нужно.
+  remote.forEach(m => applyPosition(m.id, m.position));
   saveLib(list);
   // Пропавшую с сервера книгу забываем вместе с её кэшем.
   known.forEach((e, id) => {
