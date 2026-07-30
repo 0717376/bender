@@ -13,6 +13,7 @@ id — первые 8 байт SHA-256 файла: одна и та же кни�
 """
 
 import asyncio
+import datetime
 import hashlib
 import io
 import json
@@ -489,12 +490,105 @@ def search(book_id: str, query: str, regex: bool = False, limit: int = 20,
     return hits
 
 
+# ── Статистика чтения ──
+
+DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _today(tz: int) -> str:
+    return time.strftime("%Y-%m-%d", time.gmtime(time.time() + int(tz) * 60))
+
+
+def _shift(day: str, back: int) -> str:
+    return (datetime.date.fromisoformat(day) - datetime.timedelta(days=back)).isoformat()
+
+
+def _streaks(days: set[str], today: str) -> tuple[int, int]:
+    """Текущая серия и рекорд. Сегодняшний день ещё не кончился, поэтому серию,
+    доходящую до вчера, не обнуляем — иначе она рвётся каждое утро."""
+    if not days:
+        return 0, 0
+    cur = 0
+    probe = today if today in days else _shift(today, 1)
+    while probe in days:
+        cur += 1
+        probe = _shift(probe, 1)
+    best = run = 0
+    prev = None
+    for d in sorted(days):
+        run = run + 1 if prev == _shift(d, 1) else 1
+        best = max(best, run)
+        prev = d
+    return cur, best
+
+
+def reading_stats(tz: int = 0, today: str = "", window: int = 182) -> dict:
+    """Календарь чтения: по дню — сколько минут и сколько выписок. Плюс разбивка по
+    книгам и серии. День считается по часам читателя: их присылает устройство."""
+    today = today if DAY.fullmatch(today or "") else _today(tz)
+    window = max(7, min(int(window or 182), 730))
+    start = _shift(today, window - 1)
+
+    per_day: dict[str, dict] = {}
+    per_book: dict[str, dict] = {}
+    for r in books_store.reading_days(start):
+        if r["day"] > today:
+            continue
+        d = per_day.setdefault(r["day"], {"day": r["day"], "secs": 0, "pct": 0.0, "highlights": 0})
+        d["secs"] += r["secs"]
+        d["pct"] += r["pct"]
+        b = per_book.setdefault(r["book_id"], {"secs": 0, "pct": 0.0, "days": 0})
+        b["secs"] += r["secs"]
+        b["pct"] += r["pct"]
+        b["days"] += 1
+    # День, в который только выделяли, — тоже день чтения: клетка не должна быть пустой.
+    for day, n in books_store.highlight_days(tz).items():
+        if start <= day <= today:
+            per_day.setdefault(day, {"day": day, "secs": 0, "pct": 0.0, "highlights": 0})["highlights"] = n
+
+    days = [per_day[k] for k in sorted(per_day)]
+    cur, best = _streaks(set(per_day), today)
+    counts = books_store.counts()
+    books = []
+    for meta in catalog():
+        b = per_book.get(meta["id"])
+        if not b and not counts.get(meta["id"]):
+            continue
+        books.append({
+            "id": meta["id"], "title": meta.get("title") or "", "author": meta.get("author") or "",
+            "secs": (b or {}).get("secs", 0), "pct": round((b or {}).get("pct", 0.0), 4),
+            "days": (b or {}).get("days", 0), "highlights": counts.get(meta["id"], 0),
+            "at": round((meta.get("position") or {}).get("pct") or 0, 4),
+        })
+    books.sort(key=lambda x: (-x["secs"], x["title"]))
+    return {
+        "today": today,
+        "from": start,
+        "days": days,
+        "books": books,
+        "totals": {
+            "secs": sum(d["secs"] for d in days),
+            "days": len([d for d in days if d["secs"] or d["highlights"]]),
+            "highlights": sum(d["highlights"] for d in days),
+            "streak": cur,
+            "best": best,
+            "longest_day": max((d["secs"] for d in days), default=0),
+        },
+    }
+
+
 # ── Ручки ──
 
 
 @router.get("")
 async def list_books(_: bool = Depends(require_auth)):
     return catalog()
+
+
+@router.get("/stats")
+async def get_stats(tz: int = 0, today: str = "", window: int = 182,
+                    _: bool = Depends(require_auth)):
+    return reading_stats(tz, today, window)
 
 
 @router.post("")
@@ -570,6 +664,12 @@ class PositionReq(BaseModel):
     updated: int | None = None
 
 
+class ReadReq(BaseModel):
+    day: str = ""          # дата по часам читателя: сервер про его вечер не знает
+    secs: int = 0
+    pct: float = 0
+
+
 @router.get("/{book_id}/state")
 async def get_state(book_id: str, _: bool = Depends(require_auth)):
     meta_of(book_id)
@@ -593,6 +693,16 @@ async def put_highlights(book_id: str, items: list[dict], client: str = "",
     saved = books_store.save_highlights(book_id, items)
     books_store.touch(book_id, client)
     return saved
+
+
+@router.post("/{book_id}/read")
+async def put_reading(book_id: str, req: ReadReq, _: bool = Depends(require_auth)):
+    """Сколько читали с прошлой отметки. Тик живой синхронизации на это не шлём:
+    читающее устройство отмечается каждые полминуты, будить этим остальные незачем."""
+    meta_of(book_id)
+    day = req.day if DAY.fullmatch(req.day or "") else _today(0)
+    books_store.add_reading(book_id, day, req.secs, req.pct)
+    return {"ok": True}
 
 
 # ── Живая синхронизация ──

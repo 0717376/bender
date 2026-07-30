@@ -388,6 +388,13 @@ def books_search(book_id: str, query: str, regex: bool = False, limit: int = 20)
 
 
 @mcp.tool()
+def books_stats(tz: int = 0, window: int = 182) -> dict:
+    """Статистика чтения: по дням (секунды и выписки), по книгам, серия дней подряд и
+    рекорд. tz — сдвиг часового пояса читателя в минутах (Москва — 180)."""
+    return books_api.reading_stats(tz, "", window)
+
+
+@mcp.tool()
 def books_highlights(book_id: str, color: str | None = None) -> list[dict]:
     """Выписки пользователя из книги: цитата, смысл (цвет), глава, дата и разговор о ней.
     color — фильтр: imp | no | q | wiki | nice."""

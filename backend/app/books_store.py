@@ -39,6 +39,15 @@ CREATE TABLE IF NOT EXISTS highlights (
   deleted  INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_hl_book ON highlights(book_id);
+CREATE TABLE IF NOT EXISTS days (
+  day      TEXT NOT NULL,
+  book_id  TEXT NOT NULL,
+  secs     INTEGER NOT NULL DEFAULT 0,
+  pct      REAL    NOT NULL DEFAULT 0,
+  updated  INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, book_id)
+);
+CREATE INDEX IF NOT EXISTS idx_days_day ON days(day);
 """
 
 
@@ -149,6 +158,46 @@ def positions() -> dict[str, dict]:
             _q("SELECT book_id, cfi, pct, chapter, updated FROM positions")}
 
 
+# ── Сколько читали ──
+#
+# День — по часам читателя, а не сервера: «вчера вечером» и «сегодня ночью» человек
+# различает по своим часам, поэтому дату присылает устройство. Копим по дню и книге:
+# из этого собирается и календарь, и разбивка по книгам.
+
+BEAT_MAX = 15 * 60      # разумный предел одной досылки: вкладку могли усыпить на сутки
+
+
+def add_reading(book_id: str, day: str, secs: int, pct: float = 0) -> None:
+    secs = max(0, min(int(secs or 0), BEAT_MAX))
+    pct = max(0.0, min(float(pct or 0), 1.0))
+    if not secs and not pct:
+        return
+    _w("INSERT INTO days (day, book_id, secs, pct, updated) VALUES (?,?,?,?,?) "
+       "ON CONFLICT(day, book_id) DO UPDATE SET secs=secs+excluded.secs, "
+       "pct=pct+excluded.pct, updated=excluded.updated",
+       (day, book_id, secs, pct, now()))
+
+
+def reading_days(since: str = "") -> list[dict]:
+    sql = "SELECT day, book_id, secs, pct FROM days"
+    params: tuple = ()
+    if since:
+        sql += " WHERE day >= ?"
+        params = (since,)
+    return [dict(r) for r in _q(sql + " ORDER BY day", params)]
+
+
+def highlight_days(tz_minutes: int = 0) -> dict[str, int]:
+    """Сколько выписок сделано в каждый день — по часам читателя."""
+    shift = int(tz_minutes) * 60
+    rows = _q("SELECT created FROM highlights WHERE deleted=0 AND created > 0")
+    out: dict[str, int] = {}
+    for r in rows:
+        day = time.strftime("%Y-%m-%d", time.gmtime(r["created"] / 1000 + shift))
+        out[day] = out.get(day, 0) + 1
+    return out
+
+
 # ── Что изменилось ──
 #
 # Живая синхронизация: вкладки слушают поток событий и забирают состояние сами. Хранить
@@ -173,4 +222,5 @@ def forget(book_id: str) -> None:
     with _lock:
         _conn.execute("DELETE FROM positions WHERE book_id=?", (book_id,))
         _conn.execute("DELETE FROM highlights WHERE book_id=?", (book_id,))
+        _conn.execute("DELETE FROM days WHERE book_id=?", (book_id,))
         _conn.commit()
