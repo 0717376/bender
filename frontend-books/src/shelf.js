@@ -1,5 +1,5 @@
 import { $, el, escapeHtml, ls, plural, toast } from './core.js'
-import { coverUrl, deleteBook, listBooks, mergeShelf, uploadBook } from './library.js'
+import { coverUrl, deleteBook, ensureThumbs, listBooks, mergeShelf, uploadBook } from './library.js'
 import { openBook } from './reader.js'
 import { fileDel, filePut, lib, saveLib } from './store.js'
 
@@ -19,7 +19,7 @@ export function cardFor(e) {
   const pct = ls.get('pct:' + e.id, 0);
   card.innerHTML = `
     <div class="cover-wrap">
-      ${e.cover ? `<img alt="" src="${coverUrl(e.id)}">` : `<div class="none">${escapeHtml(e.title || 'Книга')}</div>`}
+      ${e.cover ? `<img alt="" src="${coverUrl(e)}">` : `<div class="none">${escapeHtml(e.title || 'Книга')}</div>`}
       <div class="bar"><i style="width:${Math.round(pct * 100)}%"></i></div>
     </div>
     <div class="t">${escapeHtml(e.title || 'Без названия')}</div>
@@ -48,7 +48,7 @@ export function buildShelf() {
     const pct = ls.get('pct:' + reading.id, 0);
     const b = el('button', 'hero');
     b.innerHTML = `
-      <div class="cv">${reading.cover ? `<img alt="" src="${reading.cover}">` : `<div class="none"></div>`}</div>
+      <div class="cv">${reading.cover ? `<img alt="" src="${coverUrl(reading)}">` : `<div class="none"></div>`}</div>
       <div class="info">
         <div class="lbl">Продолжить</div>
         <div class="t">${escapeHtml(reading.title || 'Книга')}</div>
@@ -116,6 +116,8 @@ export async function importBook(file) {
     filePut(meta.id, await file.arrayBuffer()).catch(() => {});
     buildShelf();
     openBook(lib().find(e => e.id === meta.id) || meta);
+    // Миниатюру делаем следом, не задерживая открытие книги.
+    ensureThumbs(lib()).then(n => n && buildShelf()).catch(() => {});
   } catch (e) {
     console.warn(e);
     $('#splash').classList.add('off');
@@ -126,8 +128,9 @@ export async function importBook(file) {
 /** Полка с сервера: одна и та же на всех устройствах. */
 export async function refreshShelf() {
   try {
-    mergeShelf(await listBooks());
+    const list = mergeShelf(await listBooks());
     buildShelf();
+    if (await ensureThumbs(list)) buildShelf();
     return true;
   } catch {
     return false;      // офлайн — рисуем то, что помним

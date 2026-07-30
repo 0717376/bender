@@ -10,7 +10,43 @@ import { fileGet, filePut, lib, saveLib } from './store.js'
 const head = () => ({ Authorization: 'Bearer ' + auth.token });
 
 /** Обложка и файл открываются как обычные ссылки — токен в query, заголовок им не поставить. */
-export const coverUrl = id => `${API}/books/${id}/cover?token=${encodeURIComponent(auth.token || '')}`;
+const link = (id, what) => `${API}/books/${id}/${what}?token=${encodeURIComponent(auth.token || '')}`;
+export const coverUrl = e => link(e.id, e.thumb ? 'thumb' : 'cover');
+
+const THUMB_W = 300;
+
+/** Ужать обложку до полки. Делает это устройство, которое книгу добавило: серверу для
+    этого понадобилась бы библиотека картинок, а здесь уже есть canvas. */
+async function shrink(url) {
+  const img = await new Promise((res, rej) => {
+    const i = new Image(); i.crossOrigin = 'anonymous';
+    i.onload = () => res(i); i.onerror = rej; i.src = url;
+  });
+  if (!img.width || !img.height) throw new Error('пустая обложка');
+  const c = document.createElement('canvas');
+  c.width = Math.min(THUMB_W, img.width);
+  c.height = Math.round(img.height * (c.width / img.width));
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  return new Promise((res, rej) =>
+    c.toBlob(b => (b ? res(b) : rej(new Error('canvas молчит'))), 'image/jpeg', 0.78));
+}
+
+/** Досылка миниатюр: у книг, добавленных до этой версии, их нет. */
+export async function ensureThumbs(list) {
+  let made = 0;
+  for (const e of list.filter(b => b.cover && !b.thumb)) {
+    try {
+      const blob = await shrink(link(e.id, 'cover'));
+      const r = await fetch(`${API}/books/${e.id}/thumb`,
+        { method: 'PUT', headers: { ...head(), 'Content-Type': 'image/jpeg' }, body: await blob.arrayBuffer() });
+      if (!r.ok) continue;
+      e.thumb = (await r.json()).thumb;
+      made++;
+    } catch { /* обложка не открылась — полка обойдётся тем, что есть */ }
+  }
+  if (made) saveLib(list);
+  return made;
+}
 
 export async function listBooks() {
   const r = await fetch(API + '/books', { headers: head() });
