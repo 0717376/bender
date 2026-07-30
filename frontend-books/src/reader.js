@@ -9,7 +9,7 @@ import { closeSheet, openHighlight, sheet } from './sheet.js'
 import { buildShelf, hideMenu } from './shelf.js'
 import { bookBytes } from './library.js'
 import { lib, saveLib } from './store.js'
-import { live, sync } from './sync.js'
+import { live, markDirty, sync } from './sync.js'
 
 /* ── Читалка ── */
 
@@ -19,7 +19,7 @@ export async function openBook(entry) {
   hideMenu();
   try {
     // Позиция с другого устройства нужна до показа страницы, но ждать сервер бесконечно нельзя.
-    await Promise.race([sync.run().catch(() => false), new Promise(r => setTimeout(r, 3500))]);
+    await Promise.race([sync.pull(entry.id).catch(() => false), new Promise(r => setTimeout(r, 3500))]);
     state.entry = entry;
     state.book = ePub(await bookBytes(entry.id));
     await state.book.ready;
@@ -165,6 +165,7 @@ export async function mountRendition(at) {
     const id = state.entry.id;
     ls.set('pos:' + id, loc.start.cfi);
     ls.set('at:' + id, Date.now());
+    markDirty(id);
     sync.later(5000);
     const chap = chapterName(loc.start.href) || '';
     ls.set('chap:' + id, chap);

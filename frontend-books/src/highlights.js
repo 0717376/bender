@@ -1,7 +1,7 @@
 import { $, COLORS, colorOf, el, ls, state, toast } from './core.js'
 import { clearSel, sel } from './selection.js'
 import { askAgent } from './sheet.js'
-import { live, sync } from './sync.js'
+import { live, markDirty, sync } from './sync.js'
 
 /* ── Панель над выделением ── */
 
@@ -89,6 +89,7 @@ export function save() {
   state.hl.forEach(h => { if (!h.upd) h.upd = h.ts || now; });
   ls.set('hl:' + state.entry.id, state.hl);
   ls.set('at:' + state.entry.id, now);
+  markDirty(state.entry.id);
   sync.later(2000);
 }
 export function touch(h) { h.upd = Date.now(); }

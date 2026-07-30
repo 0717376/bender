@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from starlette.routing import Route
 
-from . import config, cron_store, mcp_server, session_log, skill_store, tasks_store
+from . import books_store, config, cron_store, mcp_server, session_log, skill_store, tasks_store
 from .asr import router as asr_router
 from .auth import require_auth
 from .books_api import init as books_init
@@ -38,6 +38,7 @@ async def lifespan(_app: FastAPI):
     session_log.init()
     skill_store.init()  # scaffold learned-skills plugin + migrate legacy flat skills once
     storage_init()
+    books_store.init()
     books_init()
     # Папки заводит не только интерфейс (агент через Bash, бэкапы) — выдаём им
     # страницы, иначе в дереве всплывёт «папка», которой в модели вики нет.

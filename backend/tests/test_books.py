@@ -57,10 +57,15 @@ def make_epub(title="Проверка чтения", author="Тестовый А
 
 @pytest.fixture
 def books(tmp_path, monkeypatch):
-    from app import books_api, config
+    from app import books_api, books_store, config
 
-    monkeypatch.setattr(config, "BOOKS_DIR", str(tmp_path))
+    monkeypatch.setattr(config, "BOOKS_DIR", str(tmp_path / "books"))
+    monkeypatch.setattr(config, "DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(config, "WIKI_DIR", str(tmp_path / "content"))
+    (tmp_path / "content").mkdir()
+    books_store.init()
     books_api.init()
+    books_api.store = books_store
     return books_api
 
 
@@ -237,3 +242,97 @@ def test_не_jpeg_миниатюрой_не_считается(books):
     updated = asyncio.run(books.put_thumb(meta["id"], Req(JPEG), True))
     assert updated["thumb"] == books.THUMB
     assert books.catalog()[0]["thumb"] == books.THUMB
+
+
+# ── Прогресс и выписки ──
+
+
+def test_позиция_и_выписки_складываются_и_отдаются(books):
+    meta = books.ingest(make_epub(), "book.epub")
+    books.store.set_position(meta["id"], "epubcfi(/6/2!/4/2)", 0.12, "Глава 1", updated=100)
+    books.store.save_highlights(meta["id"], [
+        {"id": "h1", "cfi": "epubcfi(/6/2!/4/2,/1:0,/1:9)", "text": "цитата",
+         "color": "imp", "chapter": "Глава 1", "thread": [{"role": "me", "text": "?"}],
+         "created": 50, "updated": 50},
+    ])
+    assert books.store.position(meta["id"])["pct"] == 0.12
+    got = books.store.highlights(meta["id"])
+    assert len(got) == 1 and got[0]["text"] == "цитата"
+    assert got[0]["thread"] == [{"role": "me", "text": "?"}]
+
+
+def test_позже_тронутое_побеждает(books):
+    meta = books.ingest(make_epub(), "book.epub")
+    books.store.set_position(meta["id"], "поздняя", updated=200)
+    books.store.set_position(meta["id"], "ранняя", updated=100)      # пришло с отставшего устройства
+    assert books.store.position(meta["id"])["cfi"] == "поздняя"
+    books.store.set_position(meta["id"], "новее всех", updated=300)
+    assert books.store.position(meta["id"])["cfi"] == "новее всех"
+
+
+def test_удаление_выписки_надгробием_не_воскресает(books):
+    meta = books.ingest(make_epub(), "book.epub")
+    books.store.save_highlights(meta["id"], [{"id": "h1", "cfi": "c", "text": "т", "updated": 100}])
+    books.store.save_highlights(meta["id"], [{"id": "h1", "cfi": "c", "text": "т", "updated": 200, "deleted": True}])
+    assert books.store.highlights(meta["id"]) == []
+    # Второе устройство ещё не знает об удалении и присылает свою старую версию
+    books.store.save_highlights(meta["id"], [{"id": "h1", "cfi": "c", "text": "т", "updated": 150}])
+    assert books.store.highlights(meta["id"]) == []
+    assert len(books.store.highlights(meta["id"], with_deleted=True)) == 1
+
+
+def test_каталог_несёт_проценты_и_число_выписок(books):
+    meta = books.ingest(make_epub(), "book.epub")
+    books.store.set_position(meta["id"], "cfi", 0.4, "Глава 2")
+    books.store.save_highlights(meta["id"], [
+        {"id": "h1", "cfi": "c", "text": "раз"}, {"id": "h2", "cfi": "c", "text": "два"},
+        {"id": "h3", "cfi": "c", "text": "три", "deleted": True},
+    ])
+    card = books.catalog()[0]
+    assert card["position"]["pct"] == 0.4
+    assert card["position"]["chapter"] == "Глава 2"
+    assert card["highlights"] == 2          # удалённая не в счёт
+
+
+def test_удаление_книги_уносит_её_состояние(books):
+    meta = books.ingest(make_epub(), "book.epub")
+    books.store.set_position(meta["id"], "cfi", 0.4)
+    books.store.save_highlights(meta["id"], [{"id": "h1", "cfi": "c", "text": "т"}])
+    books.remove(meta["id"])
+    assert books.store.position(meta["id"]) is None
+    assert books.store.highlights(meta["id"], with_deleted=True) == []
+
+
+# ── Переезд состояния из вики ──
+
+
+def test_прогресс_переезжает_из_скрытой_страницы_вики(books):
+    meta = books.ingest(make_epub(), "book.epub")
+    reader = os.path.join(str(books.config.WIKI_DIR), ".reader")
+    os.makedirs(reader, exist_ok=True)
+    doc = {"v": 1, "books": {meta["id"]: {
+        "at": 1700, "pos": "epubcfi(/6/2!/4/8)", "pct": 0.33, "chap": "Глава 1",
+        "hl": [{"id": "h1", "cfi": "c1", "text": "старая выписка", "color": "no",
+                "chapter": "Глава 1", "thread": [], "ts": 1500, "upd": 1600},
+               {"id": "h2", "cfi": "c2", "text": "стёртая", "ts": 1500, "upd": 1650, "del": 1}]}}}
+    with open(os.path.join(reader, "state.json"), "w", encoding="utf-8") as f:
+        json.dump(doc, f, ensure_ascii=False)
+
+    assert books.migrate_legacy_state() == 1
+    assert books.store.position(meta["id"])["cfi"] == "epubcfi(/6/2!/4/8)"
+    live = books.store.highlights(meta["id"])
+    assert [h["text"] for h in live] == ["старая выписка"]
+    assert live[0]["color"] == "no"
+    # Файл переименован — второй раз переезжать нечего
+    assert not os.path.exists(os.path.join(reader, "state.json"))
+    assert os.path.exists(os.path.join(reader, "state.migrated.json"))
+    assert books.migrate_legacy_state() == 0
+
+
+def test_чужая_книга_из_старого_состояния_не_создаётся(books):
+    reader = os.path.join(str(books.config.WIKI_DIR), ".reader")
+    os.makedirs(reader, exist_ok=True)
+    with open(os.path.join(reader, "state.json"), "w", encoding="utf-8") as f:
+        json.dump({"books": {"неизвестная": {"pos": "cfi", "hl": []}}}, f, ensure_ascii=False)
+    assert books.migrate_legacy_state() == 0
+    assert books.store.position("неизвестная") is None
