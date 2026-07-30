@@ -48,6 +48,23 @@ let pushes = 0, states = 0
 /* Подставная библиотека: одна на все контексты — как настоящая на сервере. */
 let library = [], thumbs = [], thumbBytes = null
 let liveTick = null            // что отдаст поток событий при следующем подключении
+const beats = []               // отметки «сколько читали», как их шлёт устройство
+/* Статистика: сервер считает сам, поэтому здесь — заранее известный ответ. Дни задаём
+   относительно того дня, который прислало устройство: тест не должен падать в полночь. */
+const statsBody = today => {
+  const back = n => { const d = new Date(today + 'T12:00:00'); d.setDate(d.getDate() - n)
+    const p = x => String(x).padStart(2, '0')
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` }
+  const days = [
+    { day: back(40), secs: 300, pct: 0.01, highlights: 0 },
+    { day: back(1), secs: 2400, pct: 0.05, highlights: 2 },
+    { day: back(0), secs: 900, pct: 0.02, highlights: 0 },
+  ]
+  return { today, from: back(181), days,
+    books: [{ id: BOOK_ID, title: FIXTURE.title, author: FIXTURE.author, secs: 3600, pct: 0.08,
+              days: 3, highlights: 2, at: 0.31 }],
+    totals: { secs: 3600, days: 3, highlights: 2, streak: 2, best: 2, longest_day: 2400 } }
+}
 const BOOK_ID = 'bk1test'
 const booksRoute = async r => {
   const req = r.request()
@@ -59,10 +76,15 @@ const booksRoute = async r => {
     return r.fulfill({ status: 200, headers: CORS, contentType: 'text/event-stream',
                        body: liveTick ? `event: books\ndata: ${JSON.stringify(liveTick)}\n\n` : '' })
   }
-  const m = path.match(/^\/books(?:\/([^/]+))?(?:\/(file|cover|thumb|state|highlights|position))?$/)
+  if (path === '/books/stats') return json(statsBody(new URL(req.url()).searchParams.get('today')))
+  const m = path.match(/^\/books(?:\/([^/]+))?(?:\/(file|cover|thumb|state|highlights|position|read))?$/)
   if (!m) return r.fulfill({ status: 404, headers: CORS, contentType: 'application/json', body: '{"detail":"нет"}' })
   const [, id, kind] = m
 
+  if (req.method() === 'POST' && kind === 'read') {
+    beats.push(JSON.parse(req.postData() || '{}'))
+    return json({ ok: true })
+  }
   if (req.method() === 'POST') {
     const meta = { id: BOOK_ID, title: FIXTURE.title, author: FIXTURE.author,
                    added: Math.round(Date.now() / 1000), size: BOOK.length,
@@ -478,6 +500,55 @@ check('синхронизация: позиция и выписка на сер�
   srv.pos[phonePos.id].cfi === JSON.parse(phonePos.pos)
     && Object.values(srv.hl[phonePos.id] || {}).filter(h => !h.deleted).length === phoneHl,
   `выписок: ${Object.values(srv.hl[phonePos.id] || {}).length}, на телефоне ${phoneHl}`)
+
+// 7h. Учёт чтения: закрыли книгу — отметка о прочитанном ушла на сервер
+check('чтение: отметка ушла на сервер', beats.length > 0,
+  `отметок: ${beats.length}, последняя: ${JSON.stringify(beats[beats.length - 1] || {})}`)
+check('чтение: в отметке день читателя и продвижение',
+  beats.some(b => /^\d{4}-\d{2}-\d{2}$/.test(b.day) && b.pct > 0),
+  JSON.stringify(beats[beats.length - 1] || {}))
+
+// 7i. Экран статистики: плитки, карточки, разбивка по книгам
+await page.evaluate(() => openStats())
+await page.waitForSelector('#stats.on')
+await page.waitForFunction(() => document.querySelectorAll('#statsBody .cell[data-day]').length > 0,
+  null, { timeout: 10000 })
+const stats = await page.evaluate(() => ({
+  cards: [...document.querySelectorAll('.stat-card .big')].map(n => n.textContent.trim()),
+  cells: document.querySelectorAll('#statsBody .cell[data-day]').length,
+  lit: document.querySelectorAll('#statsBody .cell[data-day]:not(.l0)').length,
+  marked: document.querySelectorAll('#statsBody .cell.marked').length,
+  books: document.querySelectorAll('.stat-book').length,
+  shelfHidden: !document.querySelector('#shelf').classList.contains('on'),
+  months: [...document.querySelectorAll('.cal-month')].filter(n => n.textContent).length,
+  // Полоса по книге должна стоять в строке, а не улететь абсолютом на край экрана.
+  laneInRow: (() => {
+    const lane = document.querySelector('.stat-book .lane')
+    if (!lane) return false
+    const row = lane.closest('.stat-book').getBoundingClientRect(), b = lane.getBoundingClientRect()
+    return b.top >= row.top && b.bottom <= row.bottom && b.width > 20
+  })(),
+}))
+check('статистика: карточки посчитаны', stats.cards[0] === '2' && /ч|мин/.test(stats.cards[1] || ''),
+  stats.cards.join(' · '))
+check('статистика: полгода плиток', stats.cells >= 182 && stats.cells <= 189, `клеток: ${stats.cells}`)
+check('статистика: дни с чтением подсвечены', stats.lit === 3, `подсвечено: ${stats.lit}`)
+check('статистика: день с выписками помечен точкой', stats.marked === 1)
+check('статистика: подписи месяцев расставлены', stats.months >= 5, `подписей: ${stats.months}`)
+check('статистика: разбивка по книгам', stats.books === 1)
+check('статистика: полоса книги стоит в своей строке', stats.laneInRow)
+check('статистика: полка не просвечивает', stats.shelfHidden)
+const tapDay = await page.evaluate(() => {
+  const cell = [...document.querySelectorAll('#statsBody .cell[data-day]')].filter(c => !c.classList.contains('l0')).pop()
+  cell.click()
+  return { day: cell.dataset.day, on: cell.classList.contains('on'),
+           pick: document.querySelector('#calPick').textContent }
+})
+check('статистика: тап по плитке рассказывает про день',
+  tapDay.on && /мин|ч/.test(tapDay.pick) && tapDay.pick.length > 6, tapDay.pick)
+await page.screenshot({ path: shot('stats') })
+await page.evaluate(() => closeStats())
+await page.waitForFunction(() => document.querySelector('#shelf').classList.contains('on'))
 
 // 8. Большой экран — второе «устройство»: подхватывает позицию и выписки телефона
 const dctx = await browser.newContext({ viewport: { width: 1440, height: 900 } })

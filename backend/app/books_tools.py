@@ -169,7 +169,30 @@ async def list_highlights(args):
     return _text(highlights(args["book_id"], args.get("color")))
 
 
-TOOLS = [list_books, book_chapters, read_chapter, search_book, list_highlights]
+@tool(
+    "reading_stats",
+    "Статистика чтения: по дням (сколько минут и выписок), по книгам, серия дней подряд "
+    "и рекорд. tz — сдвиг часового пояса читателя в минутах, window — за сколько дней.",
+    {
+        "type": "object",
+        "properties": {
+            "tz": {"type": "integer", "description": "минуты от UTC, например 180 для Москвы"},
+            "window": {"type": "integer", "description": "за сколько последних дней, по умолчанию 182"},
+        },
+    },
+)
+async def reading_stats(args):
+    st = books_api.reading_stats(int(args.get("tz") or 0), "", int(args.get("window") or 182))
+    # Дни отдаём в минутах: агенту незачем считать секунды, а строк меньше.
+    return _text({
+        "today": st["today"], "totals": {**st["totals"], "minutes": round(st["totals"]["secs"] / 60)},
+        "books": [{**b, "minutes": round(b["secs"] / 60)} for b in st["books"]],
+        "days": [{"day": d["day"], "minutes": round(d["secs"] / 60), "highlights": d["highlights"]}
+                 for d in st["days"]],
+    })
+
+
+TOOLS = [list_books, book_chapters, read_chapter, search_book, list_highlights, reading_stats]
 
 TOOL_NAMES = [f"mcp__books__{t.name}" for t in TOOLS]
 

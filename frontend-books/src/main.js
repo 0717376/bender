@@ -9,6 +9,7 @@ import { bubbleMe, closeSheet, contextAround, followUp, openHighlight, promptFor
 import { buildShelf, pickFile, refreshShelf } from './shelf.js'
 import { lib } from './store.js'
 import { live, sync } from './sync.js'
+import { closeStats, openStats, wireReadingBeat } from './stats.js'
 
 /* ── Проводка ── */
 
@@ -20,6 +21,8 @@ function wireUI() {
     { icon: 'i-wiki', title: 'Собрать всё в вики', run: allToWiki });
   $('#btnSet').onclick = () => openDrawer('Вид', drawerSettings);
   $('#btnAdd').onclick = pickFile;
+  $('#btnStats').onclick = openStats;
+  $('#statsClose').onclick = closeStats;
   $('#btnPrefs').onclick = () => openDrawer('Настройки', drawerPrefs);
   $('#drawerClose').onclick = closeDrawer;
   $('#sheetClose').onclick = closeSheet;
@@ -75,6 +78,7 @@ async function boot() {
   wireGlobal();
   wireUI();
   wireScrub();
+  wireReadingBeat();
   applyTheme();
   if (await auth.check()) start();
   else showAuth('');
@@ -89,6 +93,7 @@ window.__books = {
   state, sel, sync, lib, live, refreshShelf,
   commitSel, paint, wordAt, caretAt,
   openBook, closeBook, openHighlight, closeSheet, closeDrawer, applyTheme,
+  openStats, closeStats,
 };
 
 boot();

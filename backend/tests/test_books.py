@@ -422,6 +422,83 @@ def test_база_без_заметок_обновляется_на_месте(b
     assert books_store.highlights("bk")[0]["note"] == "теперь с заметкой"
 
 
+# ── Статистика чтения ──
+
+
+def test_минуты_копятся_по_дням_и_книгам(books):
+    meta = books.ingest(make_epub(), "book.epub")
+    books.store.add_reading(meta["id"], "2026-07-28", 600, 0.02)
+    books.store.add_reading(meta["id"], "2026-07-28", 300, 0.01)     # вернулись тем же вечером
+    books.store.add_reading(meta["id"], "2026-07-29", 900, 0.03)
+    st = books.reading_stats(today="2026-07-29")
+    assert [d["day"] for d in st["days"]] == ["2026-07-28", "2026-07-29"]
+    assert st["days"][0]["secs"] == 900 and round(st["days"][0]["pct"], 3) == 0.03
+    assert st["totals"]["secs"] == 1800
+    assert st["books"][0]["secs"] == 1800 and st["books"][0]["days"] == 2
+
+
+def test_отметка_чтения_не_верит_чужим_числам(books):
+    meta = books.ingest(make_epub(), "book.epub")
+    books.store.add_reading(meta["id"], "2026-07-29", -100, 0.5)      # секунды назад не идут
+    books.store.add_reading(meta["id"], "2026-07-29", 10 ** 6, 0)     # сутки одной отметкой
+    st = books.reading_stats(today="2026-07-29")
+    assert st["totals"]["secs"] == books.books_store.BEAT_MAX
+
+
+def test_серия_дней_подряд_и_рекорд(books):
+    meta = books.ingest(make_epub(), "book.epub")
+    for day in ("2026-07-01", "2026-07-02", "2026-07-03",      # рекорд — три дня
+                "2026-07-20", "2026-07-28", "2026-07-29"):
+        books.store.add_reading(meta["id"], day, 300)
+    st = books.reading_stats(today="2026-07-29")
+    assert st["totals"]["streak"] == 2          # 28-е и 29-е
+    assert st["totals"]["best"] == 3
+    assert st["totals"]["days"] == 6
+    # Сегодня ещё не читали — вчерашняя серия не обнуляется до конца дня
+    assert books.reading_stats(today="2026-07-30")["totals"]["streak"] == 2
+    assert books.reading_stats(today="2026-07-31")["totals"]["streak"] == 0
+
+
+def test_день_с_одними_выписками_тоже_день_чтения(books):
+    import time as t
+
+    meta = books.ingest(make_epub(), "book.epub")
+    day = t.strftime("%Y-%m-%d")
+    books.store.save_highlights(meta["id"], [
+        {"id": "h1", "cfi": "c", "text": "цитата", "created": int(t.time() * 1000)}])
+    st = books.reading_stats(today=day)
+    assert [d["day"] for d in st["days"]] == [day]
+    assert st["days"][0]["highlights"] == 1 and st["days"][0]["secs"] == 0
+    assert st["totals"]["days"] == 1
+
+
+def test_окно_статистики_отсекает_старое_и_будущее(books):
+    meta = books.ingest(make_epub(), "book.epub")
+    books.store.add_reading(meta["id"], "2026-01-01", 300)
+    books.store.add_reading(meta["id"], "2026-07-29", 300)
+    books.store.add_reading(meta["id"], "2026-12-31", 300)     # часы устройства убежали вперёд
+    st = books.reading_stats(today="2026-07-29", window=30)
+    assert [d["day"] for d in st["days"]] == ["2026-07-29"]
+
+
+def test_удаление_книги_уносит_и_статистику(books):
+    meta = books.ingest(make_epub(), "book.epub")
+    books.store.add_reading(meta["id"], "2026-07-29", 600)
+    books.remove(meta["id"])
+    assert books.reading_stats(today="2026-07-29")["days"] == []
+
+
+def test_статистика_доезжает_до_агента(books):
+    from app import books_tools
+
+    meta = books.ingest(make_epub(), "book.epub")
+    books.store.add_reading(meta["id"], "2026-07-29", 900)
+    books.store.add_reading(meta["id"], "2026-07-29", 900)
+    st = books.reading_stats(today="2026-07-29")
+    assert st["totals"]["secs"] == 1800
+    assert books_tools.catalog()[0]["id"] == meta["id"]
+
+
 # ── Живая синхронизация ──
 
 

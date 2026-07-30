@@ -10,6 +10,7 @@ import { buildShelf, hideMenu } from './shelf.js'
 import { bookBytes } from './library.js'
 import { lib, saveLib } from './store.js'
 import { live, markDirty, sync } from './sync.js'
+import { noteJump, noteProgress, startReading, stopReading } from './stats.js'
 
 /* ── Читалка ── */
 
@@ -37,6 +38,7 @@ export async function openBook(entry) {
 
     await mountRendition(ls.get('pos:' + entry.id, null));
     $('#splash').classList.add('off');
+    startReading(entry.id, ls.get('pct:' + entry.id, 0));
     buildLocations();
     if (auth.token) agent.connect().catch(() => {});   // прогреваем связь, пока читается первая страница
   } catch (e) {
@@ -51,6 +53,7 @@ export async function openBook(entry) {
 export function closeBook() {
   clearSel();
   scrubbing = false;
+  stopReading();
   clearTimeout(sync.timer);
   sync.run().catch(() => {});
   $('#reader').classList.remove('on');
@@ -179,6 +182,7 @@ export async function mountRendition(at) {
     if (state.book.locations.length()) {
       const p = state.book.locations.percentageFromCfi(loc.start.cfi) || 0;
       ls.set('pct:' + id, p);
+      noteProgress(p);
       $('#pct').textContent = Math.round(p * 100) + '%';
       if (!scrubbing) $('#scrub').value = Math.round(p * 1000);
     }
@@ -263,7 +267,9 @@ export function wireScrub() {
     if (!ready() || !scrubbing) return;
     scrubbing = false;
     const cfi = state.book.locations.cfiFromPercentage(s.value / 1000);
-    if (cfi) await state.rendition.display(cfi);
+    if (!cfi) return;
+    noteJump();                    // перескок — не прочитанное
+    await state.rendition.display(cfi);
   };
   s.addEventListener('change', jump);
   // Safari на тач-экране до change доходит не всегда — отпустили палец, значит прыгаем.
