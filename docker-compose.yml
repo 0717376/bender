@@ -7,6 +7,7 @@ services:
       - ./content:/app/content        # md-страницы вики (видны на хосте)
       - ./data:/app/data              # session, tasks.db, cron.db, memory, навыки
       - ./files:/app/files            # файловое хранилище (документы пользователя)
+      - ./books:/app/books            # библиотека читалки: epub и их производные
       - ./tg-bot-api:/var/lib/telegram-bot-api:ro  # файлы локального bot-api (пути из getFile)
       - ${CLAUDE_DIR:-~/.claude}:/root/.claude          # креды Claude CLI (рефреш токена сюда)
       - ${CLAUDE_JSON:-~/.claude.json}:/seed/.claude.json:ro  # конфиг-seed (копируется в HOME при старте)
@@ -70,8 +71,6 @@ services:
       dockerfile: frontend-books/Dockerfile
     ports:
       - "${BOOKS_PORT:-8899}:80"
-    volumes:
-      - ./books:/usr/share/nginx/html/books:ro   # сами книги — данные, не код (в gitignore)
     depends_on:
       - backend
     restart: unless-stopped

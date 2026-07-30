@@ -62,7 +62,7 @@ docker compose up -d --build
 
 - Tasks: http://localhost:8851
 - Wiki: http://localhost:8842
-- Books: http://localhost:8899 (you fill the shelf yourself — book files are not in the repo)
+- Books: http://localhost:8899 (you fill the shelf yourself — books live in `books/`, never in the repo)
 
 The first message to the Telegram bot will tell you your ID — put it into `TELEGRAM_ALLOWED_IDS` and restart the backend.
 

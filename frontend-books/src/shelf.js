@@ -1,5 +1,5 @@
-import ePub from 'epubjs'
 import { $, el, escapeHtml, ls, plural, toast } from './core.js'
+import { coverUrl, deleteBook, listBooks, mergeShelf, uploadBook } from './library.js'
 import { openBook } from './reader.js'
 import { fileDel, filePut, lib, saveLib } from './store.js'
 
@@ -19,7 +19,7 @@ export function cardFor(e) {
   const pct = ls.get('pct:' + e.id, 0);
   card.innerHTML = `
     <div class="cover-wrap">
-      ${e.cover ? `<img alt="" src="${e.cover}">` : `<div class="none">${escapeHtml(e.title || 'Книга')}</div>`}
+      ${e.cover ? `<img alt="" src="${coverUrl(e.id)}">` : `<div class="none">${escapeHtml(e.title || 'Книга')}</div>`}
       <div class="bar"><i style="width:${Math.round(pct * 100)}%"></i></div>
     </div>
     <div class="t">${escapeHtml(e.title || 'Без названия')}</div>
@@ -84,8 +84,9 @@ export function bookMenu(e, anchor) {
   del.onclick = async () => {
     hideMenu();
     if (!confirm(`Удалить «${e.title || 'книгу'}»? Выписки тоже пропадут.`)) return;
-    if (!e.builtin) await fileDel(e.id);
-    ['pct:', 'pos:', 'hl:', 'loc:', 'chap:'].forEach(p => ls.del(p + e.id));
+    try { await deleteBook(e.id); } catch { return toast('Сервер не отдал книгу — попробуй ещё'); }
+    await fileDel(e.id);
+    ['pct:', 'pos:', 'hl:', 'loc:', 'chap:', 'at:'].forEach(p => ls.del(p + e.id));
     saveLib(lib().filter(x => x.id !== e.id));
     buildShelf(); toast('Удалено');
   };
@@ -108,52 +109,27 @@ export async function importBook(file) {
   $('#splash').classList.remove('off');
   $('#splash').textContent = 'разбираю книгу…';
   try {
-    const buf = await file.arrayBuffer();
-    const probe = ePub(buf);
-    await probe.ready;
-    const meta = await probe.loaded.metadata;
-    // Идентификатор — от содержимого файла: тот же epub на телефоне и на компьютере
-    // должен получить тот же id, иначе прогресс не сойдётся.
-    const id = await hashId(buf);
-    if (lib().find(x => x.id === id)) {
-      $('#splash').classList.add('off');
-      toast('Эта книга уже на полке');
-      return;
-    }
-    const entry = {
-      id, title: (meta.title || file.name.replace(/\.epub$/i, '')).trim(),
-      author: (meta.creator || '').trim(), added: Date.now(),
-      cover: await thumbFrom(probe),
-    };
-    await filePut(id, buf);
-    saveLib([...lib(), entry]);
+    // Разбирает сервер: он же вычищает из книги исполняемое и заводит текст глав для агента.
+    const meta = await uploadBook(file);
+    if (meta.known) toast('Эта книга уже на полке');
+    mergeShelf(await listBooks());
+    filePut(meta.id, await file.arrayBuffer()).catch(() => {});
     buildShelf();
-    openBook(entry);
+    openBook(lib().find(e => e.id === meta.id) || meta);
   } catch (e) {
     console.warn(e);
     $('#splash').classList.add('off');
-    toast('Не смог открыть этот файл');
+    toast(e.message === 'Это не epub' ? 'Это не epub' : 'Не смог добавить книгу');
   }
 }
 
-export async function hashId(buf) {
+/** Полка с сервера: одна и та же на всех устройствах. */
+export async function refreshShelf() {
   try {
-    const d = await crypto.subtle.digest('SHA-256', buf);
-    return [...new Uint8Array(d)].slice(0, 8).map(b => b.toString(16).padStart(2, '0')).join('');
-  } catch { return 'b' + Date.now().toString(36); }   // http без TLS — crypto.subtle недоступен
-}
-
-/** Обложку кладём в индекс уменьшенной: полка должна рисоваться без чтения самих книг. */
-export async function thumbFrom(book) {
-  try {
-    const url = await book.coverUrl();
-    if (!url) return '';
-    const img = await new Promise((res, rej) => {
-      const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url;
-    });
-    const w = 300, h = Math.round(img.height * (w / img.width));
-    const c = el('canvas'); c.width = w; c.height = h;
-    c.getContext('2d').drawImage(img, 0, 0, w, h);
-    return c.toDataURL('image/jpeg', 0.78);
-  } catch { return ''; }
+    mergeShelf(await listBooks());
+    buildShelf();
+    return true;
+  } catch {
+    return false;      // офлайн — рисуем то, что помним
+  }
 }

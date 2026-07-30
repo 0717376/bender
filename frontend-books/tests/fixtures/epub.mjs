@@ -93,3 +93,4 @@ ${items.map(i => `<li><a href="${i.href}">${i.label}</a></li>`).join('\n')}
 }
 
 export const FIXTURE = { title: TITLE, author: AUTHOR, chapters: CHAPTERS }
+export { COVER }
