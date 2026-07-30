@@ -1,6 +1,6 @@
 import ePub from 'epubjs'
 import { agent } from './agent.js'
-import { auth } from './auth.js'
+import { auth, showAuth } from './auth.js'
 import { $, ls, state, toast } from './core.js'
 import { closeDrawer } from './drawers.js'
 import { drawHighlight, hideSelbar, touch } from './highlights.js'
@@ -41,7 +41,9 @@ export async function openBook(entry) {
   } catch (e) {
     console.warn(e);
     $('#splash').classList.add('off');
-    toast('Книга не открылась');
+    // Пароль сменили или сессия протухла — «книга не открылась» тут только запутает.
+    if (/\b401\b/.test(e.message || '')) { auth.forget(); showAuth('Сессия истекла, войди заново'); }
+    else toast('Книга не открылась');
   }
 }
 
