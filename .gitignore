@@ -1,6 +1,7 @@
-# Personal data — NEVER commit (wiki pages, tasks/memory/cron DBs, sessions, logs)
-content/
-data/
+# Personal data — NEVER commit (wiki pages, tasks/memory/cron DBs, sessions, logs).
+# Пути от корня: без ведущей косой books/ прячет и backend/agent_skills/skills/books/.
+/content/
+/data/
 *.log
 
 # Secrets
@@ -28,6 +29,6 @@ frontend-*/dist/
 docs/PLAN.md
 .vite/
 *.tsbuildinfo
-files/
-tg-bot-api/
-books/
+/files/
+/tg-bot-api/
+/books/

@@ -32,10 +32,11 @@ backend/          FastAPI + claude-agent-sdk (один процесс)
   app/reviewer.py   фоновый пост-ходовой ревьюер (память/навыки)
   app/telegram.py   бот: long polling, стриминг-черновики, /status
   app/tasks_*.py    Things-механика поверх SQLite (+SSE)
-  agent_skills/     доменные навыки агента (wiki/tasks)
+  app/books_*.py    библиотека epub: разбор, выписки, книга целиком для агента
+  agent_skills/     доменные навыки агента (wiki/tasks/books)
 frontend-wiki/    React: три панели, markdown, чат
 frontend-tasks/   React: задачи, dnd-kit, темы и палитры, чат
-frontend-books/   читалка epub: полка, выделения, агент по цитате (PWA, без фреймворка)
+frontend-books/   читалка epub: полка, выделения, агент по книге (PWA, без фреймворка)
 ```
 
 Хранилище — файлы и SQLite на volume: `content/` (markdown-вики), `data/` (задачи, cron, память, навыки, сессия), `files/` (файловое хранилище) и `books/` (библиотека читалки: epub, обложки, текст глав). Ничего из этого в репозитории нет — это личные данные.

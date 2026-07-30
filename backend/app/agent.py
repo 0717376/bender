@@ -28,6 +28,8 @@ from claude_agent_sdk import (
 )
 
 from . import clock, config, cron_outbox, memory_store, session_log, skill_store
+from .books_tools import TOOL_NAMES as BOOKS_TOOL_NAMES
+from .books_tools import server as books_server
 from .cron_tools import TOOL_NAMES as CRON_TOOL_NAMES
 from .cron_tools import server as cron_server
 from .memory_tools import TOOL_NAMES as MEMORY_TOOL_NAMES
@@ -281,7 +283,8 @@ def build_options(resume: str | None, surface: str = "wiki", interactive: bool =
                   extra_context: str | None = None) -> ClaudeAgentOptions:
     # Tasks, skills (read+author), memory-read injection and subagents (Task) are always
     # available. Cron/memory WRITE tools are interactive-only (not inside scheduled runs).
-    tools = config.ALLOWED_TOOLS + TASK_TOOL_NAMES + SKILL_TOOL_NAMES + SESSION_TOOL_NAMES + TG_TOOL_NAMES
+    tools = (config.ALLOWED_TOOLS + TASK_TOOL_NAMES + SKILL_TOOL_NAMES + SESSION_TOOL_NAMES
+             + TG_TOOL_NAMES + BOOKS_TOOL_NAMES)
     if interactive:
         tools = tools + CRON_TOOL_NAMES + MEMORY_TOOL_NAMES
     append = _compose_prompt(surface, resume)
@@ -298,13 +301,14 @@ def build_options(resume: str | None, surface: str = "wiki", interactive: bool =
     # official Claude plugin marketplace (code-review, deep-research, run, loop, …); skills="all"
     # would expose all of those. An explicit allow-list keeps the assistant self-contained:
     # domain wiki/tasks + whatever the agent has learned.
-    allowed_skills = ["wiki", "tasks"] + [s["slug"] for s in skill_store.list_skills()]
+    allowed_skills = ["wiki", "tasks", "books"] + [s["slug"] for s in skill_store.list_skills()]
     return ClaudeAgentOptions(
         model=config.CLAUDE_MODEL,
         system_prompt={"type": "preset", "preset": "claude_code", "append": append},
         allowed_tools=tools,
         mcp_servers={"tasks": tasks_server, "cron": cron_server, "memory": memory_server,
-                     "skills": skills_server, "sessions": sessions_server, "tg": tg_server},
+                     "skills": skills_server, "sessions": sessions_server, "tg": tg_server,
+                     "books": books_server},
         agents=SUBAGENTS,
         plugins=[
             {"type": "local", "path": config.SKILL_PLUGIN_DIR},      # domain skills (wiki/tasks)

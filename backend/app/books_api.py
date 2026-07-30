@@ -6,6 +6,7 @@
     <id>/cover.<ext>    обложка из epub, как есть
     <id>/thumb.jpg      её же миниатюра: полке хватает, а качать в двадцать раз меньше
     <id>/text/NNN.txt   текст глав: кэш, чтобы агент не разбирал zip на каждый вопрос
+    <id>/chapters.json  оглавление: номер главы, файл, название, длина
 
 id — первые 8 байт SHA-256 файла: одна и та же книга, залитая дважды, не двоится.
 Удаление — в .trash/, а не rm.
@@ -40,9 +41,12 @@ CONTAINER = "META-INF/container.xml"
 NS_CONTAINER = "urn:oasis:names:tc:opendocument:xmlns:container"
 NS_OPF = "http://www.idpf.org/2007/opf"
 NS_DC = "http://purl.org/dc/elements/1.1/"
+NS_NCX = "http://www.daisy.org/z3986/2005/ncx/"
 MARKUP = (".xhtml", ".html", ".htm", ".svg")
 THUMB = "thumb.jpg"
 THUMB_MAX = 512 * 1024
+TEXT = "text"
+CHAPTERS = "chapters.json"
 
 
 def init() -> None:
@@ -60,6 +64,9 @@ def init() -> None:
             logger.info("Books: %s → %s", name, meta["id"])
         except Exception as e:  # noqa: BLE001 — одна битая книга не должна ронять запуск
             logger.warning("Books: %s не разобралась (%s)", name, e)
+    filled = sum(backfill_chapters(m["id"]) for m in catalog())
+    if filled:
+        logger.info("Books: собрано оглавление, книг: %d", filled)
     moved = migrate_legacy_state()
     if moved:
         logger.info("Books: прогресс перенесён из вики, книг: %d", moved)
@@ -135,6 +142,67 @@ def plain_text(markup: bytes) -> str:
     return re.sub(r"\n\s*\n\s*\n+", "\n\n", text).strip()
 
 
+class _Links(HTMLParser):
+    """Ссылки оглавления epub3: (href, подпись)."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.links: list[tuple[str, str]] = []
+        self.href = ""
+        self.label: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "a":
+            self.href = dict(attrs).get("href") or ""
+            self.label = []
+
+    def handle_data(self, data):
+        if self.href:
+            self.label.append(data)
+
+    def handle_endtag(self, tag):
+        if tag == "a" and self.href:
+            self.links.append((self.href, " ".join("".join(self.label).split())))
+            self.href = ""
+
+
+def _join(base: str, href: str) -> str:
+    href = urllib.parse.unquote(href.split("#")[0])
+    return posixpath.normpath(posixpath.join(base, href)) if base else href
+
+
+def toc_titles(zf: zipfile.ZipFile, items: dict[str, dict]) -> dict[str, str]:
+    """Названия глав из оглавления — сначала nav (epub3), потом toc.ncx (epub2).
+    Ключ — путь главы в архиве: по нему потом подписываются файлы корешка."""
+    titles: dict[str, str] = {}
+    nav = next((i["href"] for i in items.values() if "nav" in i["props"]), "")
+    if nav:
+        p = _Links()
+        try:
+            p.feed(zf.read(nav).decode("utf-8", "replace"))
+        except Exception:  # noqa: BLE001 — кривое оглавление не повод терять книгу
+            pass
+        base = posixpath.dirname(nav)
+        for href, label in p.links:
+            if label:
+                titles.setdefault(_join(base, href), label)
+
+    ncx = next((i["href"] for i in items.values() if "ncx" in i["type"]), "")
+    if ncx:
+        base = posixpath.dirname(ncx)
+        try:
+            root = ElementTree.fromstring(zf.read(ncx))
+        except (KeyError, ElementTree.ParseError):
+            return titles
+        for point in root.iter(f"{{{NS_NCX}}}navPoint"):
+            src = point.find(f"{{{NS_NCX}}}content")
+            text = point.find(f"{{{NS_NCX}}}navLabel/{{{NS_NCX}}}text")
+            if src is None or text is None or not (text.text or "").strip():
+                continue
+            titles.setdefault(_join(base, src.get("src", "")), " ".join(text.text.split()))
+    return titles
+
+
 def parse_epub(data: bytes) -> dict:
     """Название, автор, обложка и главы по порядку корешка."""
     try:
@@ -153,8 +221,7 @@ def parse_epub(data: bytes) -> dict:
     base = posixpath.dirname(opf_path)
 
     def resolve(href: str) -> str:
-        href = urllib.parse.unquote(href.split("#")[0])
-        return posixpath.normpath(posixpath.join(base, href)) if base else href
+        return _join(base, href)
 
     def first(tag: str) -> str:
         node = opf.find(f".//{{{NS_DC}}}{tag}")
@@ -179,20 +246,21 @@ def parse_epub(data: bytes) -> dict:
                 cover = items[m.get("content")]["href"]
                 break
 
-    chapters: list[str] = []
+    names = set(zf.namelist())
+    titles = toc_titles(zf, items)
+    chapters: list[dict] = []
     for ref in opf.iter(f"{{{NS_OPF}}}itemref"):
         it = items.get(ref.get("idref", ""))
-        if it and "html" in it["type"]:
-            chapters.append(it["href"])
+        if it and "html" in it["type"] and it["href"] in names:
+            chapters.append({"href": it["href"], "title": titles.get(it["href"], "")})
     if not chapters:
         raise HTTPException(400, "В epub нет ни одной главы")
 
-    names = set(zf.namelist())
     return {
         "title": first("title"),
         "author": first("creator"),
         "cover": cover if cover in names else "",
-        "chapters": [c for c in chapters if c in names],
+        "chapters": chapters,
         "zip": zf,
     }
 
@@ -283,7 +351,7 @@ def ingest(data: bytes, filename: str = "", book_id: str | None = None) -> dict:
 
     tmp = book_dir(bid) + ".part"
     shutil.rmtree(tmp, ignore_errors=True)
-    os.makedirs(os.path.join(tmp, "text"), exist_ok=True)
+    os.makedirs(os.path.join(tmp, TEXT), exist_ok=True)
     with open(os.path.join(tmp, "book.epub"), "wb") as f:
         f.write(clean)
     cover_name = ""
@@ -291,9 +359,15 @@ def ingest(data: bytes, filename: str = "", book_id: str | None = None) -> dict:
         cover_name = "cover" + (posixpath.splitext(book["cover"])[1] or ".jpg")
         with open(os.path.join(tmp, cover_name), "wb") as f:
             f.write(zf.read(book["cover"]))
-    for n, href in enumerate(book["chapters"], 1):
-        with open(os.path.join(tmp, "text", f"{n:03d}.txt"), "w", encoding="utf-8") as f:
-            f.write(plain_text(zf.read(href)))
+    toc = []
+    for n, ch in enumerate(book["chapters"], 1):
+        text = plain_text(zf.read(ch["href"]))
+        with open(os.path.join(tmp, TEXT, f"{n:03d}.txt"), "w", encoding="utf-8") as f:
+            f.write(text)
+        toc.append({"n": n, "href": ch["href"], "title": ch["title"] or headline(text),
+                    "chars": len(text)})
+    with open(os.path.join(tmp, CHAPTERS), "w", encoding="utf-8") as f:
+        json.dump(toc, f, ensure_ascii=False, indent=1)
 
     meta = {
         "id": bid,
@@ -322,6 +396,92 @@ def remove(book_id: str) -> dict:
     shutil.move(path, dest)
     books_store.forget(book_id)
     return {"ok": True, "trashed": os.path.basename(dest)}
+
+
+# ── Текст книги (для агента) ──
+
+
+def headline(text: str) -> str:
+    """Чем подписать главу, о которой молчит оглавление: первой строкой текста."""
+    for line in text.split("\n"):
+        if line.strip():
+            return line.strip()[:80]
+    return ""
+
+
+def chapters(book_id: str) -> list[dict]:
+    """Оглавление: номер, название, длина. Книги, разобранные до появления
+    chapters.json, подписываем на лету — перекладывать их ради этого незачем."""
+    path = os.path.join(book_dir(book_id), CHAPTERS)
+    try:
+        with open(path, encoding="utf-8") as f:
+            return [{"n": int(c["n"]), "title": c.get("title") or "", "chars": c.get("chars") or 0}
+                    for c in json.load(f)]
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+        pass
+    out = []
+    text_dir = os.path.join(book_dir(book_id), TEXT)
+    for name in sorted(os.listdir(text_dir)) if os.path.isdir(text_dir) else []:
+        if not re.fullmatch(r"\d+\.txt", name):
+            continue
+        text = chapter_text(book_id, int(name[:-4]))
+        out.append({"n": int(name[:-4]), "title": headline(text), "chars": len(text)})
+    return out
+
+
+def backfill_chapters(book_id: str) -> bool:
+    """Книге, разобранной прошлой версией, оглавления не писали. Тексты глав на диске
+    уже есть — достаём из самой книги только названия, разбирать заново её незачем."""
+    path = os.path.join(book_dir(book_id), CHAPTERS)
+    if os.path.isfile(path):
+        return False
+    text_dir = os.path.join(book_dir(book_id), TEXT)
+    try:
+        with open(os.path.join(book_dir(book_id), "book.epub"), "rb") as f:
+            spine = parse_epub(f.read())["chapters"]
+        saved = [n for n in os.listdir(text_dir) if re.fullmatch(r"\d+\.txt", n)]
+    except (OSError, HTTPException):
+        return False
+    if len(saved) != len(spine):
+        return False        # тексты и корешок разошлись — пусть подписываются первой строкой
+    toc = []
+    for n, ch in enumerate(spine, 1):
+        text = chapter_text(book_id, n)
+        toc.append({"n": n, "href": ch["href"], "title": ch["title"] or headline(text),
+                    "chars": len(text)})
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(toc, f, ensure_ascii=False, indent=1)
+    return True
+
+
+def chapter_text(book_id: str, n: int) -> str:
+    try:
+        with open(os.path.join(book_dir(book_id), TEXT, f"{int(n):03d}.txt"), encoding="utf-8") as f:
+            return f.read()
+    except (OSError, ValueError):
+        raise HTTPException(404, f"В книге нет главы {n}") from None
+
+
+def search(book_id: str, query: str, regex: bool = False, limit: int = 20,
+           around: int = 160) -> list[dict]:
+    """Поиск по тексту книги: спрашивают обычно словами, а не точной цитатой."""
+    if not (query or "").strip():
+        raise HTTPException(400, "Пустой запрос")
+    try:
+        rx = re.compile(query if regex else re.escape(query), re.I)
+    except re.error as e:
+        raise HTTPException(400, f"Некорректное регулярное выражение: {e}") from None
+    hits: list[dict] = []
+    for c in chapters(book_id):
+        text = chapter_text(book_id, c["n"])
+        for m in rx.finditer(text):
+            s, e = max(0, m.start() - around), min(len(text), m.end() + around)
+            frag = " ".join(text[s:e].split())
+            hits.append({"chapter": c["n"], "title": c["title"],
+                         "text": ("…" if s else "") + frag + ("…" if e < len(text) else "")})
+            if len(hits) >= limit:
+                return hits
+    return hits
 
 
 # ── Ручки ──
