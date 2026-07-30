@@ -18,7 +18,7 @@ from mcp.server.fastmcp.server import StreamableHTTPASGIApp
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.responses import JSONResponse
 
-from . import config, files, tasks_store
+from . import books_api, books_tools, config, files, tasks_store
 
 TOKEN_FILE = os.path.join(config.DATA_DIR, "mcp_token")
 
@@ -73,9 +73,10 @@ class TokenGate:
 mcp = FastMCP(
     "bender",
     instructions=(
-        "Личный агент пользователя: вики (база знаний из markdown-страниц) и "
-        "задачи (менеджер дел в стиле Things). Пути вики — относительные, "
-        "например 'vault/machines/backups.md'. Даты — ISO YYYY-MM-DD.\n"
+        "Личный агент пользователя: вики (база знаний из markdown-страниц), "
+        "задачи (менеджер дел в стиле Things) и книги (читалка epub с выписками). "
+        "Пути вики — относительные, например 'vault/machines/backups.md'. "
+        "Даты — ISO YYYY-MM-DD.\n"
         "Вики иерархична: папка с index.md — это одна страница со своими детьми "
         "(infra/machines/index.md — страница «Машины»). Ссылайся на страницы по имени: "
         "[[litellm]] или [[litellm|наш прокси]] — имя ищется по всей вики, поэтому "
@@ -355,6 +356,42 @@ def projects_list() -> list[dict]:
 def projects_create(title: str, notes: str = "") -> dict:
     """Создать проект."""
     return {"id": tasks_store.create_project(title, notes=notes)}
+
+
+# ── Книги ──
+
+@mcp.tool()
+def books_list() -> list[dict]:
+    """Книги в библиотеке читалки: id, название, автор, число глав, прогресс чтения,
+    число выписок. id нужен остальным инструментам книг."""
+    return books_tools.catalog()
+
+
+@mcp.tool()
+def books_chapters(book_id: str) -> list[dict]:
+    """Оглавление книги: номер главы, название, длина в знаках."""
+    return books_api.chapters(book_id)
+
+
+@mcp.tool()
+def books_read(book_id: str, chapter: int, offset: int = 0,
+               limit: int = books_tools.CHUNK) -> dict:
+    """Текст главы (номер — из books_chapters). Длинная глава приходит кусками:
+    more=true — читай дальше тем же вызовом с offset=next_offset."""
+    return books_tools.read(book_id, chapter, offset, limit)
+
+
+@mcp.tool()
+def books_search(book_id: str, query: str, regex: bool = False, limit: int = 20) -> list[dict]:
+    """Поиск по тексту книги: номер главы, название и фрагмент вокруг совпадения."""
+    return books_api.search(book_id, query, regex=regex, limit=max(1, min(limit, 100)))
+
+
+@mcp.tool()
+def books_highlights(book_id: str, color: str | None = None) -> list[dict]:
+    """Выписки пользователя из книги: цитата, смысл (цвет), глава, дата и разговор о ней.
+    color — фильтр: imp | no | q | wiki | nice."""
+    return books_tools.highlights(book_id, color)
 
 
 # ASGI-хендлер напрямую, минуя внутренний Starlette-роутер FastMCP — он

@@ -32,10 +32,11 @@ backend/          FastAPI + claude-agent-sdk (single process)
   app/reviewer.py   background post-turn reviewer (memory/skills)
   app/telegram.py   bot: long polling, draft streaming, /status
   app/tasks_*.py    Things mechanics on SQLite (+SSE)
-  agent_skills/     the agent's domain skills (wiki/tasks)
+  app/books_*.py    epub library: parsing, highlights, the whole book for the agent
+  agent_skills/     the agent's domain skills (wiki/tasks/books)
 frontend-wiki/    React: three panes, markdown, chat
 frontend-tasks/   React: tasks, dnd-kit, themes & palettes, chat
-frontend-books/   epub reader: shelf, highlights, agent on a quote (PWA, no framework)
+frontend-books/   epub reader: shelf, highlights, agent on the book (PWA, no framework)
 ```
 
 Storage is files and SQLite on a volume: `content/` (markdown wiki), `data/` (tasks, cron, memory, skills, session) and `files/` (personal file storage). None of it is in the repository — that's personal data.

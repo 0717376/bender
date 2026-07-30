@@ -276,7 +276,9 @@ await page.locator('#selActs .act', { hasText: 'Объяснить' }).click()
 await page.waitForSelector('#sheet.on')
 await page.waitForTimeout(500)
 const sent = await page.evaluate(() => window.__sent[0])
-check('агент: сокет с токеном и surface', /token=T&surface=wiki/.test(await page.evaluate(() => window.__wsUrl)))
+check('агент: сокет с токеном и surface', /token=T&surface=books/.test(await page.evaluate(() => window.__wsUrl)))
+check('агент: в контексте id книги и глава', sent && !!(sent.context.book || {}).id && !!sent.context.book.chapter,
+  sent ? JSON.stringify(sent.context.book) : 'нет')
 check('агент: в запрос ушла цитата', sent && sent.text.includes(picked.slice(0, 30)))
 check('агент: в запрос ушёл контекст вокруг', sent && /Текст вокруг/.test(sent.text) && sent.text.length > picked.length + 400,
   `длина запроса ${sent ? sent.text.length : 0} симв.`)

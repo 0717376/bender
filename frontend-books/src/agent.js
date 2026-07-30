@@ -13,7 +13,7 @@ export const agent = {
       try {
         const base = API ? API.replace(/^http/, 'ws')
           : (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
-        ws = new WebSocket(base + '/chat/ws?token=' + encodeURIComponent(auth.token) + '&surface=wiki');
+        ws = new WebSocket(base + '/chat/ws?token=' + encodeURIComponent(auth.token) + '&surface=books');
       } catch (e) { this.pending = null; return rej(e); }
       const t = setTimeout(() => { try { ws.close(); } catch {} ; this.pending = null; rej(new Error('Агент не отвечает')); }, 15000);
       ws.onopen = () => { clearTimeout(t); this.ws = ws; this.pending = null; res(ws); };

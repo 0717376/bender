@@ -150,16 +150,24 @@ export async function send(text) {
   body.appendChild(sheet.waiting);
   body.scrollTop = body.scrollHeight;
   try {
-    await agent.send(text, { path: bookPath() });
+    await agent.send(text, { book: bookInfo() });
   } catch (e) {
     finishTurn();
     body.appendChild(el('div', 'err', escapeHtml(e.message || 'Агент недоступен')));
   }
 }
 
-export function bookPath() {
-  const m = state.meta || {};
-  return `Книга «${m.title || (state.entry && state.entry.title) || ''}»`;
+/* Книга уезжает агенту не названием, а id: по нему он открывает саму книгу
+   (оглавление, главы, поиск), а не гадает по цитате и абзацу вокруг неё. */
+export function bookInfo() {
+  const m = state.meta || {}, e = state.entry || {};
+  const h = state.active || state.pending || {};
+  return {
+    id: e.id || '',
+    title: m.title || e.title || '',
+    author: m.creator || '',
+    chapter: h.chapter || $('#chapLabel').textContent || '',
+  };
 }
 
 agent.onEvent = ev => {
@@ -187,6 +195,10 @@ agent.onEvent = ev => {
 
 export function toolLabel(ev) {
   const n = (ev.name || '').toLowerCase();
+  if (n.includes('books__search')) return 'ищет по книге…';
+  if (n.includes('books__read') || n.includes('books__book_chapters')) return 'читает книгу…';
+  if (n.includes('books__list_highlights')) return 'смотрит выписки…';
+  if (n.includes('books__list_books')) return 'смотрит полку…';
   if (n.includes('grep') || n.includes('search')) return 'ищет в вики…';
   if (n.includes('read')) return 'читает ' + (ev.file || 'страницу') + '…';
   if (n.includes('write') || n.includes('edit')) return 'пишет в вики…';

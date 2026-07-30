@@ -15,7 +15,7 @@ JPEG = b"\xff\xd8\xff" + b"0" * 200          # миниатюра: важно т
 
 
 def make_epub(title="Проверка чтения", author="Тестовый Автор", *, script=False,
-              cover=True, chapters=2, broken=False):
+              cover=True, chapters=2, broken=False, nav=True, ncx=False):
     """Минимальный валидный epub. script=True — со скриптом и обработчиком, как в чужой книге."""
     if broken:
         return b"not a zip at all"
@@ -45,6 +45,21 @@ def make_epub(title="Проверка чтения", author="Тестовый А
         if cover:
             z.writestr("OEBPS/cover.png", COVER)
             items.append('<item id="cv" href="cover.png" media-type="image/png" properties="cover-image"/>')
+        if nav:      # оглавление epub3: само в корешок не входит, главой не считается
+            links = "".join(f'<li><a href="c{i}.xhtml">Часть {i}</a></li>'
+                            for i in range(1, chapters + 1))
+            z.writestr("OEBPS/nav.xhtml",
+                       '<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml" '
+                       'xmlns:epub="http://www.idpf.org/2007/ops"><head><title>Оглавление</title></head>'
+                       f'<body><nav epub:type="toc"><ol>{links}</ol></nav></body></html>')
+            items.append('<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>')
+        if ncx:      # оглавление epub2
+            points = "".join(f'<navPoint id="n{i}"><navLabel><text>Раздел {i}</text></navLabel>'
+                             f'<content src="c{i}.xhtml"/></navPoint>' for i in range(1, chapters + 1))
+            z.writestr("OEBPS/toc.ncx",
+                       '<?xml version="1.0" encoding="utf-8"?><ncx version="2005-1" '
+                       f'xmlns="http://www.daisy.org/z3986/2005/ncx/"><navMap>{points}</navMap></ncx>')
+            items.append('<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>')
         z.writestr("OEBPS/content.opf",
                    '<?xml version="1.0" encoding="utf-8"?>'
                    '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bid">'
@@ -336,3 +351,122 @@ def test_чужая_книга_из_старого_состояния_не_со�
         json.dump({"books": {"неизвестная": {"pos": "cfi", "hl": []}}}, f, ensure_ascii=False)
     assert books.migrate_legacy_state() == 0
     assert books.store.position("неизвестная") is None
+
+
+# ── Книга глазами агента ──
+
+
+def test_оглавление_берёт_названия_из_nav(books):
+    meta = books.ingest(make_epub(chapters=3), "book.epub")
+    toc = books.chapters(meta["id"])
+    assert [c["n"] for c in toc] == [1, 2, 3]
+    assert [c["title"] for c in toc] == ["Часть 1", "Часть 2", "Часть 3"]
+    assert all(c["chars"] > 0 for c in toc)
+
+
+def test_оглавление_берёт_названия_из_ncx(books):
+    meta = books.ingest(make_epub(nav=False, ncx=True), "book.epub")
+    assert [c["title"] for c in books.chapters(meta["id"])] == ["Раздел 1", "Раздел 2"]
+
+
+def test_глава_без_оглавления_подписана_первой_строкой(books):
+    meta = books.ingest(make_epub(nav=False), "book.epub")
+    assert books.chapters(meta["id"])[0]["title"].startswith("Глава 1")
+
+
+def test_книге_прошлой_версии_оглавление_собирается_на_лету(books):
+    meta = books.ingest(make_epub(), "book.epub")
+    os.unlink(os.path.join(str(books.config.BOOKS_DIR), meta["id"], books.CHAPTERS))
+    toc = books.chapters(meta["id"])
+    assert [c["n"] for c in toc] == [1, 2]
+    assert toc[0]["title"].startswith("Глава 1")      # файла нет — подписали текстом
+
+
+def test_книге_прошлой_версии_оглавление_досылается_при_старте(books):
+    meta = books.ingest(make_epub(), "book.epub")
+    path = os.path.join(str(books.config.BOOKS_DIR), meta["id"], books.CHAPTERS)
+    os.unlink(path)
+    books.init()
+    assert os.path.isfile(path)
+    assert [c["title"] for c in books.chapters(meta["id"])] == ["Часть 1", "Часть 2"]
+    assert books.backfill_chapters(meta["id"]) is False      # второй раз собирать нечего
+
+
+def test_разошедшийся_текст_глав_оглавление_не_подделывает(books):
+    meta = books.ingest(make_epub(chapters=3), "book.epub")
+    root = os.path.join(str(books.config.BOOKS_DIR), meta["id"])
+    os.unlink(os.path.join(root, books.CHAPTERS))
+    os.unlink(os.path.join(root, "text", "003.txt"))
+    assert books.backfill_chapters(meta["id"]) is False
+
+
+def test_текст_главы_читается_по_номеру(books):
+    from fastapi import HTTPException
+
+    meta = books.ingest(make_epub(), "book.epub")
+    assert "потом читает агент" in books.chapter_text(meta["id"], 2)
+    with pytest.raises(HTTPException) as e:
+        books.chapter_text(meta["id"], 9)
+    assert e.value.status_code == 404
+
+
+def test_поиск_по_книге_даёт_главу_и_фрагмент(books):
+    from fastapi import HTTPException
+
+    meta = books.ingest(make_epub(chapters=3), "book.epub")
+    hits = books.search(meta["id"], "потом читает")
+    assert len(hits) == 3
+    assert hits[0]["chapter"] == 1 and hits[0]["title"] == "Часть 1"
+    assert "потом читает" in hits[0]["text"]
+    assert books.search(meta["id"], "такого в книге нет") == []
+    assert len(books.search(meta["id"], "глава", limit=2)) == 2        # регистр не важен
+    assert len(books.search(meta["id"], r"Глава \d", regex=True)) == 3
+    with pytest.raises(HTTPException):
+        books.search(meta["id"], "[", regex=True)
+    with pytest.raises(HTTPException):
+        books.search(meta["id"], "  ")
+
+
+def test_инструменты_агента_видят_полку_и_главы(books):
+    from app import books_tools
+
+    meta = books.ingest(make_epub(), "book.epub")
+    books.store.set_position(meta["id"], "cfi", 0.25, "Часть 1")
+    card = books_tools.catalog()[0]
+    assert card["id"] == meta["id"] and card["chapters"] == 2
+    assert card["read_pct"] == 25 and card["reading_chapter"] == "Часть 1"
+
+    head = books_tools.read(meta["id"], 1, 0, 20)
+    assert head["title"] == "Часть 1" and head["more"] is True and len(head["text"]) == 20
+    tail = books_tools.read(meta["id"], 1, head["next_offset"])
+    assert tail["offset"] == 20 and tail["more"] is False
+    assert head["text"] + tail["text"] == books.chapter_text(meta["id"], 1)
+
+
+def test_выписки_агенту_идут_со_смыслом_цвета(books):
+    from app import books_tools
+
+    meta = books.ingest(make_epub(), "book.epub")
+    books.store.save_highlights(meta["id"], [
+        {"id": "h1", "cfi": "c", "text": "цитата", "color": "no", "chapter": "Часть 1",
+         "thread": [{"role": "me", "text": "почему?"}], "created": 1700000000000,
+         "updated": 1700000000000},
+        {"id": "h2", "cfi": "c", "text": "стёртая", "color": "imp", "deleted": True},
+    ])
+    got = books_tools.highlights(meta["id"])
+    assert [h["text"] for h in got] == ["цитата"]         # надгробие агенту не показываем
+    assert got[0]["meaning"] == "Не согласен"
+    assert got[0]["talk"][0]["text"] == "почему?"
+    assert got[0]["date"].startswith("20")
+    assert books_tools.highlights(meta["id"], color="imp") == []
+
+
+def test_книга_доезжает_до_промпта_агента(books):
+    from app.chat import with_context
+
+    meta = books.ingest(make_epub(), "book.epub")
+    out = with_context("Объясни", {"book": {"id": meta["id"], "title": "Проверка чтения",
+                                            "author": "Тестовый Автор", "chapter": "Часть 1"}})
+    assert meta["id"] in out and "Проверка чтения" in out and "Часть 1" in out
+    assert out.endswith("Объясни")
+    assert with_context("Просто вопрос", {}) == "Просто вопрос"

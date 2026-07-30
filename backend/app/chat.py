@@ -11,11 +11,24 @@ router = APIRouter()
 
 
 def with_context(message: str, context: dict) -> str:
-    path = (context or {}).get("path")
-    selection = ((context or {}).get("selection") or "")[:4000]
-    if not path and not selection:
+    ctx = context or {}
+    path = ctx.get("path")
+    selection = (ctx.get("selection") or "")[:4000]
+    book = ctx.get("book") or {}
+    bid = str(book.get("id") or "")[:64]
+    if not path and not selection and not bid:
         return message
     lines = ["[Контекст: где сейчас находится пользователь]"]
+    if bid:
+        # Читалка присылает id книги: с ним агент открывает саму книгу (mcp__books__*),
+        # а не гадает по цитате и абзацу вокруг неё.
+        where = f"Открыта книга «{str(book.get('title') or '')[:200]}»"
+        if book.get("author"):
+            where += f" ({str(book['author'])[:100]})"
+        if book.get("chapter"):
+            where += f", глава «{str(book['chapter'])[:200]}»"
+        lines.append(where)
+        lines.append(f"id книги для инструментов mcp__books__*: {bid}")
     if path:
         lines.append(f"Открытая страница: {path}")
     if selection:
