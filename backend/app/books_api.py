@@ -502,10 +502,7 @@ async def upload(file: UploadFile, _: bool = Depends(require_auth)):
     return ingest(data, file.filename or "")
 
 
-def _send(book_id: str, name: str, token: str, download: str = "") -> FileResponse:
-    # Токен в query: <img> и <a> не умеют ставить заголовок.
-    if not check_token(token):
-        raise HTTPException(401, "Unauthorized")
+def _send(book_id: str, name: str, download: str = "") -> FileResponse:
     path = os.path.join(book_dir(book_id), name)
     if not os.path.isfile(path):
         raise HTTPException(404, "Не найдено")
@@ -518,35 +515,42 @@ def _send(book_id: str, name: str, token: str, download: str = "") -> FileRespon
     return FileResponse(path, media_type=media, headers=headers)
 
 
-def _guard(token: str) -> None:
-    # Проверяем до того, как заглянуть в библиотеку: иначе по коду ответа видно,
-    # какие книги на сервере есть, а какие нет.
+def _guard(request: Request, token: str) -> None:
+    """Токен из query — так его шлют <img> и <a>, заголовок им не поставить; из
+    Authorization — так его шлёт fetch. Годится любой: иначе книга открывается только
+    из кэша, а на чистом устройстве fetch с заголовком получает 401.
+
+    Проверяем до того, как заглянуть в библиотеку: иначе по коду ответа видно,
+    какие книги на сервере есть, а какие нет."""
+    if not token:
+        head = request.headers.get("authorization") or ""
+        token = head[7:].strip() if head[:7].lower() == "bearer " else ""
     if not check_token(token):
         raise HTTPException(401, "Unauthorized")
 
 
 @router.api_route("/{book_id}/file", methods=["GET", "HEAD"])
-async def book_file(book_id: str, token: str = ""):
-    _guard(token)
+async def book_file(book_id: str, request: Request, token: str = ""):
+    _guard(request, token)
     meta = meta_of(book_id)
-    return _send(book_id, "book.epub", token, f"{meta.get('title') or book_id}.epub")
+    return _send(book_id, "book.epub", f"{meta.get('title') or book_id}.epub")
 
 
 @router.api_route("/{book_id}/cover", methods=["GET", "HEAD"])
-async def book_cover(book_id: str, token: str = ""):
-    _guard(token)
+async def book_cover(book_id: str, request: Request, token: str = ""):
+    _guard(request, token)
     cover = meta_of(book_id).get("cover")
     if not cover:
         raise HTTPException(404, "Обложки нет")
-    return _send(book_id, cover, token)
+    return _send(book_id, cover)
 
 
 @router.api_route("/{book_id}/thumb", methods=["GET", "HEAD"])
-async def book_thumb(book_id: str, token: str = ""):
-    _guard(token)
+async def book_thumb(book_id: str, request: Request, token: str = ""):
+    _guard(request, token)
     if not meta_of(book_id).get("thumb"):
         raise HTTPException(404, "Миниатюры нет")
-    return _send(book_id, THUMB, token)
+    return _send(book_id, THUMB)
 
 
 # ── Прогресс и выписки ──

@@ -71,6 +71,21 @@ def make_epub(title="Проверка чтения", author="Тестовый А
 
 
 @pytest.fixture
+def api(books, monkeypatch):
+    """Ручки книг через HTTP: проверяем то, ради чего они и существуют, — авторизацию."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from app import config
+
+    monkeypatch.setattr(config, "WIKI_PASSWORD", "пароль")
+    monkeypatch.setattr(config, "AUTH_TOKEN", "tok3n")
+    app = FastAPI()
+    app.include_router(books.router)
+    return TestClient(app)
+
+
+@pytest.fixture
 def books(tmp_path, monkeypatch):
     from app import books_api, books_store, config
 
@@ -351,6 +366,39 @@ def test_чужая_книга_из_старого_состояния_не_со�
         json.dump({"books": {"неизвестная": {"pos": "cfi", "hl": []}}}, f, ensure_ascii=False)
     assert books.migrate_legacy_state() == 0
     assert books.store.position("неизвестная") is None
+
+
+# ── Отдача файлов ──
+
+
+def test_файл_книги_отдаётся_и_по_заголовку_и_по_токену(api, books):
+    """Обложке токен ставят в query (<img> заголовок не умеет), а файл книги забирает
+    fetch — и шлёт Bearer. Принимаем оба: иначе книга открывается только из кэша."""
+    meta = books.ingest(make_epub(), "book.epub")
+    url = f"/books/{meta['id']}/file"
+    assert api.get(url).status_code == 401
+    assert api.get(url + "?token=tok3n").status_code == 200
+    ok = api.get(url, headers={"Authorization": "Bearer tok3n"})
+    assert ok.status_code == 200 and ok.content[:2] == b"PK"
+    assert api.get(url, headers={"Authorization": "Bearer wrong"}).status_code == 401
+    assert api.get(url, headers={"Authorization": "tok3n"}).status_code == 401
+
+
+def test_обложка_и_миниатюра_тоже_принимают_заголовок(api, books):
+    meta = books.ingest(make_epub(), "book.epub")
+    head = {"Authorization": "Bearer tok3n"}
+    assert api.get(f"/books/{meta['id']}/cover", headers=head).status_code == 200
+    assert api.get(f"/books/{meta['id']}/cover").status_code == 401
+    assert api.get(f"/books/{meta['id']}/thumb", headers=head).status_code == 404   # ещё не слали
+    assert api.get(f"/books/{meta['id']}/thumb").status_code == 401
+
+
+def test_без_токена_не_видно_какие_книги_есть(api, books):
+    books.ingest(make_epub(), "book.epub")
+    # И у существующей, и у выдуманной книги ответ один и тот же — иначе библиотека
+    # просматривается по кодам ответа.
+    assert api.get("/books/nosuchbook/file").status_code == 401
+    assert api.get("/books/nosuchbook/file?token=tok3n").status_code == 404
 
 
 # ── Книга глазами агента ──
