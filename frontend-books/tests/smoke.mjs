@@ -380,22 +380,24 @@ const offline = await page.waitForFunction(() => !!document.querySelector('#view
 check('офлайн: книга открывается без сервера', offline)
 await page.unroute('**/books/*/file')
 
-// 7c. Сервер недоступен: правка не теряется, а ждёт следующей попытки
-const hlBefore = Object.keys(srv.hl[BOOK_ID] || {}).length
+// 7c. Сервер недоступен: правка не теряется, а ждёт следующей попытки.
+// Правкой может оказаться и новая выписка, и перекраска старой — это зависит от того,
+// на какой странице открылась книга. Поэтому следим не за счётом, а за самой правкой.
 await page.route('**/books/*/highlights*', r => r.abort())
 await selectByDrag(page)
 await page.evaluate(() => paint('no'))
 await page.waitForTimeout(2600)                       // отложенная отправка успевает сработать и упасть
+const onServer = () => Object.values(srv.hl[BOOK_ID] || {}).filter(h => !h.deleted).map(h => h.color)
 const stuck = await page.evaluate(() => JSON.parse(localStorage.getItem('dirty') || '[]'))
 check('офлайн: правка помечена неотправленной', stuck.includes(BOOK_ID), `помечено: ${JSON.stringify(stuck)}`)
-check('офлайн: на сервере её пока нет', Object.keys(srv.hl[BOOK_ID] || {}).length === hlBefore)
+check('офлайн: на сервере её пока нет', !onServer().includes('no'), JSON.stringify(onServer()))
 await page.unroute('**/books/*/highlights*')
 await page.evaluate(() => sync.run())
 await page.waitForTimeout(400)
 check('офлайн: следующая попытка её доносит',
-  Object.keys(srv.hl[BOOK_ID] || {}).length === hlBefore + 1
+  onServer().includes('no')
     && (await page.evaluate(() => JSON.parse(localStorage.getItem('dirty') || '[]'))).length === 0,
-  `выписок на сервере: ${Object.keys(srv.hl[BOOK_ID] || {}).length}`)
+  `на сервере: ${JSON.stringify(onServer())}`)
 
 // 7d. Живая синхронизация: правка с другого устройства приезжает сама, без нашего действия
 const anyCfi = Object.values(srv.hl[BOOK_ID])[0].cfi
@@ -490,7 +492,7 @@ await page.evaluate(async () => {
 await page.evaluate(() => closeBook())
 await page.waitForTimeout(1200)
 const phoneHl = await page.evaluate(() => live().length)
-const phonePos = await page.evaluate(() => {
+let phonePos = await page.evaluate(() => {
   const id = lib()[0].id
   return { id, pos: localStorage.getItem('pos:' + id), pct: JSON.parse(localStorage.getItem('pct:' + id) || '0') }
 })
@@ -517,10 +519,22 @@ const stats = await page.evaluate(() => ({
   cards: [...document.querySelectorAll('.stat-card .big')].map(n => n.textContent.trim()),
   cells: document.querySelectorAll('#statsBody .cell[data-day]').length,
   lit: document.querySelectorAll('#statsBody .cell[data-day]:not(.l0)').length,
-  marked: document.querySelectorAll('#statsBody .cell.marked').length,
+  marked: document.querySelectorAll('#statsBody .cell[data-day].marked').length,
   books: document.querySelectorAll('.stat-book').length,
   shelfHidden: !document.querySelector('#shelf').classList.contains('on'),
   months: [...document.querySelectorAll('.cal-month')].filter(n => n.textContent).length,
+  legend: document.querySelector('.cal-legend').textContent,
+  // Кольцо выбранного дня рисуется за пределами клетки: в прокрутке ему нужен запас,
+  // иначе у крайнего столбца — а сегодня всегда крайнее — его срезает край.
+  ringWhole: (() => {
+    const cell = document.querySelector('#statsBody .cell.on')
+    const clip = document.querySelector('.cal-scroll')
+    if (!cell || !clip) return false
+    const b = cell.getBoundingClientRect(), c = clip.getBoundingClientRect()
+    const ring = 4       // обводка 3px, увеличенная вместе с клеткой
+    return b.left - ring >= c.left - .5 && b.right + ring <= c.right + .5
+      && b.top - ring >= c.top - .5 && b.bottom + ring <= c.bottom + .5
+  })(),
   // Полоса по книге должна стоять в строке, а не улететь абсолютом на край экрана.
   laneInRow: (() => {
     const lane = document.querySelector('.stat-book .lane')
@@ -534,6 +548,8 @@ check('статистика: карточки посчитаны', stats.cards[0
 check('статистика: полгода плиток', stats.cells >= 182 && stats.cells <= 189, `клеток: ${stats.cells}`)
 check('статистика: дни с чтением подсвечены', stats.lit === 3, `подсвечено: ${stats.lit}`)
 check('статистика: день с выписками помечен точкой', stats.marked === 1)
+check('статистика: точку объяснили в подписи', /выписк/.test(stats.legend), stats.legend)
+check('статистика: кольцо сегодняшнего дня не срезано', stats.ringWhole)
 check('статистика: подписи месяцев расставлены', stats.months >= 5, `подписей: ${stats.months}`)
 check('статистика: разбивка по книгам', stats.books === 1)
 check('статистика: полоса книги стоит в своей строке', stats.laneInRow)
@@ -549,6 +565,67 @@ check('статистика: тап по плитке рассказывает �
 await page.screenshot({ path: shot('stats') })
 await page.evaluate(() => closeStats())
 await page.waitForFunction(() => document.querySelector('#shelf').classList.contains('on'))
+
+// 7j. Перезапуск не откатывает прогресс.
+// Страница выравнивается по колонке: после перекладки CFI, стоявший в начале страницы,
+// оказывается в её середине, а началом становится уже прочитанный текст. Сохранить его —
+// значит откатить читателя на страницу назад, и так при каждом запуске.
+await page.locator('.card').first().click()
+await page.waitForSelector('#reader.on')
+await page.waitForFunction(() => !!document.querySelector('#viewer iframe'), null, { timeout: 30000 })
+await expose(page)
+await toProse(page)
+const bookId = await page.evaluate(() => state.entry.id)
+// Уходим с начала главы: там смещение нулевое, и съезжать нечему.
+const mid = await page.evaluate(async () => {
+  for (let i = 0; i < 8; i++) {
+    await state.rendition.next()
+    await new Promise(r => setTimeout(r, 220))
+    const cfi = state.rendition.currentLocation().start.cfi
+    if (!/\/1:0\)$/.test(cfi)) return cfi
+  }
+  return null
+})
+await page.waitForTimeout(900)
+const posOf = () => page.evaluate(id => JSON.parse(localStorage.getItem('pos:' + id) || 'null'), bookId)
+const seen = [await posOf()]
+for (let i = 0; i < 2; i++) {
+  await page.reload()
+  await page.waitForSelector('#shelf.on', { timeout: 20000 })
+  await expose(page)
+  await page.locator('.card').first().click()
+  await page.waitForSelector('#reader.on')
+  await page.waitForFunction(() => !!document.querySelector('#viewer iframe'), null, { timeout: 30000 })
+  await page.waitForTimeout(2200)
+  seen.push(await posOf())
+}
+check('перезапуск: позиция посреди главы', !!mid && !!seen[0], mid || 'глава короче страницы')
+check('перезапуск: позиция не уезжает назад', seen.every(p => p === seen[0]), seen.join(' → '))
+const vp = page.viewportSize()
+for (const h of [vp.height - 40, vp.height + 30]) {
+  await page.setViewportSize({ width: vp.width, height: h })
+  await page.waitForTimeout(900)
+}
+const afterFit = await posOf()
+check('перекладка: позиция на месте', afterFit === seen[0], `${seen[0]} → ${afterFit}`)
+// Позиция должна не просто уцелеть, а остаться на видимой странице.
+const anchored = await page.evaluate(id => {
+  const loc = state.rendition.currentLocation()
+  const p = c => state.book.locations.percentageFromCfi(c)
+  return { at: p(JSON.parse(localStorage.getItem('pos:' + id))), start: p(loc.start.cfi), end: p(loc.end.cfi) }
+}, bookId)
+check('перекладка: якорь на видимой странице',
+  anchored.at >= anchored.start - 1e-9 && anchored.at <= anchored.end + 1e-9, JSON.stringify(anchored))
+await page.setViewportSize(vp)
+await page.waitForTimeout(600)
+await page.evaluate(() => closeBook())
+await page.waitForSelector('#shelf.on')
+// Позиция телефона уехала вперёд — второму устройству ниже сверяться уже с ней.
+await page.waitForTimeout(1400)
+phonePos = await page.evaluate(() => {
+  const id = lib()[0].id
+  return { id, pos: localStorage.getItem('pos:' + id), pct: JSON.parse(localStorage.getItem('pct:' + id) || '0') }
+})
 
 // 8. Большой экран — второе «устройство»: подхватывает позицию и выписки телефона
 const dctx = await browser.newContext({ viewport: { width: 1440, height: 900 } })
@@ -579,13 +656,19 @@ check('синхронизация: второе устройство забра�
   `${(JSON.parse(dsynced.pos || '""') || '').slice(-22)}`)
 check('синхронизация: и выписки тоже', dsynced.hl === phoneHl, `выписок: ${dsynced.hl}, на телефоне ${phoneHl}`)
 
-const dopened = await dpage.evaluate(() => {
+await dpage.waitForFunction(() => state.book.locations.length() > 0, null, { timeout: 30000 })
+// «Там же» — не «с того же символа»: на широком экране в страницу влезает больше, и начало
+// у неё своё. Важно, что позиция телефона попала на открытую страницу.
+const dopened = await dpage.evaluate(at => {
   const cur = state.rendition.currentLocation()
-  return { cfi: cur && cur.start ? cur.start.cfi : '', hl: document.querySelectorAll('#viewer svg g[class^="hl-"]').length,
+  const p = c => state.book.locations.percentageFromCfi(c)
+  return { cfi: cur.start.cfi, start: p(cur.start.cfi), end: p(cur.end.cfi), at: p(at),
+           hl: document.querySelectorAll('#viewer svg g[class^="hl-"]').length,
            n: state.hl.length, first: (state.hl[0] || {}).cfi }
-})
-check('синхронизация: книга открылась там же, где на телефоне', dopened.cfi === JSON.parse(phonePos.pos),
-  `${dopened.cfi}`)
+}, JSON.parse(phonePos.pos))
+check('синхронизация: книга открылась на странице с позицией телефона',
+  dopened.at >= dopened.start - 1e-9 && dopened.at <= dopened.end + 1e-9,
+  `${dopened.cfi} · ${JSON.stringify({ start: dopened.start, at: dopened.at, end: dopened.end })}`)
 // Выписка приехала с телефона: её cfi должен не только храниться, но и нарисоваться.
 const ddrew = await dpage.evaluate(async () => {
   const h = state.hl[0]

@@ -1,7 +1,6 @@
 import { auth, showAuth } from './auth.js'
 import { $, COLORS, colorOf, el, escapeHtml, ls, plural, state, toast, when } from './core.js'
-import { applyTheme, findInBook, fitLines, flashFind, reopen } from './reader.js'
-import { noteJump } from './stats.js'
+import { applyTheme, findInBook, fitLines, flashFind, jumpTo, reopen } from './reader.js'
 import { chips, inline, openHighlight, openSheet, resetScrim, send, sheet, sheetHead } from './sheet.js'
 import { buildShelf } from './shelf.js'
 import { live, sync } from './sync.js'
@@ -32,7 +31,7 @@ export function drawerToc(body) {
     const label = (i.label || '').trim();
     const b = el('button', 'item' + (label && label === here ? ' cur' : ''));
     b.innerHTML = `<div class="s ${lvl === 0 ? 'toc-l1' : 'toc-l2'}">${escapeHtml(label)}</div>`;
-    b.onclick = () => { noteJump(); state.rendition.display(i.href); closeDrawer(); };
+    b.onclick = () => { jumpTo(i.href); closeDrawer(); };
     body.appendChild(b);
     if (i.subitems && i.subitems.length) add(i.subitems, lvl + 1);
   });
@@ -73,8 +72,7 @@ export function drawerFind(body) {
         ${h.chapter ? `<div class="m">${escapeHtml(h.chapter)}</div>` : ''}`;
       b.onclick = async () => {
         closeDrawer();
-        noteJump();
-        await state.rendition.display(h.cfi);
+        await jumpTo(h.cfi);
         flashFind(h.cfi);
       };
       out.appendChild(b);
@@ -102,7 +100,7 @@ export function drawerHighlights(body) {
         ${h.note ? `<div class="note-line"><svg class="icon"><use href="#i-note"/></svg>${escapeHtml(h.note)}</div>` : ''}
         <div class="m"><i style="background:${colorOf(h.color).hex}"></i>${escapeHtml(colorOf(h.color).name)}
         ${h.chapter ? ' · ' + escapeHtml(h.chapter) : ''}${talk ? ' · ' + plural(talk, 'ответ', 'ответа', 'ответов') + ' агента' : ''}</div>`;
-      b.onclick = () => { noteJump(); state.rendition.display(h.cfi); closeDrawer(); setTimeout(() => openHighlight(h), 400); };
+      b.onclick = () => { jumpTo(h.cfi); closeDrawer(); setTimeout(() => openHighlight(h), 400); };
       body.appendChild(b);
     });
   };
