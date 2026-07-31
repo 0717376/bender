@@ -152,7 +152,7 @@ function cards(t) {
   card(String(t.days), plural(t.days, 'день с книгой', 'дня с книгой', 'дней с книгой').replace(/^\d+\s/, ''),
     t.secs && t.days ? `в среднем ${hours(t.secs / t.days)}` : '');
   card(String(t.highlights), plural(t.highlights, 'выписка', 'выписки', 'выписок').replace(/^\d+\s/, ''),
-    '', 'i-mark');
+    t.highlights ? 'в календаре — точкой' : 'выдели в книге — попадёт сюда', 'i-mark');
   return box;
 }
 
@@ -203,7 +203,10 @@ function calendar(st) {
   wrap.appendChild(row);
 
   const legend = el('div', 'cal-legend');
-  legend.innerHTML = 'меньше' + [0, 1, 2, 3, 4].map(l => `<i class="cell l${l}"></i>`).join('') + 'больше';
+  // Точку объясняем, только если она где-то есть: иначе это подпись к пустому месту.
+  const marked = st.days.some(d => d.highlights);
+  legend.innerHTML = (marked ? '<span><i class="cell l2 marked"></i>день с выпиской</span>' : '<span></span>')
+    + '<span>меньше' + [0, 1, 2, 3, 4].map(l => `<i class="cell l${l}"></i>`).join('') + 'больше</span>';
   wrap.appendChild(legend);
 
   // Свежая неделя справа: календарь смотрят с конца.
