@@ -1,4 +1,4 @@
-import ePub from 'epubjs'
+import ePub, { EpubCFI } from 'epubjs'
 import { agent } from './agent.js'
 import { auth, showAuth } from './auth.js'
 import { $, ls, state, toast } from './core.js'
@@ -52,6 +52,7 @@ export async function openBook(entry) {
 
 export function closeBook() {
   clearSel();
+  pin = null;
   scrubbing = false;
   stopReading();
   clearTimeout(sync.timer);
@@ -145,8 +146,31 @@ export function syncSpread() {
   $('#viewer').classList.toggle('spread', on);
 }
 
+/* ── Где читатель на самом деле ──
+   Страница выравнивается по колонке: epub.js показывает ту колонку, в которую попал CFI,
+   а началом страницы становится текст перед ним. Пока раскладка не менялась, начало
+   страницы и есть позиция — но стоит колонке стать другой (новый запуск, другой кегль,
+   уехавшая адресная строка), и сохранённое начало съезжает на страницу назад. Ещё запуск —
+   ещё страница. Поэтому позицию держит якорь: перекладка его не двигает — двигает только
+   перелистывание и переход. */
+let pin = null, lastStart = null;
+const cfiTool = new EpubCFI();
+
+const before = (a, b) => { try { return cfiTool.compare(a, b) < 0; } catch { return false; } };
+const onScreen = (loc, at) => !before(at, loc.start.cfi) && !before(loc.end ? loc.end.cfi : loc.start.cfi, at);
+
+/** Переход по книге: оглавление, поиск, ползунок, выписка. Цель прыжка и есть новая
+    позиция — страница вокруг неё почти всегда начинается раньше. */
+export async function jumpTo(target) {
+  noteJump();
+  pin = typeof target === 'string' && target.startsWith('epubcfi(') ? target : null;
+  try { await state.rendition.display(target); } catch { toast('Не нашёл это место в книге'); }
+}
+
 /** Создать rendition и навесить всё, что к нему прилагается. Общее для открытия и пересборки. */
 export async function mountRendition(at) {
+  pin = at || null;
+  lastStart = null;
   $('#viewer').innerHTML = '';
   syncChrome();
   state.rendition = state.book.renderTo('viewer', {
@@ -165,22 +189,35 @@ export async function mountRendition(at) {
   if (state.rendition !== mine) return;
   await fitLines();
   if (state.rendition !== mine) return;
+  // Колонку подогнали — встаём ровно там, где бросили: первый показ считался по другой высоте.
+  if (at) { await state.rendition.display(at); if (state.rendition !== mine) return; }
   live().forEach(drawHighlight);
   syncSpread();
 
   state.rendition.on('relocated', loc => {
     const id = state.entry.id;
-    ls.set('pos:' + id, loc.start.cfi);
-    ls.set('at:' + id, Date.now());
-    markDirty(id);
-    sync.later(5000);
+    // Перекладка показывает то же место заново: epub.js возвращается к началу прежней
+    // страницы, и оно попадает в новую — по этому её и узнаём. Такой переезд читателя
+    // не двигает, а вот перелистывание уводит с прежнего начала, и якорь идёт следом.
+    // Назад якорь не ходит никогда, вперёд — идёт за страницей: её читатель и видит.
+    const same = lastStart && onScreen(loc, lastStart);
+    const stay = state.flow === 'paginated' && pin
+      && (onScreen(loc, pin) || (same && !before(pin, loc.start.cfi)));
+    if (!stay) pin = loc.start.cfi;
+    lastStart = loc.start.cfi;
+    if (ls.get('pos:' + id, null) !== pin) {
+      ls.set('pos:' + id, pin);
+      ls.set('at:' + id, Date.now());
+      markDirty(id);
+      sync.later(5000);
+    }
     const chap = chapterName(loc.start.href) || '';
     ls.set('chap:' + id, chap);
     $('#chapLabel').textContent = chap;
     const d = loc.start.displayed;
     $('#pageInfo').textContent = state.flow === 'paginated' && d && d.total ? `${d.page} из ${d.total}` : '';
     if (state.book.locations.length()) {
-      const p = state.book.locations.percentageFromCfi(loc.start.cfi) || 0;
+      const p = state.book.locations.percentageFromCfi(pin) || 0;
       ls.set('pct:' + id, p);
       noteProgress(p);
       $('#pct').textContent = Math.round(p * 100) + '%';
@@ -190,6 +227,14 @@ export async function mountRendition(at) {
     syncSpread();
   });
   state.rendition.on('selected', onSelected);
+  // Перекладку epub.js доигрывает сам: показывает начало прежней страницы — то есть уже
+  // прочитанный текст. Цель он берёт из своей же location, и её мы подменяем на якорь:
+  // так возврат к нужному месту делает он сам, одним показом, и перелистывание,
+  // случившееся в тот же миг, ничем не перебивается.
+  state.rendition.on('resized', () => {
+    const loc = state.rendition.location;
+    if (pin && loc && loc.start) loc.start.cfi = pin;
+  });
 }
 
 /* Попадание по выписке считаем сами. Свой markClicked epub.js зовёт ещё на touchstart —
@@ -268,8 +313,7 @@ export function wireScrub() {
     scrubbing = false;
     const cfi = state.book.locations.cfiFromPercentage(s.value / 1000);
     if (!cfi) return;
-    noteJump();                    // перескок — не прочитанное
-    await state.rendition.display(cfi);
+    await jumpTo(cfi);
   };
   s.addEventListener('change', jump);
   // Safari на тач-экране до change доходит не всегда — отпустили палец, значит прыгаем.
