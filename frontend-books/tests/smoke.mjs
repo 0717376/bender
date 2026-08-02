@@ -299,6 +299,17 @@ const bot = await page.evaluate(() => ({
   page: document.querySelector('#pageInfo').textContent,
 }))
 check('читалка: глава и страница в полосе', !!bot.chap && /из/.test(bot.page), `${bot.chap} · ${bot.page}`)
+// Книжный набор: гарнитура читалки, переносы, выключка и просторный интерлиньяж.
+const typo = await page.evaluate(() => {
+  const doc = document.querySelector('#viewer iframe').contentDocument
+  const p = [...doc.querySelectorAll('p')].find(x => x.textContent.length > 120)
+  const cs = doc.defaultView.getComputedStyle(p)
+  return { lang: doc.documentElement.lang, hyph: cs.webkitHyphens || cs.hyphens, align: cs.textAlign,
+           lh: parseFloat(cs.lineHeight) / parseFloat(cs.fontSize), font: cs.fontFamily }
+})
+check('текст: книжная вёрстка — переносы, выключка, интерлиньяж',
+  typo.lang === 'ru' && typo.hyph === 'auto' && typo.align === 'justify' && typo.lh > 1.4 && /serif|Georgia/i.test(typo.font),
+  JSON.stringify(typo))
 
 // 4. Выделение → агент
 const picked = await selectByDrag()
@@ -519,7 +530,8 @@ const stats = await page.evaluate(() => ({
   cards: [...document.querySelectorAll('.stat-card .big')].map(n => n.textContent.trim()),
   cells: document.querySelectorAll('#statsBody .cell[data-day]').length,
   lit: document.querySelectorAll('#statsBody .cell[data-day]:not(.l0)').length,
-  marked: document.querySelectorAll('#statsBody .cell[data-day].marked').length,
+  marked: document.querySelectorAll('#statsBody .marked').length,
+  hlFree: !/выписк/.test(document.querySelector('#statsBody').textContent),
   books: document.querySelectorAll('.stat-book').length,
   shelfHidden: !document.querySelector('#shelf').classList.contains('on'),
   months: [...document.querySelectorAll('.cal-month')].filter(n => n.textContent).length,
@@ -543,12 +555,11 @@ const stats = await page.evaluate(() => ({
     return b.top >= row.top && b.bottom <= row.bottom && b.width > 20
   })(),
 }))
-check('статистика: карточки посчитаны', stats.cards[0] === '2' && /ч|мин/.test(stats.cards[1] || ''),
+check('статистика: карточки посчитаны', stats.cards.length === 3 && stats.cards[0] === '2' && /ч|мин/.test(stats.cards[1] || ''),
   stats.cards.join(' · '))
 check('статистика: полгода плиток', stats.cells >= 182 && stats.cells <= 189, `клеток: ${stats.cells}`)
 check('статистика: дни с чтением подсвечены', stats.lit === 3, `подсвечено: ${stats.lit}`)
-check('статистика: день с выписками помечен точкой', stats.marked === 1)
-check('статистика: точку объяснили в подписи', /выписк/.test(stats.legend), stats.legend)
+check('статистика: выписки и точки убраны', stats.marked === 0 && stats.hlFree, stats.legend)
 check('статистика: кольцо сегодняшнего дня не срезано', stats.ringWhole)
 check('статистика: подписи месяцев расставлены', stats.months >= 5, `подписей: ${stats.months}`)
 check('статистика: разбивка по книгам', stats.books === 1)
@@ -830,6 +841,34 @@ const tgone = await tpage.evaluate(id => ({
 }), tmark.id)
 check('тач: выписку можно удалить', !tgone.sheet && !tgone.mark && tgone.live === tliveBefore - 1,
   `живых было ${tliveBefore}, стало ${tgone.live} (${tgone.hl})`)
+
+// 10c. Тап по экрану: iOS не доносит click внутрь книги, жест разбирается на touchend —
+// посередине прячет и возвращает полосы, у краёв листает.
+// Мерить надо по видимой области, не по iframe: внутри него вся глава колонками,
+// и его rect уезжает за экран вместе с прокруткой.
+const tapPts = await tpage.evaluate(() => {
+  const v = document.querySelector('#viewer').getBoundingClientRect()
+  const y = Math.round(v.bottom - 16)    // нижнее поле страницы: там нет ни текста, ни выписок
+  const at = kx => ({ x: Math.round(v.left + v.width * kx), y })
+  return { mid: at(0.5), left: at(0.1), right: at(0.9),
+           hit: (n => n && (n.id || n.nodeName))(document.elementFromPoint(at(0.5).x, y)) }
+})
+await tpage.touchscreen.tap(tapPts.mid.x, tapPts.mid.y)
+await tpage.waitForTimeout(400)
+const imm1 = await tpage.evaluate(() => document.querySelector('#reader').classList.contains('immersive'))
+await tpage.touchscreen.tap(tapPts.mid.x, tapPts.mid.y)
+await tpage.waitForTimeout(400)
+const imm2 = await tpage.evaluate(() => document.querySelector('#reader').classList.contains('immersive'))
+check('тач: тап посередине прячет и возвращает полосы', imm1 && !imm2, `${imm1} → ${imm2}, точка в ${tapPts.hit}`)
+const cfi0 = await tpage.evaluate(() => state.rendition.currentLocation().start.cfi)
+await tpage.touchscreen.tap(tapPts.right.x, tapPts.right.y)
+await tpage.waitForTimeout(700)
+const cfi1 = await tpage.evaluate(() => state.rendition.currentLocation().start.cfi)
+check('тач: тап у правого края листает вперёд', cfi1 !== cfi0, `${cfi0} → ${cfi1}`)
+await tpage.touchscreen.tap(tapPts.left.x, tapPts.left.y)
+await tpage.waitForTimeout(700)
+const cfi2 = await tpage.evaluate(() => state.rendition.currentLocation().start.cfi)
+check('тач: тап у левого края возвращает назад', cfi2 === cfi0, `${cfi1} → ${cfi2}`)
 
 console.log('\nOK:')
 ok.forEach(x => console.log('  +', x))

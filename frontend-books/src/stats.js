@@ -151,12 +151,10 @@ function cards(t) {
   card(hours(t.secs), 'за полгода', t.longest_day ? `лучший день — ${hours(t.longest_day)}` : '');
   card(String(t.days), plural(t.days, 'день с книгой', 'дня с книгой', 'дней с книгой').replace(/^\d+\s/, ''),
     t.secs && t.days ? `в среднем ${hours(t.secs / t.days)}` : '');
-  card(String(t.highlights), plural(t.highlights, 'выписка', 'выписки', 'выписок').replace(/^\d+\s/, ''),
-    t.highlights ? 'в календаре — точкой' : 'выдели в книге — попадёт сюда', 'i-mark');
   return box;
 }
 
-/** Календарь: неделя — столбец, день — клетка. Оттенок по минутам, кольцо — по выпискам. */
+/** Календарь: неделя — столбец, день — клетка, оттенок — по минутам. */
 function calendar(st) {
   const wrap = el('div', 'cal-wrap');
   const head = el('div', 'cal-head');
@@ -188,7 +186,7 @@ function calendar(st) {
     const info = byDay.get(day);
     const mins = info ? info.secs / 60 : 0;
     const lvl = LEVELS.filter(x => mins > x).length;
-    const cell = el('button', 'cell l' + lvl + (info && info.highlights ? ' marked' : ''));
+    const cell = el('button', 'cell l' + lvl);
     cell.dataset.day = day;
     cell.title = `${human(day)} — ${info ? hours(info.secs) : 'не читали'}`;
     cell.onclick = () => pick(day, info);
@@ -203,10 +201,7 @@ function calendar(st) {
   wrap.appendChild(row);
 
   const legend = el('div', 'cal-legend');
-  // Точку объясняем, только если она где-то есть: иначе это подпись к пустому месту.
-  const marked = st.days.some(d => d.highlights);
-  legend.innerHTML = (marked ? '<span><i class="cell l2 marked"></i>день с выпиской</span>' : '<span></span>')
-    + '<span>меньше' + [0, 1, 2, 3, 4].map(l => `<i class="cell l${l}"></i>`).join('') + 'больше</span>';
+  legend.innerHTML = '<span>меньше' + [0, 1, 2, 3, 4].map(l => `<i class="cell l${l}"></i>`).join('') + 'больше</span>';
   wrap.appendChild(legend);
 
   // Свежая неделя справа: календарь смотрят с конца.
@@ -221,7 +216,6 @@ function pick(day, info, root) {
   const parts = [human(day)];
   if (info && info.secs) parts.push(hours(info.secs));
   if (info && info.pct >= 0.005) parts.push(Math.round(info.pct * 100) + '% книги');
-  if (info && info.highlights) parts.push(plural(info.highlights, 'выписка', 'выписки', 'выписок'));
   box.textContent = parts.length > 1 ? parts.join(' · ') : parts[0] + ' — не читали';
   document.querySelectorAll('#statsBody .cell[data-day]').forEach(c =>
     c.classList.toggle('on', c.dataset.day === day));
@@ -235,7 +229,6 @@ function byBook(st) {
     const row = el('div', 'stat-book');
     const bits = [b.secs ? hours(b.secs) : 'без учёта времени'];
     if (b.at) bits.push('прочитано ' + Math.round(b.at * 100) + '%');
-    if (b.highlights) bits.push(plural(b.highlights, 'выписка', 'выписки', 'выписок'));
     row.innerHTML = `<div class="t">${escapeHtml(b.title)}</div>
       <div class="lane"><i style="width:${Math.max(2, Math.round(b.secs / most * 100))}%"></i></div>
       <div class="m">${escapeHtml(bits.join(' · '))}</div>`;
