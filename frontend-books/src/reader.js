@@ -178,6 +178,7 @@ export async function mountRendition(at) {
     flow: state.flow === 'scrolled' ? 'scrolled-doc' : 'paginated',
     spread: state.flow === 'paginated' && state.spread === 'auto' ? 'auto' : 'none',
     minSpreadWidth: SPREAD_MIN,
+    gap: 44,      // половина зазора становится полем страницы: 22px, а не тесные 16 по умолчанию
     allowScriptedContent: true,
   });
   applyTheme();
@@ -374,8 +375,24 @@ export function applyTheme() {
     /* Вертикальные поля страницы: epub.js делает body контейнером колонок, поэтому
        padding-top/bottom одинаково отступает во всех колонках разворота. */
     'body': { 'color': ink + ' !important', 'background': paper + ' !important',
-              'padding': PAGE_PAD_Y + 'px 4px !important', '-webkit-text-size-adjust': '100%' },
+              'padding': PAGE_PAD_Y + 'px 4px !important', '-webkit-text-size-adjust': '100%',
+              /* Книжная гарнитура: ui-serif — это New York на айфоне, дальше Georgia;
+                 обе с настоящей кириллицей — смешение шрифтов внутри слова исключено. */
+              'font-family': 'ui-serif, Georgia, serif !important',
+              'text-rendering': 'optimizeLegibility', 'font-kerning': 'normal' },
     'p, li, td, div, span, h1, h2, h3, h4': { 'color': ink + ' !important' },
+    /* Книжный набор. Переносы: без них длинное слово прыгает на следующую строку целиком,
+       оставляя в узкой колонке рваный край или дыры в выключке. Свои шрифты и интерлиньяж
+       книги перебиваем сознательно: в читалке текст важнее фирменного стиля вёрстки. */
+    'p, li, blockquote, dd': {
+      'font-family': 'inherit !important', 'line-height': '1.55 !important',
+      '-webkit-hyphens': 'auto', 'hyphens': 'auto',
+      '-webkit-hyphenate-limit-before': '3', '-webkit-hyphenate-limit-after': '3',
+      '-webkit-hyphenate-limit-lines': '2',
+    },
+    /* Выключка по формату — но без !important: явно выровненное автором
+       (эпиграфы, стихи — обычно через класс) остаётся как задумано. */
+    'p': { 'text-align': 'justify', 'hanging-punctuation': 'first last' },
     'a': { 'color': '#C05A39 !important' },
     /* Без ограничения по высоте картинка на всю страницу вылезает за экран и режется. */
     'img, svg': { 'max-width': '100% !important', 'max-height': '96vh !important',
@@ -414,18 +431,32 @@ export function wireContent() {
     const doc = contents.document;
     applyTouchRules();
     wireSelection(contents);
+    // Переносы работают, только когда браузер знает язык текста, а главы без lang — не редкость.
+    const lang = ((state.meta && state.meta.language) || '').split('-')[0];
+    if (lang && !doc.documentElement.lang) doc.documentElement.lang = lang;
     // Фокус живёт внутри книги, и до родителя её клавиши не долетают.
     doc.addEventListener('keydown', onKey);
 
-    let sx = 0, sy = 0;
+    // Тап: у краёв — листаем, посередине — прячем и возвращаем полосы. Координата — оконная:
+    // внутри iframe лежит вся глава колонками, и её ширина ничего не знает о видимой странице.
+    const tap = x => {
+      const v = $('#viewer').getBoundingClientRect();
+      const k = (x - v.left) / v.width;
+      if (state.flow === 'paginated' && k < 0.22) return state.rendition.prev();
+      if (state.flow === 'paginated' && k > 0.78) return state.rendition.next();
+      $('#reader').classList.toggle('immersive');
+      hideSelbar();
+    };
+
+    let sx = 0, sy = 0, tapped = false;
     doc.addEventListener('touchstart', e => {
       sx = e.changedTouches[0].clientX; sy = e.changedTouches[0].clientY;
-      sel.markJust = false;                     // новый жест — прошлый флаг больше не в счёт
+      sel.markJust = false; tapped = false;     // новый жест — прошлые флаги больше не в счёт
     }, { passive: true });
     // Пока тянем выделение — страница стоит. Слушатель непассивный, иначе preventDefault не в счёт.
     doc.addEventListener('touchmove', e => { if (sel.on) e.preventDefault(); }, { passive: false });
     doc.addEventListener('touchend', e => {
-      if (sel.on) return;                       // тянем выделение — не листаем
+      if (sel.on || e.touches.length) return;   // тянем выделение или второй палец — не жест
       const t = e.changedTouches[0];
       const dx = t.clientX - sx, dy = t.clientY - sy;
       if (state.flow === 'paginated' && Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.6) {
@@ -434,19 +465,21 @@ export function wireContent() {
       // Тап по выписке открываем в конце жеста, а не в начале: пока палец на экране,
       // ничего поверх книги вставать не должно — иначе оно и съест этот тап.
       const h = hlAt(...inWindow(contents, t.clientX, t.clientY));
-      if (h) { sel.markJust = true; openHighlight(h); }
+      if (h) { sel.markJust = true; return openHighlight(h); }
+      // Обычный тап тоже разбираем здесь: click внутрь книги iOS не доносит.
+      if (Math.hypot(dx, dy) > 12) return;      // палец уехал — это не тап
+      tapped = true;
+      if (sel.dismissed) { sel.dismissed = false; return; }   // этим тапом сняли выделение — и хватит с него
+      tap(inWindow(contents, t.clientX, t.clientY)[0]);
     }, { passive: true });
     doc.addEventListener('click', e => {
+      if (tapped) { tapped = false; return; }   // тап уже разобран на touchend
       if (sel.justEnded) { sel.justEnded = false; return; }
-      if (sel.dismissed) { sel.dismissed = false; return; }   // этим тапом сняли выделение — и хватит с него
+      if (sel.dismissed) { sel.dismissed = false; return; }   // этим кликом сняли выделение — и хватит с него
       if (sel.markJust) { sel.markJust = false; return; }     // выписку уже открыли на touchend
       const hit = hlAt(...inWindow(contents, e.clientX, e.clientY));
       if (hit) return openHighlight(hit);
-      const w = contents.window.innerWidth;
-      if (state.flow === 'paginated' && e.clientX < w * 0.22) return state.rendition.prev();
-      if (state.flow === 'paginated' && e.clientX > w * 0.78) return state.rendition.next();
-      $('#reader').classList.toggle('immersive');
-      hideSelbar();
+      tap(inWindow(contents, e.clientX, e.clientY)[0]);
     });
   });
 }

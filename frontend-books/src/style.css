@@ -146,16 +146,12 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .cell.l2 { background: rgba(var(--accent-rgb), .52); }
 .cell.l3 { background: rgba(var(--accent-rgb), .76); }
 .cell.l4 { background: var(--accent); }
-/* Точка — день, в который не только читали, но и выписывали. Кольцом не отметить:
-   на залитой клетке оно теряется, а на пустой выглядит как выделение. */
-.cell.marked::after { content: ''; position: absolute; right: 1.5px; bottom: 1.5px;
-  width: 3px; height: 3px; border-radius: 50%; background: var(--text); opacity: .55; }
 /* Выбранный день приподнимаем кольцом с зазором: чёрная обводка вплотную выглядит
    как ошибка вёрстки, а не как выделение. */
 .cell.on { transform: scale(1.25); position: relative; z-index: 2;
   box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--text-2); }
-.cal-legend { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap;
-  justify-content: space-between; font-size: 10.5px; color: var(--text-3); }
+.cal-legend { display: flex; align-items: center; gap: 10px; margin-top: 12px;
+  justify-content: flex-end; font-size: 10.5px; color: var(--text-3); }
 .cal-legend span { display: flex; align-items: center; gap: 4px; }
 .cal-legend i { display: inline-block; flex: none; }
 
