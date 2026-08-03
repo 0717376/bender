@@ -84,6 +84,14 @@ export function drawHighlight(h) {
   } catch (e) { console.warn('highlight failed', h.cfi, e); }
 }
 
+/* Смена кегля перекладывает текст, но не пересоздаёт страницы — и нарисованные
+   прямоугольники остаются от старой раскладки. Пересоздаём метки по живым выпискам. */
+export function redrawHighlights() {
+  if (!state.rendition) return;
+  live().forEach(h => { try { state.rendition.annotations.remove(h.cfi, 'highlight'); } catch {} });
+  live().forEach(drawHighlight);
+}
+
 export function save() {
   if (!state.entry) return;      // книгу закрыли, пока дописывалась заметка
   const now = Date.now();

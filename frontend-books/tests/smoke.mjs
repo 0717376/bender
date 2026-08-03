@@ -26,10 +26,13 @@ const STUB = () => {
     }
     send(data) {
       window.__sent.push(JSON.parse(data))
+      // Ответ длиннее шторки: проверяем, что стриминг не утаскивает прокрутку вниз.
+      const tail = Array.from({ length: 8 }, (_, i) =>
+        'Абзац ' + (i + 2) + ': сложность растёт незаметно, по одному небольшому решению за раз, и почти никогда не убывает сама.').join('\n\n')
       const steps = [
         { t: 'tool', name: 'Grep', pattern: 'сложность' },
         { t: 'text', id: 'm1', text: 'Автор' },
-        { t: 'text', id: 'm1', text: 'Автор говорит о **сложности**.\n\n- накапливается по мелочи\n- убирается тоже по мелочи' },
+        { t: 'text', id: 'm1', text: 'Автор говорит о **сложности**.\n\n- накапливается по мелочи\n- убирается тоже по мелочи\n\n' + tail },
         { t: 'done', sid: 's1' },
       ]
       steps.forEach((s, i) => setTimeout(() => this.onmessage && this.onmessage({ data: JSON.stringify(s) }), 70 * (i + 1)))
@@ -332,6 +335,16 @@ const answer = await page.evaluate(() => {
   return { html: n ? n.innerHTML : '', tool: !!document.querySelector('#sheetBody .tool') }
 })
 check('агент: ответ отрисован с разметкой', /<b>сложности<\/b>/.test(answer.html) && /<ul>/.test(answer.html))
+// Прокрутка остаётся у начала ответа: стриминг дописывает вниз, а не тащит за собой.
+const flow = await page.evaluate(() => {
+  const body = document.querySelector('#sheetBody')
+  const node = body.querySelector('.ai')
+  const top = node.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop
+  const want = Math.min(Math.max(0, top - 48), body.scrollHeight - body.clientHeight)
+  return { over: body.scrollHeight - body.clientHeight, scroll: Math.round(body.scrollTop), want: Math.round(want) }
+})
+check('агент: стриминг не утаскивает вниз — читаем с начала ответа',
+  flow.over > 40 && Math.abs(flow.scroll - flow.want) < 30, JSON.stringify(flow))
 await page.screenshot({ path: shot('sheet') })
 
 // 5. Сохранение в выписки
@@ -869,6 +882,32 @@ await tpage.touchscreen.tap(tapPts.left.x, tapPts.left.y)
 await tpage.waitForTimeout(700)
 const cfi2 = await tpage.evaluate(() => state.rendition.currentLocation().start.cfi)
 check('тач: тап у левого края возвращает назад', cfi2 === cfi0, `${cfi1} → ${cfi2}`)
+
+// 10d. Кегль: смена размера перекладывает текст, метки выписок должны переехать вместе с ним.
+await tpage.click('#btnSet')
+await tpage.waitForSelector('#drawer.on')
+await tpage.locator('#drawerBody .seg button', { hasText: 'A+' }).click()
+await tpage.waitForTimeout(900)
+// Range — из отрисованного контента: book.getRange даёт неотрисованный документ без прямоугольников.
+const marks = await tpage.evaluate(() => {
+  const c = state.rendition.getContents()[0]
+  const fr = c.document.defaultView.frameElement.getBoundingClientRect()
+  const out = []
+  for (const g of document.querySelectorAll('#viewer svg g[data-id]')) {
+    const h = live().find(x => x.id === g.dataset.id)
+    if (!h) continue
+    let range = null
+    try { range = c.range(h.cfi) } catch {}
+    const rs = range ? [...range.getClientRects()].filter(r => r.width > 1) : []
+    const mr = g.getBoundingClientRect()
+    if (!rs.length || !mr.width) continue
+    out.push({ dTop: Math.round(mr.top - (fr.top + Math.min(...rs.map(r => r.top)))),
+               dLeft: Math.round(mr.left - (fr.left + Math.min(...rs.map(r => r.left)))) })
+  }
+  return out
+})
+check('кегль: метки выписок на тексте, а не от старой раскладки',
+  marks.length > 0 && marks.every(m => Math.abs(m.dTop) < 6 && Math.abs(m.dLeft) < 6), JSON.stringify(marks))
 
 console.log('\nOK:')
 ok.forEach(x => console.log('  +', x))

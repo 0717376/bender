@@ -214,11 +214,14 @@ agent.onEvent = ev => {
     if (!node) {
       node = el('div', 'ai');
       body.appendChild(node);
+      const first = !sheet.order.length;
       if (sheet.msgs) { sheet.msgs.set(ev.id, node); sheet.order.push(ev.id); }
+      // Начало ответа — к верхнему краю шторки: читают сначала, а стриминг пусть дописывает
+      // ниже сам по себе. Тянуть прокрутку за ним — значит заставлять читать с конца.
+      if (first) body.scrollTop += node.getBoundingClientRect().top - body.getBoundingClientRect().top - 48;
     }
     node.dataset.text = ev.text;
     node.innerHTML = md(ev.text) + (sheet.busy ? '<span class="cursor"></span>' : '');
-    body.scrollTop = body.scrollHeight;
   } else if (ev.t === 'tool') {
     if (sheet.waiting) sheet.waiting.innerHTML = '<span class="spin"></span>' + escapeHtml(toolLabel(ev));
   } else if (ev.t === 'error') {

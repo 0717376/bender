@@ -1,5 +1,6 @@
 import { auth, showAuth } from './auth.js'
 import { $, COLORS, colorOf, el, escapeHtml, ls, plural, state, toast, when } from './core.js'
+import { redrawHighlights } from './highlights.js'
 import { applyTheme, findInBook, fitLines, flashFind, jumpTo, reopen } from './reader.js'
 import { chips, inline, openHighlight, openSheet, resetScrim, send, sheet, sheetHead } from './sheet.js'
 import { buildShelf } from './shelf.js'
@@ -164,7 +165,8 @@ export function drawerSettings(body) {
       state.fontSize = Math.max(70, Math.min(190, state.fontSize + d));
       ls.set('set:font', state.fontSize);
       state.rendition.themes.fontSize(state.fontSize + '%');
-      setTimeout(fitLines, 140);        // строка стала другой высоты — подгонка съехала
+      // Строка стала другой высоты — подгонка съехала, а метки выписок остались от старой раскладки.
+      setTimeout(async () => { await fitLines(); redrawHighlights(); }, 140);
       const lbl = body.querySelector('#fsz'); if (lbl) lbl.textContent = state.fontSize + '%';
     };
     sizes.appendChild(b);
