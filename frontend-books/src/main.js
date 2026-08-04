@@ -6,7 +6,7 @@ import { $, state } from './core.js'
 import { allToWiki, closeDrawer, drawerFind, drawerHighlights, drawerPrefs, drawerSettings, drawerToc, openDrawer } from './drawers.js'
 import { applyTheme, closeBook, openBook, wireGlobal, wireScrub } from './reader.js'
 import { bubbleMe, closeSheet, contextAround, followUp, openHighlight, promptFor, send, wireScrim } from './sheet.js'
-import { buildShelf, pickFile, refreshShelf } from './shelf.js'
+import { buildShelf, pickFile, refreshShelf, wireShelfDrop } from './shelf.js'
 import { lib } from './store.js'
 import { live, sync } from './sync.js'
 import { closeStats, openStats, wireReadingBeat } from './stats.js'
@@ -21,6 +21,7 @@ function wireUI() {
     { icon: 'i-wiki', title: 'Собрать всё в вики', run: allToWiki });
   $('#btnSet').onclick = () => openDrawer('Вид', drawerSettings);
   $('#btnAdd').onclick = pickFile;
+  wireShelfDrop();
   $('#btnStats').onclick = openStats;
   $('#statsClose').onclick = closeStats;
   $('#btnPrefs').onclick = () => openDrawer('Настройки', drawerPrefs);

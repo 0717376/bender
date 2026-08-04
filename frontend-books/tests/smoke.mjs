@@ -651,6 +651,22 @@ phonePos = await page.evaluate(() => {
   return { id, pos: localStorage.getItem('pos:' + id), pct: JSON.parse(localStorage.getItem('pct:' + id) || '0') }
 })
 
+// 7k. Уронить epub на полку — импорт без кнопки. Знакомую книгу сервер узнаёт, полка открывает её же.
+await page.evaluate(b64 => {
+  const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0))
+  const dt = new DataTransfer()
+  dt.items.add(new File([bytes], 'fixture.epub', { type: 'application/epub+zip' }))
+  let ev
+  try { ev = new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }) }
+  catch { ev = new Event('drop', { bubbles: true, cancelable: true }); Object.defineProperty(ev, 'dataTransfer', { value: dt }) }
+  if (!ev.dataTransfer) Object.defineProperty(ev, 'dataTransfer', { value: dt })
+  document.dispatchEvent(ev)
+}, BOOK.toString('base64'))
+await page.waitForSelector('#reader.on', { timeout: 30000 })
+check('полка: epub можно уронить на полку — импорт пошёл', true)
+await page.evaluate(() => closeBook())
+await page.waitForSelector('#shelf.on')
+
 // 8. Большой экран — второе «устройство»: подхватывает позицию и выписки телефона
 const dctx = await browser.newContext({ viewport: { width: 1440, height: 900 } })
 await dctx.route('**/auth/**', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{"token":"T","ok":true}' }))

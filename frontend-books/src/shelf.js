@@ -102,9 +102,35 @@ export function bookMenu(e, anchor) {
 export function hideMenu() { $('#menu').classList.remove('on'); }
 
 export function pickFile() {
-  const inp = el('input'); inp.type = 'file'; inp.accept = '.epub,application/epub+zip';
-  inp.onchange = async () => { if (inp.files[0]) await importBook(inp.files[0]); };
+  // Поле живёт в документе, а не в локальной переменной: отвязанный input Safari успевает
+  // убрать сборщиком мусора, пока открыт диалог выбора, — и onchange не приходит никогда.
+  let inp = $('#filePick');
+  if (!inp) {
+    inp = el('input'); inp.type = 'file'; inp.accept = '.epub,application/epub+zip';
+    inp.id = 'filePick'; inp.hidden = true;
+    inp.onchange = async () => {
+      const f = inp.files[0];
+      inp.value = '';               // ту же книгу можно выбрать ещё раз
+      if (f) await importBook(f);
+    };
+    document.body.appendChild(inp);
+  }
   inp.click();
+}
+
+/** Уронить epub на полку — тоже импорт: на большом экране это привычнее кнопки. */
+export function wireShelfDrop() {
+  document.addEventListener('dragover', e => {
+    if ($('#shelf').classList.contains('on')) e.preventDefault();
+  });
+  document.addEventListener('drop', e => {
+    if (!$('#shelf').classList.contains('on')) return;
+    e.preventDefault();             // иначе браузер уходит со страницы открывать файл
+    const files = [...((e.dataTransfer && e.dataTransfer.files) || [])];
+    const f = files.find(x => /\.epub$/i.test(x.name || ''));
+    if (f) importBook(f);
+    else if (files.length) toast('Это не epub');
+  });
 }
 
 export async function importBook(file) {
