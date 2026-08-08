@@ -46,6 +46,7 @@ export const state = {
   pending: null,       // выделение до того, как его закрасили
   active: null,        // выписка, открытая в шторке
   fontSize: ls.get('set:font', 108),
+  margin: ls.get('set:margin', 'normal'),
   flow: ls.get('set:flow', 'paginated'),
   spread: ls.get('set:spread', 'auto'),
   theme: ls.get('set:theme', 'auto'),

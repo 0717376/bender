@@ -70,6 +70,17 @@ export function closeBook() {
 export const SPREAD_MIN = 900;
 export const PAGE_PAD_Y = 14;
 
+/* Поля страницы из двух слагаемых: внутри iframe — половина зазора колонок epub.js,
+   снаружи — ширина полосы #viewer (классы в style.css). Широкие поля заодно укорачивают
+   строку: полоса становится уже порога разворота, и книга складывается в одну колонку. */
+export const GAPS = { narrow: 32, normal: 44, wide: 72 };
+
+export function syncMargin() {
+  const r = $('#reader');
+  r.classList.toggle('m-narrow', state.margin === 'narrow');
+  r.classList.toggle('m-wide', state.margin === 'wide');
+}
+
 /* Место под полосы держит паддинг #reader, и высоту полос нельзя угадывать константой:
    у них свои отступы, кегль и безопасная зона — промах прячет строку под шапкой. */
 export function syncChrome() {
@@ -177,12 +188,13 @@ export async function mountRendition(at) {
   lastStart = null;
   $('#viewer').innerHTML = '';
   syncChrome();
+  syncMargin();
   state.rendition = state.book.renderTo('viewer', {
     width: '100%', height: '100%',
     flow: state.flow === 'scrolled' ? 'scrolled-doc' : 'paginated',
     spread: state.flow === 'paginated' && state.spread === 'auto' ? 'auto' : 'none',
     minSpreadWidth: SPREAD_MIN,
-    gap: 44,      // половина зазора становится полем страницы: 22px, а не тесные 16 по умолчанию
+    gap: GAPS[state.margin] || GAPS.normal,   // половина зазора становится полем страницы
     allowScriptedContent: true,
   });
   applyTheme();
