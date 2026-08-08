@@ -117,6 +117,10 @@ export async function fitLines() {
   // Менеджер на ресайзе выбрасывает страницы и возвращает их сам — но только если уже
   // знает текущую позицию. Сразу после display он её ещё не посчитал, тогда рисуем мы.
   const knows = !!(state.rendition.location && state.rendition.location.start);
+  // currentLocation выше уже замерил сцену и записал новый размер в кэш менеджера —
+  // его resize сравнит с кэшем, решит «не изменилось» и не пересоберёт страницы.
+  // Кэш сбрасываем: пересборка здесь и есть цель (0.3.93, поведение прибито тестом).
+  state.rendition.manager._stageSize = undefined;
   state.rendition.resize();
   if (!knows) await state.rendition.display(cfi || undefined);
 }
@@ -484,6 +488,15 @@ export function wireContent() {
   });
 }
 
+/** Подогнать всё к текущему окну — сразу, без ожидания. */
+export function relayoutNow() { syncChrome(); fitLines(); syncSpread(); }
+
+/** Отпечаток окна: по нему шторка и ящик понимают, менялось ли окно, пока они были открыты. */
+export function windowSig() {
+  const vv = window.visualViewport;
+  return window.innerWidth + 'x' + window.innerHeight + '/' + (vv ? Math.floor(vv.height) : 0);
+}
+
 /* Родительские слушатели вешаются один раз: rendition пересобирается при смене вида,
    а вместе с ним удвоились бы и перелистывания. */
 export function wireGlobal() {
@@ -491,9 +504,13 @@ export function wireGlobal() {
   let rt = null;
   const relayout = () => {
     if (sel.on || sel.drag) return;      // тянут выделение — не перекладывать под рукой
+    // Открытая шторка или ящик — это клавиатура: она сжимает видимую область, но
+    // перекладывать под неё книгу нельзя — текст «уезжает» и остаётся огрызок страницы.
+    // Разъедутся окно и раскладка — закрытие шторки подгонит (relayoutNow).
+    if ($('#sheet').classList.contains('on') || $('#drawer').classList.contains('on')) return;
     clearSel(); hideMenu();
     clearTimeout(rt);
-    rt = setTimeout(() => { syncChrome(); fitLines(); syncSpread(); }, 180);
+    rt = setTimeout(relayoutNow, 180);
   };
   window.addEventListener('resize', relayout);
   // Прятанье адресной строки меняет видимую область, но не всегда шлёт window.resize.

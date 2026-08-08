@@ -925,6 +925,26 @@ const marks = await tpage.evaluate(() => {
 check('кегль: метки выписок на тексте, а не от старой раскладки',
   marks.length > 0 && marks.every(m => Math.abs(m.dTop) < 6 && Math.abs(m.dLeft) < 6), JSON.stringify(marks))
 
+// 10e. Открытая шторка — это клавиатура: окно сжалось, но книгу под шторкой не
+// перекладываем (на айпаде текст «уезжал» и оставался огрызком); закрытие подгоняет разом.
+await tpage.evaluate(() => closeDrawer())
+await tpage.waitForTimeout(400)
+const frH = () => tpage.evaluate(() => Math.round(document.querySelector('#viewer iframe').getBoundingClientRect().height))
+const h0 = await frH()
+await tpage.evaluate(() => openHighlight(live()[0]))
+await tpage.waitForSelector('#sheet.on')
+const tvp2 = tpage.viewportSize()
+await tpage.setViewportSize({ width: tvp2.width, height: tvp2.height - 320 })
+await tpage.waitForTimeout(800)
+const h1 = await frH()
+check('шторка: окно сжала клавиатура — книга под шторкой стоит', h1 === h0, `${h0} → ${h1}`)
+await tpage.evaluate(() => closeSheet())
+await tpage.waitForTimeout(800)
+const h2 = await frH()
+check('шторка закрылась — раскладка догнала окно', h2 < h0, `${h0} → ${h2}`)
+await tpage.setViewportSize(tvp2)
+await tpage.waitForTimeout(600)
+
 console.log('\nOK:')
 ok.forEach(x => console.log('  +', x))
 if (bad.length) { console.log('\nПРОБЛЕМЫ:'); bad.forEach(x => console.log('  -', x)) }
