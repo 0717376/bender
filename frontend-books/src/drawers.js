@@ -182,6 +182,10 @@ export function drawerSettings(body) {
   row('Кегль', null, sizes);
   const cur = body.lastElementChild.querySelector('.lbl');
   cur.innerHTML = 'Кегль <span id="fsz" style="color:var(--text-3)">' + state.fontSize + '%</span>';
+  row('Поля', 'шире поля — короче строка, легче глазу',
+    seg([['narrow', 'Узкие'], ['normal', 'Обычные'], ['wide', 'Широкие']], state.margin, v => {
+      state.margin = v; ls.set('set:margin', v); closeDrawer(); reopen();
+    }));
   row('Разметка', 'страницами — как в бумажной книге; лентой — как в вебе',
     seg([['paginated', 'Страницы'], ['scrolled', 'Лента']], state.flow, v => {
       state.flow = v; ls.set('set:flow', v); closeDrawer(); reopen();

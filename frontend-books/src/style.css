@@ -200,9 +200,13 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 #bookTitle { flex: 1; font-size: 13px; font-weight: 600; text-align: center; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; padding: 0 4px; }
 /* На большом экране колонка во всю ширину нечитаема: строка в 200 знаков глаз не держит.
-   Поэтому полосу текста ограничиваем и центрируем, а поля по бокам листают страницы. */
-#viewer { flex: 1; min-height: 0; width: 100%; max-width: min(1700px, max(1180px, 62vw));
+   Поэтому полосу текста ограничиваем и центрируем, а поля по бокам листают страницы.
+   Ширину полосы выбирает настройка «Поля»; max(500px, …) держит телефон во весь экран —
+   там поля добирает зазор колонок (GAPS в reader.js). */
+#viewer { flex: 1; min-height: 0; width: 100%; max-width: max(500px, min(1120px, 94vw));
   margin: 0 auto; position: relative; }
+#reader.m-narrow #viewer { max-width: min(1700px, max(1180px, 62vw)); }
+#reader.m-wide #viewer { max-width: max(480px, min(800px, 88vw)); }
 #viewer iframe { border: 0; }
 #viewer.spread::after { content: ''; position: absolute; left: 50%; top: 7%; bottom: 7%; width: 1px;
   background: var(--border); opacity: .8; pointer-events: none; }

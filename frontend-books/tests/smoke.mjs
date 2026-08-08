@@ -755,6 +755,35 @@ const fit = await dpage.evaluate(() => {
 check('десктоп: строки нашлись', fit.maxBot > 0)
 check('десктоп: строка не под шапкой и не обрезана', fit.minTop >= fit.chrome - 1 && fit.maxBot <= fit.floor + 1,
   `${Math.round(fit.minTop)}…${Math.round(fit.maxBot)} при ${Math.round(fit.chrome)}…${Math.round(fit.floor)}`)
+// 8а+. Поля: настройка меняет ширину полосы, а внутри страницы — зазор колонок epub.js.
+const marginNow = () => dpage.evaluate(() => {
+  const doc = document.querySelector('#viewer iframe').contentDocument
+  return { w: document.querySelector('#viewer').clientWidth,
+           gap: parseFloat(doc.defaultView.getComputedStyle(doc.body).columnGap) || 0,
+           spread: document.querySelector('#viewer').classList.contains('spread') }
+})
+const setMargin = async label => {
+  await dpage.click('#btnSet')
+  await dpage.waitForSelector('#drawer.on')
+  await dpage.click(`#drawerBody .seg button:text-is("${label}")`)
+  // Выбор перезапускает rendition: ждём не закрытия ящика, а собранной заново книги.
+  await dpage.waitForFunction(() => !document.querySelector('#drawer').classList.contains('on')
+    && state.rendition && state.rendition.getContents().length > 0, null, { timeout: 20000 })
+  await dpage.waitForTimeout(900)
+}
+const mNorm = await marginNow()
+await setMargin('Широкие')
+const mWide = await marginNow()
+await setMargin('Узкие')
+const mNarrow = await marginNow()
+check('поля: широкие сужают полосу и раздвигают поля страницы',
+  mWide.w < mNorm.w && mWide.w <= 810 && mWide.gap > mNorm.gap,
+  `полоса ${mNorm.w}→${mWide.w}px, зазор ${mNorm.gap}→${mWide.gap}`)
+check('поля: широкие складывают разворот в одну колонку', mNorm.spread && !mWide.spread)
+check('поля: узкие отдают полосе почти весь экран', mNarrow.w > mNorm.w && mNarrow.spread, `${mNarrow.w}px`)
+check('поля: выбор запоминается',
+  await dpage.evaluate(() => JSON.parse(localStorage.getItem('set:margin'))) === 'narrow')
+await setMargin('Обычные')
 // 8b. Клик по готовой выписке: открыть её, ничего больше не задев
 const dmarked = await selectByDrag(dpage)
 await dpage.evaluate(() => paint('imp'))
