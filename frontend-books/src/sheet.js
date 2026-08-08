@@ -3,6 +3,7 @@ import { auth, showAuth } from './auth.js'
 import { $, COLORS, colorOf, el, escapeHtml, state, toast } from './core.js'
 import { closeDrawer } from './drawers.js'
 import { ACTS, drawHighlight, hideSelbar, save, touch } from './highlights.js'
+import { relayoutNow, windowSig } from './reader.js'
 import { sel } from './selection.js'
 import { live } from './sync.js'
 
@@ -87,10 +88,44 @@ export function wireScrim() {
   };
 }
 
-export function openSheet() { resetScrim(); $('#sheet').classList.add('on'); $('#scrim').classList.add('on'); }
+let sheetWin = null;      // каким было окно, когда шторка открылась
+
+export function openSheet() {
+  resetScrim(); $('#sheet').classList.add('on'); $('#scrim').classList.add('on');
+  sheetWin = windowSig();
+}
 export function closeSheet() {
-  $('#sheet').classList.remove('on'); $('#scrim').classList.remove('on');
+  const s = $('#sheet');
+  s.classList.remove('on'); $('#scrim').classList.remove('on');
+  s.style.bottom = ''; s.style.maxHeight = '';
   sheet.busy = false;
+  // Пока шторка была открыта, окно могло измениться (клавиатура, поворот) — раскладку
+  // книги мы это время сознательно не трогали, теперь подгоняем одним разом. Но только
+  // если окно и правда другое: пересборка на каждом закрытии дёргает страницу зря.
+  if (sheetWin !== null && windowSig() !== sheetWin && document.documentElement.classList.contains('reading')) {
+    window.scrollTo(0, 0);
+    relayoutNow();
+  }
+  sheetWin = null;
+}
+
+/* ── Клавиатура ──
+   Поле ввода внизу шторки: клавиатура его накрывает, и iOS в ответ панорамирует всю
+   страницу — книга за шторкой «уезжает наверх». Вместо этого шторку поднимаем сами,
+   ровно на высоту клавиатуры, а панорамирование откатываем. */
+export function wireSheetKeyboard() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const fit = () => {
+    const s = $('#sheet');
+    if (!s.classList.contains('on')) return;
+    const kb = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+    s.style.bottom = kb > 0 ? kb + 'px' : '';
+    s.style.maxHeight = kb > 0 ? Math.round(vv.height * 0.92) + 'px' : '';
+    if (kb > 0) window.scrollTo(0, 0);
+  };
+  vv.addEventListener('resize', fit);
+  vv.addEventListener('scroll', fit);
 }
 
 export function sheetHead(kind, h) {

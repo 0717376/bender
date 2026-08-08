@@ -1,7 +1,7 @@
 import { auth, showAuth } from './auth.js'
 import { $, COLORS, colorOf, el, escapeHtml, ls, plural, state, toast, when } from './core.js'
 import { redrawHighlights } from './highlights.js'
-import { applyTheme, findInBook, fitLines, flashFind, jumpTo, reopen } from './reader.js'
+import { applyTheme, findInBook, fitLines, flashFind, jumpTo, relayoutNow, reopen, windowSig } from './reader.js'
 import { chips, inline, openHighlight, openSheet, resetScrim, send, sheet, sheetHead } from './sheet.js'
 import { buildShelf } from './shelf.js'
 import { live, sync } from './sync.js'
@@ -22,8 +22,16 @@ export function openDrawer(title, build, action) {
   build(body);
   resetScrim();
   $('#drawer').classList.add('on'); $('#scrim').classList.add('on');
+  drawerWin = windowSig();
 }
-export function closeDrawer() { $('#drawer').classList.remove('on'); $('#scrim').classList.remove('on'); }
+let drawerWin = null;      // каким было окно, когда ящик открылся
+export function closeDrawer() {
+  $('#drawer').classList.remove('on'); $('#scrim').classList.remove('on');
+  // Пока ящик был открыт, окно могла сжимать клавиатура поиска — раскладка ждала закрытия.
+  // Подгоняем только если окно и правда менялось: зря пересобирать — дёргать страницу.
+  if (drawerWin !== null && windowSig() !== drawerWin && document.documentElement.classList.contains('reading')) relayoutNow();
+  drawerWin = null;
+}
 
 export function drawerToc(body) {
   const toc = (state.book.navigation && state.book.navigation.toc) || [];

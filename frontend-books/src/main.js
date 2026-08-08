@@ -5,7 +5,7 @@ import { auth, showAuth } from './auth.js'
 import { $, state } from './core.js'
 import { allToWiki, closeDrawer, drawerFind, drawerHighlights, drawerPrefs, drawerSettings, drawerToc, openDrawer } from './drawers.js'
 import { applyTheme, closeBook, openBook, wireGlobal, wireScrub } from './reader.js'
-import { bubbleMe, closeSheet, contextAround, followUp, openHighlight, promptFor, send, wireScrim } from './sheet.js'
+import { bubbleMe, closeSheet, contextAround, followUp, openHighlight, promptFor, send, wireScrim, wireSheetKeyboard } from './sheet.js'
 import { buildShelf, pickFile, refreshShelf, wireShelfDrop } from './shelf.js'
 import { lib } from './store.js'
 import { live, sync } from './sync.js'
@@ -28,6 +28,7 @@ function wireUI() {
   $('#drawerClose').onclick = closeDrawer;
   $('#sheetClose').onclick = closeSheet;
   wireScrim();
+  wireSheetKeyboard();
   $('#sheetSend').onclick = () => {
     const v = $('#sheetInput').value.trim();
     if (!v) return;
