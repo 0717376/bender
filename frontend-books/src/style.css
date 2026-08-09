@@ -215,6 +215,11 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 #viewer svg g[class^="hl-"] { mix-blend-mode: multiply; }
 :root[data-theme="dark"] #viewer svg g[class^="hl-"] { mix-blend-mode: screen; }
 
+/* Читалка целиком невыделяемая: в epub текст живёт в iframe и до окна не достаёт, а в pdf
+   он лежит тут же — и своё выделение браузер вёл бы поверх нашего, прихватывая полосы и
+   подписи. Шторка агента снаружи #reader: его ответ по-прежнему можно выделить и скопировать. */
+#reader { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+
 /* ── PDF ──
    Страница — три слоя в общей обёртке: канвас, метки выписок и прозрачный текст поверх.
    В тёмной теме инвертируем только канвас, как взрослые читалки: белый лист ночью слепит.
