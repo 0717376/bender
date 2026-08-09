@@ -220,6 +220,11 @@ def update_project(project_id: int, **fields) -> dict | None:
     return dict(rows[0]) if rows else None
 
 
+def delete_project(project_id: int) -> None:
+    """Задачи переживают проект: FK ON DELETE SET NULL просто отвязывает их."""
+    _exec("DELETE FROM projects WHERE id=?", (project_id,))
+
+
 def resolve_project(name_or_id: str | int | None) -> int | None:
     """Accept a project id or name; create the project if a new name is given."""
     if name_or_id in (None, "", "null"):

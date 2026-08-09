@@ -286,13 +286,14 @@ function Board() {
     call.then(() => { T.setView({ ...v, label: title }); T.reload(); }).catch(() => {});
   };
 
-  const [confirmArea, setConfirmArea] = useState<{ id: number; title: string } | null>(null);
-  const deleteArea = () => {
-    if (!confirmArea) return;
-    api.removeArea(confirmArea.id)
-      .then(() => { T.setView({ kind: "view", key: "today", label: t("view_today") }); T.reload(); })
-      .catch(() => {});
-    setConfirmArea(null);
+  // Удаление списка: область и проект ведут себя одинаково — задачи внутри переживают их
+  // (FK ON DELETE SET NULL) и остаются в «В любое время», а не исчезают вместе со списком.
+  const [confirmList, setConfirmList] = useState<{ kind: "area" | "project"; id: number; title: string } | null>(null);
+  const deleteList = () => {
+    if (!confirmList) return;
+    const call = confirmList.kind === "area" ? api.removeArea(confirmList.id) : api.removeProject(confirmList.id);
+    call.then(() => { T.setView({ kind: "view", key: "today", label: t("view_today") }); T.reload(); }).catch(() => {});
+    setConfirmList(null);
   };
 
   // Global keyboard shortcuts.
@@ -410,8 +411,11 @@ function Board() {
           onNewTask={() => setNewTaskOpen(true)}
           onAddHeading={(title) => void T.add(title, { project: T.view.id, kind: "heading" })}
           onRenameView={renameView}
+          onDeleteProject={() => {
+            if (T.view.kind === "project" && T.view.id != null) setConfirmList({ kind: "project", id: T.view.id, title: T.view.label });
+          }}
           onDeleteArea={() => {
-            if (T.view.kind === "area" && T.view.id != null) setConfirmArea({ id: T.view.id, title: T.view.label });
+            if (T.view.kind === "area" && T.view.id != null) setConfirmList({ kind: "area", id: T.view.id, title: T.view.label });
           }}
           onOpenProject={(id) => T.setView({ kind: "project", key: "p", id, label: projectLabel(id) })}
           progress={T.overview?.progress ?? {}}
@@ -453,12 +457,12 @@ function Board() {
           onClose={() => setConfirmDel(null)}
         />
       )}
-      {confirmArea && (
+      {confirmList && (
         <ConfirmModal
-          question={t("confirm_delete_area")}
-          detail={confirmArea.title}
-          onConfirm={deleteArea}
-          onClose={() => setConfirmArea(null)}
+          question={t(confirmList.kind === "area" ? "confirm_delete_area" : "confirm_delete_project")}
+          detail={confirmList.title}
+          onConfirm={deleteList}
+          onClose={() => setConfirmList(null)}
         />
       )}
       {paletteOpen && <CommandPalette onPick={pickFromPalette} onClose={() => setPaletteOpen(false)} />}
