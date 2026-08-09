@@ -225,7 +225,9 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
    В тёмной теме инвертируем только канвас, как взрослые читалки: белый лист ночью слепит.
    hue-rotate возвращает цветам их тон после инверсии. */
 #reader.pdf #viewer { display: flex; align-items: center; justify-content: center; }
-.pdfwrap { position: relative; }
+/* Жест по странице разбираем сами: без этого iOS на середине выделения решает, что палец
+   листает, и отбирает событие. */
+.pdfwrap { position: relative; touch-action: none; }
 canvas.pdfpage { display: block; box-shadow: 0 1px 8px rgba(0, 0, 0, .12); border-radius: 2px; }
 :root[data-theme="dark"] canvas.pdfpage { filter: invert(.93) hue-rotate(180deg);
   box-shadow: 0 1px 8px rgba(0, 0, 0, .5); }

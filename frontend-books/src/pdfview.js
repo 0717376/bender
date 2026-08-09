@@ -5,7 +5,7 @@ import { auth, showAuth } from './auth.js'
 import { $, colorOf, el, API, ls, state, toast } from './core.js'
 import { bookBytes } from './library.js'
 import { scrubbing, syncChrome } from './reader.js'
-import { caretAt, clearSel, sel, wireSelection } from './selection.js'
+import { clearSel, sel, wireSelection, wordAround } from './selection.js'
 import { openHighlight } from './sheet.js'
 import { hideMenu } from './shelf.js'
 import { lib, saveLib } from './store.js'
@@ -33,7 +33,7 @@ export async function openPdf(entry) {
     state.kind = 'pdf';
     state.hl = ls.get('hl:' + entry.id, []);
     state.pdf = { doc, pages: doc.numPages, page: 0, outline: [], text: {}, task: null,
-                  wrap: null, canvas: null, layer: null, marks: null,
+                  wrap: null, canvas: null, layer: null, marks: null, lines: [],
                   prev, next, goto, refit, search, labelAt: chapterAt,
                   redraw: drawMarks, hlAt: markAt, context };
 
@@ -145,6 +145,7 @@ async function renderText(v, page, css) {
   });
   try { await tl.render(); } catch { /* ушли на другую страницу */ }
   if (state.pdf !== v || v.page !== page.pageNumber) return;
+  buildLines(v);        // строки меряются один раз на страницу, а не на каждое движение пальца
   drawMarks();
 }
 
@@ -281,42 +282,129 @@ function rangeOf(from, to) {
   return ok && !r.collapsed ? r : null;
 }
 
-/* Строки слоя — отдельные куски, между ними пустота: поля, межстрочье, картинки.
-   Каретка, взятая там напрямую, встаёт в сам слой, и выделение растягивается на всю
-   страницу — потому и «моргало». Поэтому целимся в ближайшую строку, а если рядом нет
-   ни одной, каретки нет вовсе: край выделения просто остаётся на месте. */
-const NEAR = 80;
+/* ── Строки страницы ──
+   Текст в pdf — не поток, а куски, разбросанные по листу: строка, колонка, подпись под
+   картинкой могут лежать в файле в любом порядке. Диапазон DOM поверх такой раскладки
+   ведёт себя дико: край, поставленный по каретке, легко попадает в кусок с другого конца
+   страницы, и выделение растягивается на всё подряд. Поэтому выделяем по геометрии:
+   куски собираются в строки, строки сортируются как читают — сверху вниз, слева направо.
+   Точка выделения — это строка, кусок и символ в нём, а отрезок между двумя точками
+   всегда связный и всегда в границах прочитанного глазом. */
 
-function caretIn(v, x, y) {
-  const fits = r => r && r.startContainer.nodeType === 3 && v.layer.contains(r.startContainer);
-  const direct = caretAt(document, x, y);
-  if (fits(direct)) return direct;
-  let box = null, dist = Infinity;
-  for (const s of v.layer.querySelectorAll('span')) {
-    if (!s.firstChild) continue;
-    const b = s.getBoundingClientRect();
-    if (b.width < 0.5 || b.height < 0.5) continue;
-    const dx = x < b.left ? b.left - x : x > b.right ? x - b.right : 0;
-    const dy = y < b.top ? b.top - y : y > b.bottom ? y - b.bottom : 0;
-    const d = dy * 4 + dx;          // строку выбираем прежде всего по вертикали
-    if (d < dist) { dist = d; box = b; }
+const rangeRect = (node, a, b) => {
+  const r = document.createRange();
+  r.setStart(node, a); r.setEnd(node, b);
+  return r.getBoundingClientRect();
+};
+
+function buildLines(v) {
+  const items = [];
+  let at = 0;
+  for (const p of pieces(v.layer)) {
+    const len = p.len;
+    if (p.node && len) {
+      const box = p.node.parentElement.getBoundingClientRect();
+      if (box.width > 0.1 && box.height > 0.1) {
+        items.push({ node: p.node, text: p.node.textContent, start: at, box, edges: null });
+      }
+    }
+    at += len;
   }
-  if (!box || dist > NEAR) return null;
-  const snap = caretAt(document, Math.min(Math.max(x, box.left + 1), box.right - 1),
-    box.top + box.height / 2);
-  return fits(snap) ? snap : null;
+  items.sort((a, b) => (a.box.top - b.box.top) || (a.box.left - b.box.left));
+  const lines = [];
+  for (const it of items) {
+    const line = lines[lines.length - 1];
+    const mid = it.box.top + it.box.height / 2;
+    // Одна строка — те куски, чья середина попадает в её полосу по высоте.
+    if (line && mid >= line.top && mid <= line.bottom) {
+      line.items.push(it);
+      line.top = Math.min(line.top, it.box.top);
+      line.bottom = Math.max(line.bottom, it.box.bottom);
+    } else {
+      lines.push({ items: [it], top: it.box.top, bottom: it.box.bottom });
+    }
+  }
+  lines.forEach(l => l.items.sort((a, b) => a.box.left - b.box.left));
+  v.lines = lines;
 }
 
-/** Поверхность выделения: диапазоны живут в самом окне, якорь — страница со смещениями. */
+/** Границы символов внутри куска — меряются один раз на кусок и на страницу. */
+function edgesOf(it) {
+  if (it.edges) return it.edges;
+  const e = [it.box.left];
+  for (let i = 1; i <= it.text.length; i++) e.push(rangeRect(it.node, 0, i).right);
+  return (it.edges = e);
+}
+
+function charAt(it, x) {
+  const e = edgesOf(it), n = it.text.length;
+  if (x <= e[0]) return 0;
+  if (x >= e[n]) return n;
+  let i = 1;
+  while (i < n && e[i] < x) i++;
+  return (x - e[i - 1]) < (e[i] - x) ? i - 1 : i;   // ближе к левому краю — каретка перед символом
+}
+
+/** Точка на экране → строка, кусок, символ. Промах мимо текста тянется к ближайшему. */
+function pointAt(v, x, y) {
+  const lines = v.lines || [];
+  if (!lines.length) return null;
+  let li = 0, best = Infinity;
+  lines.forEach((l, k) => {
+    const dy = y < l.top ? l.top - y : y > l.bottom ? y - l.bottom : 0;
+    if (dy < best) { best = dy; li = k; }
+  });
+  const line = lines[li];
+  let ii = 0, bd = Infinity;
+  line.items.forEach((it, k) => {
+    const dx = x < it.box.left ? it.box.left - x : x > it.box.right ? x - it.box.right : 0;
+    if (dx < bd) { bd = dx; ii = k; }
+  });
+  return { li, ii, oi: charAt(line.items[ii], x) };
+}
+
+const order = (a, b) => (a.li - b.li) || (a.ii - b.ii) || (a.oi - b.oi);
+
+function spanBetween(v, a, b) {
+  const [from, to] = order(a, b) > 0 ? [b, a] : [a, b];
+  const rects = [], lines = [];
+  let lo = Infinity, hi = -Infinity;
+  for (let li = from.li; li <= to.li; li++) {
+    const line = (v.lines || [])[li];
+    if (!line) continue;
+    const i0 = li === from.li ? from.ii : 0;
+    const i1 = li === to.li ? to.ii : line.items.length - 1;
+    let text = '';
+    for (let ii = i0; ii <= i1; ii++) {
+      const it = line.items[ii];
+      const o0 = (li === from.li && ii === from.ii) ? from.oi : 0;
+      const o1 = (li === to.li && ii === to.ii) ? to.oi : it.text.length;
+      if (o1 <= o0) continue;
+      const r = rangeRect(it.node, o0, o1);
+      if (r.width > 0.5 && r.height > 0.5) rects.push(r);
+      text += it.text.slice(o0, o1);
+      lo = Math.min(lo, it.start + o0); hi = Math.max(hi, it.start + o1);
+    }
+    if (text) lines.push(text);
+  }
+  if (!lines.length || !rects.length) return null;
+  // Внутри строки куски идут встык, между строками — перенос: он и станет пробелом.
+  return { from, to, rects, text: lines.join(' '), id: () => `pdf:${v.page}:${lo}-${hi}` };
+}
+
+/** Поверхность выделения: точка — строка и символ, якорь — страница со смещениями. */
 function surface(v) {
   return {
     root: v.wrap, doc: document,
-    origin: () => ({ left: 0, top: 0 }),
-    caret: (x, y) => caretIn(v, x, y),
-    anchor: range => {
-      const off = offsetsOf(range);
-      return off ? `pdf:${v.page}:${off[0]}-${off[1]}` : null;
+    origin: () => ({ left: 0, top: 0 }),   // слой лежит в самом окне, пересчёт не нужен
+    at: (x, y) => pointAt(v, x, y),
+    word: (x, y) => {
+      const p = pointAt(v, x, y);
+      if (!p) return null;
+      const it = v.lines[p.li].items[p.ii];
+      return wordAround(it.text, p.oi, (a, b) => [{ ...p, oi: a }, { ...p, oi: b }]);
     },
+    span: (a, b) => spanBetween(v, a, b),
     chapter: () => chapterAt(v.page),
   };
 }
