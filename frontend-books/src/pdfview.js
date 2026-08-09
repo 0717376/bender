@@ -1,0 +1,255 @@
+import * as pdfjs from 'pdfjs-dist'
+import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import { auth, showAuth } from './auth.js'
+import { $, API, ls, state, toast } from './core.js'
+import { bookBytes } from './library.js'
+import { scrubbing, syncChrome } from './reader.js'
+import { hideMenu } from './shelf.js'
+import { lib, saveLib } from './store.js'
+import { markDirty, sync } from './sync.js'
+import { noteJump, noteProgress, startReading } from './stats.js'
+
+/* ── PDF ──
+   Второй движок рядом с epub.js: страница рисуется канвасом, «раскладки» нет — PDF
+   свёрстан навсегда, читалка только подгоняет страницу под окно и листает. Модуль
+   грузится лениво из openBook: кто читает epub, pdf.js не качает. */
+
+pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
+
+export async function openPdf(entry) {
+  $('#splash').classList.remove('off');
+  $('#splash').textContent = 'открываю книгу…';
+  hideMenu();
+  $('#scrub').disabled = true; $('#scrub').value = 0;
+  wireViewer();
+  try {
+    // Позиция с другого устройства нужна до показа страницы, но ждать сервер бесконечно нельзя.
+    await Promise.race([sync.pull(entry.id).catch(() => false), new Promise(r => setTimeout(r, 3500))]);
+    const doc = await pdfjs.getDocument({ data: await bookBytes(entry.id) }).promise;
+    state.entry = entry;
+    state.kind = 'pdf';
+    state.pdf = { doc, pages: doc.numPages, page: 0, outline: [], text: {}, task: null,
+                  canvas: null, prev, next, goto, refit, search, labelAt: chapterAt };
+
+    entry.opened = Date.now();
+    saveLib(lib().map(x => x.id === entry.id ? entry : x));
+
+    $('#bookTitle').textContent = entry.title || '';
+    $('#shelf').classList.remove('on');
+    $('#reader').classList.add('on'); $('#reader').classList.add('pdf');
+    $('#viewer').classList.remove('spread');
+    document.documentElement.classList.add('reading');
+    syncChrome();
+
+    state.pdf.outline = await loadOutline(doc);
+    await show(savedPage(entry.id, doc.numPages));
+    $('#splash').classList.add('off');
+    $('#scrub').disabled = false;        // страницы известны сразу — локации считать нечего
+    startReading(entry.id, ls.get('pct:' + entry.id, 0));
+    ensureThumb(entry, doc).catch(() => {});
+  } catch (e) {
+    console.warn(e);
+    $('#splash').classList.add('off');
+    if (/\b401\b/.test(e.message || '')) { auth.forget(); showAuth('Сессия истекла, войди заново'); }
+    else toast('Книга не открылась');
+  }
+}
+
+/** Позиция pdf — просто страница: 'pdf:12'. Синхронизации всё равно, что внутри строки. */
+function savedPage(id, pages) {
+  const m = /^pdf:(\d+)$/.exec(ls.get('pos:' + id, '') || '');
+  return Math.max(1, Math.min(pages, m ? +m[1] : 1));
+}
+
+function prev() { if (state.pdf && state.pdf.page > 1) show(state.pdf.page - 1); }
+function next() { if (state.pdf && state.pdf.page < state.pdf.pages) show(state.pdf.page + 1); }
+function goto(page) { noteJump(); return show(page); }
+function refit() { if (state.pdf && state.pdf.page) render(); }
+
+async function show(n) {
+  const v = state.pdf;
+  if (!v) return;
+  v.page = Math.max(1, Math.min(v.pages, n));
+  await render();
+  if (state.pdf === v) onPage();
+}
+
+/** Страница целиком в окно, без прокрутки — как разворот бумажной книги на столе. */
+async function render() {
+  const v = state.pdf;
+  const page = await v.doc.getPage(v.page);
+  // Прошлый рендер не просто отменяем — дожидаемся отмены: тот же канвас двум
+  // задачам pdf.js отдавать нельзя, он на этом падает.
+  if (v.task) { try { v.task.cancel(); } catch {} try { await v.task.promise; } catch {} v.task = null; }
+  if (state.pdf !== v || page.pageNumber !== v.page) return;   // пока грузили — ушли дальше
+  const box = $('#viewer').getBoundingClientRect();
+  const base = page.getViewport({ scale: 1 });
+  const scale = Math.min(box.width / base.width, box.height / base.height) || 1;
+  // Рисуем в физические пиксели: канвас в css-размере на ретине — мыло.
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const vp = page.getViewport({ scale: scale * dpr });
+  let c = v.canvas;
+  if (!c) {
+    c = v.canvas = document.createElement('canvas');
+    c.className = 'pdfpage';
+    $('#viewer').innerHTML = '';
+    $('#viewer').appendChild(c);
+  }
+  c.width = Math.floor(vp.width); c.height = Math.floor(vp.height);
+  c.style.width = Math.floor(vp.width / dpr) + 'px';
+  c.style.height = Math.floor(vp.height / dpr) + 'px';
+  const ctx = c.getContext('2d');
+  // Свой белый фон: страница без явной заливки в jpeg и тёмной теме станет чёрной.
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+  v.task = page.render({ canvasContext: ctx, viewport: vp });
+  try { await v.task.promise; } catch { /* отменили ради следующей страницы */ }
+  v.task = null;
+}
+
+function onPage() {
+  const v = state.pdf, id = state.entry.id;
+  const pos = 'pdf:' + v.page;
+  const pct = v.pages > 1 ? (v.page - 1) / (v.pages - 1) : 1;
+  const chap = chapterAt(v.page);
+  if (ls.get('pos:' + id, null) !== pos) {
+    ls.set('pos:' + id, pos);
+    ls.set('at:' + id, Date.now());
+    markDirty(id);
+    sync.later(5000);
+  }
+  ls.set('pct:' + id, pct);
+  ls.set('chap:' + id, chap);
+  noteProgress(pct);
+  $('#chapLabel').textContent = chap;
+  $('#pageInfo').textContent = `${v.page} из ${v.pages}`;
+  $('#pct').textContent = Math.round(pct * 100) + '%';
+  if (!scrubbing) $('#scrub').value = Math.round(pct * 1000);
+}
+
+/* ── Оглавление ── */
+
+async function loadOutline(doc) {
+  const out = [];
+  let items;
+  try { items = await doc.getOutline(); } catch { return out; }
+  // Два уровня, как на сервере: части и главы. Глубже — уже параграфы.
+  const walk = async (list, lvl) => {
+    for (const it of list || []) {
+      try {
+        let dest = it.dest;
+        if (typeof dest === 'string') dest = await doc.getDestination(dest);
+        if (Array.isArray(dest) && dest[0] && it.title) {
+          out.push({ title: it.title.trim(), page: (await doc.getPageIndex(dest[0])) + 1, lvl });
+        }
+      } catch { /* битая закладка пропускается, остальные в деле */ }
+      if (lvl < 1) await walk(it.items, lvl + 1);
+    }
+  };
+  await walk(items, 0);
+  return out.sort((a, b) => a.page - b.page);
+}
+
+function chapterAt(page) {
+  const v = state.pdf;
+  let hit = '';
+  for (const it of (v && v.outline) || []) {
+    if (it.page > page) break;
+    hit = it.title;
+  }
+  return hit;
+}
+
+/* ── Поиск ──
+   По текстовому слою, страница за страницей; распознанное кэшируется — второй
+   запрос по той же книге не перечитывает её заново. */
+
+async function search(q, cancelled, limit = 80) {
+  const v = state.pdf, needle = q.toLowerCase(), out = [];
+  for (let p = 1; p <= v.pages && out.length < limit; p++) {
+    if ((cancelled && cancelled()) || state.pdf !== v) return out;
+    let text = v.text[p];
+    if (text == null) {
+      try {
+        const tc = await (await v.doc.getPage(p)).getTextContent();
+        text = tc.items.map(i => i.str).join(' ').replace(/\s+/g, ' ');
+      } catch { text = ''; }
+      v.text[p] = text;
+    }
+    let at = text.toLowerCase().indexOf(needle);
+    while (at >= 0 && out.length < limit) {
+      const s = Math.max(0, at - 80), e = Math.min(text.length, at + q.length + 80);
+      out.push({ page: p, excerpt: (s ? '…' : '') + text.slice(s, e) + (e < text.length ? '…' : '') });
+      at = text.toLowerCase().indexOf(needle, at + q.length);
+    }
+  }
+  return out;
+}
+
+/* ── Жесты ──
+   Канвас — обычный DOM, никакого iframe: тапы и свайпы вешаются на #viewer один раз.
+   Тап разбирается на touchend с гашением click — как в epub-части, чтобы жест вёл
+   себя одинаково в обоих движках. */
+
+let wired = false;
+
+function wireViewer() {
+  if (wired) return;
+  wired = true;
+  const viewer = $('#viewer');
+  const tap = x => {
+    const v = viewer.getBoundingClientRect();
+    const k = (x - v.left) / v.width;
+    if (k < 0.22) return prev();
+    if (k > 0.78) return next();
+    $('#reader').classList.toggle('immersive');
+  };
+  let sx = 0, sy = 0, tapped = false;
+  viewer.addEventListener('touchstart', e => {
+    if (state.kind !== 'pdf') return;
+    sx = e.changedTouches[0].clientX; sy = e.changedTouches[0].clientY;
+    tapped = false;
+  }, { passive: true });
+  viewer.addEventListener('touchend', e => {
+    if (state.kind !== 'pdf' || e.touches.length) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.6) {
+      return dx < 0 ? next() : prev();
+    }
+    if (Math.hypot(dx, dy) > 12) return;      // палец уехал — это не тап
+    tapped = true;
+    tap(t.clientX);
+  }, { passive: true });
+  viewer.addEventListener('click', e => {
+    if (state.kind !== 'pdf') return;
+    if (tapped) { tapped = false; return; }   // тап уже разобран на touchend
+    tap(e.clientX);
+  });
+}
+
+/* ── Миниатюра ──
+   Обложки у pdf нет — полке служит первая страница. Уменьшает тот, кто книгу открыл:
+   рендер уже в руках, серверу для того же понадобился бы отдельный растеризатор. */
+
+const THUMB_W = 300;
+
+async function ensureThumb(entry, doc) {
+  if (entry.thumb || !auth.token) return;
+  const page = await doc.getPage(1);
+  const vp = page.getViewport({ scale: THUMB_W / page.getViewport({ scale: 1 }).width });
+  const c = document.createElement('canvas');
+  c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+  await page.render({ canvasContext: ctx, viewport: vp }).promise;
+  const blob = await new Promise((res, rej) =>
+    c.toBlob(b => (b ? res(b) : rej(new Error('canvas молчит'))), 'image/jpeg', 0.8));
+  const r = await fetch(`${API}/books/${entry.id}/thumb`, {
+    method: 'PUT',
+    headers: { Authorization: 'Bearer ' + auth.token, 'Content-Type': 'image/jpeg' },
+    body: await blob.arrayBuffer(),
+  });
+  if (!r.ok) return;
+  entry.thumb = (await r.json()).thumb;
+  saveLib(lib().map(x => x.id === entry.id ? entry : x));
+}

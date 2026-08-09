@@ -15,6 +15,17 @@ import { noteJump, noteProgress, startReading, stopReading } from './stats.js'
 /* ── Читалка ── */
 
 export async function openBook(entry) {
+  // PDF — другой движок: свой рендер, своя навигация. Модуль ленивый, epub за него не платит.
+  if ((entry.kind || '') === 'pdf') {
+    $('#splash').classList.remove('off');
+    $('#splash').textContent = 'открываю книгу…';
+    try { return await (await import('./pdfview.js')).openPdf(entry); }
+    catch (e) {
+      console.warn(e);
+      $('#splash').classList.add('off');
+      return toast('Книга не открылась');
+    }
+  }
   $('#splash').classList.remove('off');
   $('#splash').textContent = 'открываю книгу…';
   hideMenu();
@@ -23,6 +34,7 @@ export async function openBook(entry) {
     // Позиция с другого устройства нужна до показа страницы, но ждать сервер бесконечно нельзя.
     await Promise.race([sync.pull(entry.id).catch(() => false), new Promise(r => setTimeout(r, 3500))]);
     state.entry = entry;
+    state.kind = 'epub';
     state.book = ePub(await bookBytes(entry.id));
     await state.book.ready;
     state.meta = await state.book.loaded.metadata;
@@ -59,8 +71,11 @@ export function closeBook() {
   sync.run().catch(() => {});
   $('#reader').classList.remove('on');
   $('#reader').classList.remove('immersive');
+  $('#reader').classList.remove('pdf');
   document.documentElement.classList.remove('reading');
   $('#viewer').innerHTML = '';
+  if (state.pdf) { try { state.pdf.doc.destroy(); } catch {} }
+  state.pdf = null; state.kind = '';
   state.rendition = null; state.book = null; state.entry = null;
   buildShelf();
 }
@@ -314,20 +329,29 @@ export let scrubbing = false;
 
 export function wireScrub() {
   const s = $('#scrub');
-  const ready = () => state.book && state.book.locations && state.book.locations.length();
+  const ready = () => (state.kind === 'pdf' && state.pdf)
+    || (state.book && state.book.locations && state.book.locations.length());
+  const pdfPage = () => 1 + Math.round((s.value / 1000) * (state.pdf.pages - 1));
   s.addEventListener('input', () => {
     if (!ready()) return;
     scrubbing = true;
     const p = s.value / 1000;
     $('#pct').textContent = Math.round(p * 100) + '%';
-    const cfi = state.book.locations.cfiFromPercentage(p);
     // Пока тянут — показываем, куда попадём: проценты без главы ни о чём не говорят.
+    if (state.kind === 'pdf') {
+      const page = pdfPage();
+      $('#chapLabel').textContent = state.pdf.labelAt(page) || '';
+      $('#pageInfo').textContent = `${page} из ${state.pdf.pages}`;
+      return;
+    }
+    const cfi = state.book.locations.cfiFromPercentage(p);
     const item = cfi && state.book.spine.get(cfi);
     if (item) $('#chapLabel').textContent = chapterName(item.href) || '';
   });
   const jump = async () => {
     if (!ready() || !scrubbing) return;
     scrubbing = false;
+    if (state.kind === 'pdf') return state.pdf.goto(pdfPage());
     const cfi = state.book.locations.cfiFromPercentage(s.value / 1000);
     if (!cfi) return;
     await jumpTo(cfi);
@@ -501,7 +525,11 @@ export function wireContent() {
 }
 
 /** Подогнать всё к текущему окну — сразу, без ожидания. */
-export function relayoutNow() { syncChrome(); fitLines(); syncSpread(); }
+export function relayoutNow() {
+  syncChrome();
+  if (state.kind === 'pdf') { if (state.pdf) state.pdf.refit(); return; }
+  fitLines(); syncSpread();
+}
 
 /** Отпечаток окна: по нему шторка и ящик понимают, менялось ли окно, пока они были открыты. */
 export function windowSig() {
@@ -556,6 +584,10 @@ export function wireGlobal() {
   $('#reader').addEventListener('click', e => {
     if (e.target !== e.currentTarget) return;
     if (sel.dismissed) { sel.dismissed = false; return; }
+    if (state.kind === 'pdf' && state.pdf) {
+      e.clientX < window.innerWidth / 2 ? state.pdf.prev() : state.pdf.next();
+      return;
+    }
     if (state.flow !== 'paginated' || !state.rendition) return;
     e.clientX < window.innerWidth / 2 ? state.rendition.prev() : state.rendition.next();
   });
@@ -571,6 +603,11 @@ export function onKey(e) {
   }
   const tag = (e.target && e.target.tagName) || '';
   if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (state.kind === 'pdf' && state.pdf) {
+    if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); state.pdf.next(); }
+    if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); state.pdf.prev(); }
+    return;
+  }
   if (!state.rendition || state.flow !== 'paginated') return;
   if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); state.rendition.next(); }
   if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); state.rendition.prev(); }

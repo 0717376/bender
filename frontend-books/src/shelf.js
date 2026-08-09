@@ -21,7 +21,7 @@ export function cardFor(e) {
   const pct = ls.get('pct:' + e.id, 0);
   card.innerHTML = `
     <div class="cover-wrap">
-      ${e.cover ? `<img alt="" src="${coverUrl(e)}">` : `<div class="none">${escapeHtml(e.title || 'Книга')}</div>`}
+      ${e.cover || e.thumb ? `<img alt="" src="${coverUrl(e)}">` : `<div class="none">${escapeHtml(e.title || 'Книга')}</div>`}
       <div class="bar"><i style="width:${Math.round(pct * 100)}%"></i></div>
     </div>
     <div class="t">${escapeHtml(e.title || 'Без названия')}</div>
@@ -50,7 +50,7 @@ export function buildShelf() {
     const pct = ls.get('pct:' + reading.id, 0);
     const b = el('button', 'hero');
     b.innerHTML = `
-      <div class="cv">${reading.cover ? `<img alt="" src="${coverUrl(reading)}">` : `<div class="none"></div>`}</div>
+      <div class="cv">${reading.cover || reading.thumb ? `<img alt="" src="${coverUrl(reading)}">` : `<div class="none"></div>`}</div>
       <div class="info">
         <div class="lbl">Продолжить</div>
         <div class="t">${escapeHtml(reading.title || 'Книга')}</div>
@@ -106,7 +106,7 @@ export function pickFile() {
   // убрать сборщиком мусора, пока открыт диалог выбора, — и onchange не приходит никогда.
   let inp = $('#filePick');
   if (!inp) {
-    inp = el('input'); inp.type = 'file'; inp.accept = '.epub,application/epub+zip';
+    inp = el('input'); inp.type = 'file'; inp.accept = '.epub,.pdf,application/epub+zip,application/pdf';
     inp.id = 'filePick'; inp.hidden = true;
     inp.onchange = async () => {
       const f = inp.files[0];
@@ -118,7 +118,7 @@ export function pickFile() {
   inp.click();
 }
 
-/** Уронить epub на полку — тоже импорт: на большом экране это привычнее кнопки. */
+/** Уронить книгу на полку — тоже импорт: на большом экране это привычнее кнопки. */
 export function wireShelfDrop() {
   document.addEventListener('dragover', e => {
     if ($('#shelf').classList.contains('on')) e.preventDefault();
@@ -127,9 +127,9 @@ export function wireShelfDrop() {
     if (!$('#shelf').classList.contains('on')) return;
     e.preventDefault();             // иначе браузер уходит со страницы открывать файл
     const files = [...((e.dataTransfer && e.dataTransfer.files) || [])];
-    const f = files.find(x => /\.epub$/i.test(x.name || ''));
+    const f = files.find(x => /\.(epub|pdf)$/i.test(x.name || ''));
     if (f) importBook(f);
-    else if (files.length) toast('Это не epub');
+    else if (files.length) toast('Это не epub и не PDF');
   });
 }
 
@@ -149,7 +149,7 @@ export async function importBook(file) {
   } catch (e) {
     console.warn(e);
     $('#splash').classList.add('off');
-    toast(e.message === 'Это не epub' ? 'Это не epub' : 'Не смог добавить книгу');
+    toast(/не epub/i.test(e.message || '') ? e.message : 'Не смог добавить книгу');
   }
 }
 

@@ -10,7 +10,8 @@
     "test": "node tests/smoke.mjs"
   },
   "dependencies": {
-    "epubjs": "0.3.93"
+    "epubjs": "0.3.93",
+    "pdfjs-dist": "^6.2.108"
   },
   "devDependencies": {
     "jszip": "^3.10.1",

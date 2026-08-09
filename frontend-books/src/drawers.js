@@ -34,6 +34,17 @@ export function closeDrawer() {
 }
 
 export function drawerToc(body) {
+  if (state.kind === 'pdf') {
+    const here = $('#chapLabel').textContent.trim();
+    (state.pdf.outline || []).forEach(i => {
+      const b = el('button', 'item' + (i.title === here ? ' cur' : ''));
+      b.innerHTML = `<div class="s ${i.lvl ? 'toc-l2' : 'toc-l1'}">${escapeHtml(i.title)}</div><div class="m">стр. ${i.page}</div>`;
+      b.onclick = () => { state.pdf.goto(i.page); closeDrawer(); };
+      body.appendChild(b);
+    });
+    if (!(state.pdf.outline || []).length) body.appendChild(el('div', 'empty', 'В книге нет оглавления'));
+    return;
+  }
   const toc = (state.book.navigation && state.book.navigation.toc) || [];
   const here = $('#chapLabel').textContent.trim();
   const add = (items, lvl) => items.forEach(i => {
@@ -66,7 +77,9 @@ export function drawerFind(body) {
       return;
     }
     out.appendChild(el('div', 'empty', 'Ищу по книге…'));
-    const hits = await findInBook(q, () => gen !== mine);
+    const pdf = state.kind === 'pdf';
+    const hits = pdf ? await state.pdf.search(q, () => gen !== mine)
+      : await findInBook(q, () => gen !== mine);
     if (gen !== mine) return;                    // пока искали, запрос сменился
     out.innerHTML = '';
     if (!hits.length) { out.appendChild(el('div', 'empty', 'Ничего не нашлось')); return; }
@@ -75,12 +88,15 @@ export function drawerFind(body) {
       const b = el('button', 'item');
       const text = (h.excerpt || '').trim();
       const at = text.toLowerCase().indexOf(q.toLowerCase());
+      const where = pdf ? ['стр. ' + h.page, state.pdf.labelAt(h.page)].filter(Boolean).join(' · ')
+        : h.chapter || '';
       b.innerHTML = `<div class="s">${at < 0 ? escapeHtml(text)
         : escapeHtml(text.slice(0, at)) + '<mark>' + escapeHtml(text.slice(at, at + q.length))
           + '</mark>' + escapeHtml(text.slice(at + q.length))}</div>
-        ${h.chapter ? `<div class="m">${escapeHtml(h.chapter)}</div>` : ''}`;
+        ${where ? `<div class="m">${escapeHtml(where)}</div>` : ''}`;
       b.onclick = async () => {
         closeDrawer();
+        if (pdf) return state.pdf.goto(h.page);
         await jumpTo(h.cfi);
         flashFind(h.cfi);
       };
@@ -166,6 +182,12 @@ export function drawerSettings(body) {
       state.theme = v; ls.set('set:theme', v); applyTheme();
       closeDrawer(); openDrawer('Вид', drawerSettings);
     }));
+  // PDF свёрстан навсегда: кегль, поля и разметку задаёт сам файл, крутить нечего.
+  if (state.kind === 'pdf') {
+    body.appendChild(el('div', 'empty',
+      'Вёрстка PDF зашита в файл — страница просто подгоняется под экран.'));
+    return;
+  }
   const sizes = el('div', 'seg');
   [['A−', -8], ['A+', 8]].forEach(([t, d]) => {
     const b = el('button', '', t);

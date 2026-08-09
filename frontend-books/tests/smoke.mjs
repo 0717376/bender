@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { webkit, devices } from 'playwright'
 import { build, preview } from 'vite'
 import { makeEpub, COVER, FIXTURE } from './fixtures/epub.mjs'
+import { makePdf, PDF_FIXTURE } from './fixtures/pdf.mjs'
 
 /* Проверяем собранное приложение, а не исходники: собираем и поднимаем превью сами. */
 const ROOT = new URL('..', import.meta.url).pathname
@@ -11,6 +12,8 @@ await build({ root: ROOT, logLevel: 'warn' })
 const server = await preview({ root: ROOT, preview: { host: '127.0.0.1', port: 8898, strictPort: true } })
 const URL_ = 'http://127.0.0.1:8898/index.html'
 const BOOK = await makeEpub()
+const PDF = makePdf({})
+const PDF_ID = 'pdf1test'
 const ok = [], bad = []
 const check = (name, cond, extra = '') => (cond ? ok : bad).push(name + (extra ? ` — ${extra}` : ''))
 
@@ -89,9 +92,17 @@ const booksRoute = async r => {
     return json({ ok: true })
   }
   if (req.method() === 'POST') {
-    const meta = { id: BOOK_ID, title: FIXTURE.title, author: FIXTURE.author,
-                   added: Math.round(Date.now() / 1000), size: BOOK.length,
-                   chapters: FIXTURE.chapters.length, cover: 'cover.png', thumb: '' }
+    // Сервер различает форматы по содержимому, но WebKit не отдаёт route бинарную
+    // часть multipart — мок различает по имени файла из Content-Disposition.
+    const head = (req.postDataBuffer() || Buffer.alloc(0)).toString('latin1')
+    const pdf = /filename="[^"]*\.pdf"/i.test(head) || head.includes('%PDF-')
+    const meta = pdf
+      ? { id: PDF_ID, kind: 'pdf', file: 'book.pdf', title: PDF_FIXTURE.title,
+          author: PDF_FIXTURE.author, added: Math.round(Date.now() / 1000), size: PDF.length,
+          chapters: PDF_FIXTURE.outline.length, pages: PDF_FIXTURE.pages, cover: '', thumb: '' }
+      : { id: BOOK_ID, title: FIXTURE.title, author: FIXTURE.author,
+          added: Math.round(Date.now() / 1000), size: BOOK.length,
+          chapters: FIXTURE.chapters.length, cover: 'cover.png', thumb: '' }
     if (library.find(b => b.id === meta.id)) return json({ ...meta, known: true })
     library.push(meta)
     return json(meta)
@@ -125,7 +136,11 @@ const booksRoute = async r => {
     states++
     return json({ position: srv.pos[id] || null, highlights: Object.values(srv.hl[id] || {}) })
   }
-  if (kind === 'file') return r.fulfill({ status: 200, headers: CORS, contentType: 'application/epub+zip', body: BOOK })
+  if (kind === 'file') {
+    return id === PDF_ID
+      ? r.fulfill({ status: 200, headers: CORS, contentType: 'application/pdf', body: PDF })
+      : r.fulfill({ status: 200, headers: CORS, contentType: 'application/epub+zip', body: BOOK })
+  }
   if (kind === 'cover') return r.fulfill({ status: 200, headers: CORS, contentType: 'image/png', body: COVER })
   if (kind === 'thumb') return thumbBytes
     ? r.fulfill({ status: 200, headers: CORS, contentType: 'image/jpeg', body: thumbBytes })
@@ -973,6 +988,121 @@ const h2 = await frH()
 check('шторка закрылась — раскладка догнала окно', h2 < h0, `${h0} → ${h2}`)
 await tpage.setViewportSize(tvp2)
 await tpage.waitForTimeout(600)
+
+// 11. PDF: второй движок — канвас вместо iframe, листание, оглавление, поиск, позиция.
+await tpage.evaluate(() => closeBook())
+await tpage.waitForSelector('#shelf.on')
+const [pdfChooser] = await Promise.all([tpage.waitForEvent('filechooser'), tpage.click('#btnAdd')])
+await pdfChooser.setFiles({ name: 'manual.pdf', mimeType: 'application/pdf', buffer: PDF })
+await tpage.waitForSelector('#reader.pdf', { timeout: 30000 })
+await tpage.waitForFunction(() => {
+  const c = document.querySelector('canvas.pdfpage')
+  return c && c.width > 0 && state.pdf && state.pdf.page === 1
+}, null, { timeout: 30000 })
+await tpage.waitForTimeout(400)
+const pOpen = await tpage.evaluate(() => ({
+  kind: state.kind, pages: state.pdf.pages,
+  info: document.querySelector('#pageInfo').textContent,
+  chap: document.querySelector('#chapLabel').textContent,
+  drawn: (() => {   // на канвасе есть тёмные пиксели — страница действительно нарисована
+    const c = document.querySelector('canvas.pdfpage')
+    const d = c.getContext('2d').getImageData(0, 0, c.width, Math.min(c.height, 900)).data
+    for (let i = 0; i < d.length; i += 4) if (d[i] < 128) return true
+    return false
+  })(),
+  hlHidden: getComputedStyle(document.querySelector('#btnHl')).display === 'none',
+  scrub: !document.querySelector('#scrub').disabled,
+}))
+check('pdf: импорт открыл книгу на канвасе', pOpen.kind === 'pdf' && pOpen.drawn,
+  `${pOpen.pages} страниц`)
+check('pdf: полоса — страница, глава, ползунок', pOpen.info === '1 из 6' && pOpen.chap === 'Начало' && pOpen.scrub,
+  `${pOpen.info} · ${pOpen.chap}`)
+check('pdf: кнопка выписок спрятана', pOpen.hlHidden)
+// Листание тапом у правого края — жест общий с epub.
+const pv = await tpage.evaluate(() => {
+  const v = document.querySelector('#viewer').getBoundingClientRect()
+  return { x: Math.round(v.right - 20), y: Math.round(v.top + v.height / 2) }
+})
+await tpage.touchscreen.tap(pv.x, pv.y)
+await tpage.waitForTimeout(500)
+const pFlip = await tpage.evaluate(() => ({
+  page: state.pdf.page, pos: JSON.parse(localStorage.getItem('pos:pdf1test') || '""'),
+  info: document.querySelector('#pageInfo').textContent,
+}))
+check('pdf: тап у края листает и запоминает позицию', pFlip.page === 2 && pFlip.pos === 'pdf:2', pFlip.info)
+// Оглавление из закладок.
+await tpage.click('#btnToc')
+await tpage.waitForSelector('#drawer.on')
+const tocN = await tpage.locator('#drawerBody .item').count()
+await tpage.click('#drawerBody .item:has-text("Середина")')
+await tpage.waitForTimeout(600)
+const pToc = await tpage.evaluate(() => ({
+  page: state.pdf.page, chap: document.querySelector('#chapLabel').textContent,
+}))
+check('pdf: оглавление из закладок ведёт на страницу', tocN === 3 && pToc.page === 3 && pToc.chap === 'Середина',
+  `пунктов: ${tocN}, стр. ${pToc.page}`)
+// Поиск по текстовому слою.
+await tpage.click('#btnFind')
+await tpage.waitForSelector('#drawer.on')
+await tpage.fill('#drawerBody input[type=search]', 'poiska')
+await tpage.waitForFunction(() => document.querySelectorAll('#drawerBody .item').length > 0, null, { timeout: 15000 })
+const pFound = await tpage.evaluate(() => ({
+  n: document.querySelectorAll('#drawerBody .item').length,
+  mark: !!document.querySelector('#drawerBody .item mark'),
+  where: (document.querySelector('#drawerBody .item .m') || {}).textContent || '',
+}))
+await tpage.click('#drawerBody .item')
+await tpage.waitForTimeout(600)
+const pJump = await tpage.evaluate(() => state.pdf.page)
+check('pdf: поиск по тексту находит и подсвечивает', pFound.n >= 6 && pFound.mark, `находок: ${pFound.n}`)
+check('pdf: у находки страница, по ней и переход', /стр\. 1/.test(pFound.where) && pJump === 1, pFound.where)
+// Тёмная тема инвертирует страницу — белый лист ночью слепит.
+await tpage.evaluate(() => { state.theme = 'dark'; applyTheme() })
+await tpage.waitForTimeout(300)
+const pDark = await tpage.evaluate(() => getComputedStyle(document.querySelector('canvas.pdfpage')).filter)
+check('pdf: тёмная тема инвертирует страницу', /invert/.test(pDark), pDark)
+await tpage.screenshot({ path: shot('pdf-dark') })
+await tpage.evaluate(() => { state.theme = 'auto'; applyTheme() })
+// Настройки: у pdf вёрстка зашита в файл — крутить можно только тему.
+await tpage.click('#btnSet')
+await tpage.waitForSelector('#drawer.on')
+const pSet = await tpage.evaluate(() => ({
+  rows: document.querySelectorAll('#drawerBody .setrow').length,
+  note: /вёрстка/i.test(document.querySelector('#drawerBody').textContent),
+}))
+check('pdf: в настройках только тема', pSet.rows === 1 && pSet.note, `рядов: ${pSet.rows}`)
+await tpage.evaluate(() => closeDrawer())
+// Позиция переживает закрытие и уходит на сервер; миниатюра — первая страница.
+await tpage.evaluate(() => state.pdf.goto(5))
+await tpage.waitForTimeout(500)
+await tpage.evaluate(() => sync.run({ force: true }))
+await tpage.waitForTimeout(800)
+const pSrv = (srv.pos[PDF_ID] || {})
+check('pdf: позиция уехала на сервер', pSrv.cfi === 'pdf:5' && pSrv.pct > 0.7,
+  `${pSrv.cfi} · ${pSrv.pct}`)
+check('pdf: миниатюра из первой страницы дошла', thumbs.some(t => t.id === PDF_ID && t.jpeg && t.bytes > 500),
+  JSON.stringify(thumbs.filter(t => t.id === PDF_ID)))
+await tpage.evaluate(() => closeBook())
+await tpage.waitForSelector('#shelf.on')
+const pCard = await tpage.evaluate(() => {
+  const cards = [...document.querySelectorAll('.card')]
+  const mine = cards.find(c => (c.querySelector('.t') || {}).textContent === 'Проверка PDF')
+  return { found: !!mine, img: !!(mine && mine.querySelector('.cover-wrap img')) }
+})
+check('pdf: на полке карточка с миниатюрой', pCard.found && pCard.img, JSON.stringify(pCard))
+await tpage.evaluate(() => {
+  const e = lib().find(x => x.id === 'pdf1test')
+  return openBook(e)
+})
+await tpage.waitForSelector('#reader.pdf', { timeout: 30000 })
+await tpage.waitForFunction(() => state.pdf && state.pdf.page > 0, null, { timeout: 30000 })
+await tpage.waitForTimeout(400)
+const pBack = await tpage.evaluate(() => ({
+  page: state.pdf.page, info: document.querySelector('#pageInfo').textContent,
+}))
+check('pdf: после переоткрытия — та же страница', pBack.page === 5, pBack.info)
+await tpage.screenshot({ path: shot('pdf') })
+await tpage.evaluate(() => closeBook())
 
 console.log('\nOK:')
 ok.forEach(x => console.log('  +', x))
