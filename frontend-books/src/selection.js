@@ -26,14 +26,22 @@ export function caretAt(doc, x, y) {
 export const WORD = /[\p{L}\p{N}'’\-]/u;
 
 export function wordAt(doc, x, y) {
-  const caret = caretAt(doc, x, y);
+  return wordFrom(caretAt(doc, x, y));
+}
+
+/* Поверхность может ставить каретку по-своему: в pdf строки лежат абсолютными кусками,
+   и промах мимо куска отдаёт каретку в сам слой — от такой каретки выделение растягивается
+   на всю страницу. Поэтому pdf подсовывает свою, с прицеливанием по ближайшей строке. */
+export const caretOn = (surf, x, y) => (surf.caret ? surf.caret(x, y) : caretAt(surf.doc, x, y));
+
+export function wordFrom(caret) {
   if (!caret || caret.startContainer.nodeType !== 3) return null;
   const text = caret.startContainer.textContent;
   let a = caret.startOffset, b = caret.startOffset;
   while (a > 0 && WORD.test(text[a - 1])) a--;
   while (b < text.length && WORD.test(text[b])) b++;
   if (a === b) { a = Math.max(0, a - 1); b = Math.min(text.length, b + 1); }
-  const r = doc.createRange();
+  const r = caret.startContainer.ownerDocument.createRange();
   r.setStart(caret.startContainer, a); r.setEnd(caret.startContainer, b);
   return r;
 }
@@ -77,7 +85,7 @@ export function makeHandle(kind) {
     const fr = sel.surf.origin();
     // Целимся мимо пальца: иначе он закрывает ровно ту строку, которую тянешь.
     const dy = kind === 'end' ? -12 : 12;
-    const caret = caretAt(sel.surf.doc, e.clientX - fr.left, e.clientY - fr.top + dy);
+    const caret = caretOn(sel.surf, e.clientX - fr.left, e.clientY - fr.top + dy);
     if (caret) { sel.focus = caret; paintSel(); }
   });
   const done = () => { if (sel.drag === kind) { sel.drag = null; commitSel(); } };
@@ -126,7 +134,7 @@ export function wireSelection(surf) {
     sx = e.clientX; sy = e.clientY; pressing = true;
     clearTimeout(timer);
     const begin = () => {
-      const r = wordAt(doc, sx, sy);
+      const r = wordFrom(caretOn(surf, sx, sy));
       if (!r) return;
       sel.on = true; sel.surf = surf; sel.anchor = r; sel.focus = r;
       hideSelbar(); paintSel();
@@ -137,10 +145,13 @@ export function wireSelection(surf) {
     if (e.pointerType === 'mouse') sel.pendingMouse = { x: sx, y: sy };
   }, { passive: true });
 
-  root.addEventListener('pointermove', e => {
+  // Двигать и отпускать палец могут уже мимо страницы — за полем, по полосам, по краю
+  // экрана. Поэтому слушаем документ, а не только саму страницу: иначе выделение
+  // застывает на полпути, а отпускание за краем оставляет его висеть.
+  doc.addEventListener('pointermove', e => {
     if (!pressing) return;
     if (sel.pendingMouse && !sel.on && Math.hypot(e.clientX - sx, e.clientY - sy) > 4) {
-      const r = wordAt(doc, sel.pendingMouse.x, sel.pendingMouse.y);
+      const r = wordFrom(caretOn(surf, sel.pendingMouse.x, sel.pendingMouse.y));
       if (r) { sel.on = true; sel.surf = surf; sel.anchor = r; sel.focus = r; }
     }
     if (!sel.on) {
@@ -149,7 +160,8 @@ export function wireSelection(surf) {
       return;
     }
     e.preventDefault();                       // держим страницу на месте, пока тянем
-    const caret = caretAt(doc, e.clientX, e.clientY);
+    // Событие пришло из того же документа, что и поверхность, — координаты уже её.
+    const caret = caretOn(surf, e.clientX, e.clientY);
     if (caret) { sel.focus = caret; paintSel(); }
   }, { passive: false });
 
@@ -157,8 +169,8 @@ export function wireSelection(surf) {
     pressing = false; sel.pendingMouse = null; clearTimeout(timer);
     if (sel.on) { sel.justEnded = true; commitSel(); }
   };
-  root.addEventListener('pointerup', finish);
-  root.addEventListener('pointercancel', finish);
+  doc.addEventListener('pointerup', finish);
+  doc.addEventListener('pointercancel', finish);
 }
 
 export function commitSel() {

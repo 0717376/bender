@@ -1088,6 +1088,17 @@ check('pdf: выделение на слое даёт якорь страниц�
 check('pdf: панель выделения и метка на странице', pSel.bar && pSel.marks > 0 && pSel.id === pSel.hid,
   `меток: ${pSel.marks}`)
 check('pdf: у выписки записана глава', pSel.chapter === 'Начало', pSel.chapter)
+// Мимо строки каретку в слой ставить нельзя: от такой выделение растягивалось на всю страницу.
+const pCaret = await tpage.evaluate(() => {
+  const span = [...document.querySelectorAll('.textLayer span')]
+    .find(s => s.textContent.trim().length > 12)
+  const b = span.getBoundingClientRect()
+  const near = state.pdf.surf.caret(b.left + 10, b.bottom + 8)
+  const far = state.pdf.surf.caret(b.left + 10, b.bottom + 400)
+  return { near: !!near && near.startContainer.nodeType === 3 && span.contains(near.startContainer),
+           far: far === null }
+})
+check('pdf: каретка целится в строку, а не в пустоту', pCaret.near && pCaret.far, JSON.stringify(pCaret))
 // Метка держится за текст: уходим на другую страницу и возвращаемся.
 await tpage.evaluate(() => state.pdf.goto(3))
 await tpage.waitForTimeout(500)

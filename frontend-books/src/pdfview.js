@@ -5,7 +5,7 @@ import { auth, showAuth } from './auth.js'
 import { $, colorOf, el, API, ls, state, toast } from './core.js'
 import { bookBytes } from './library.js'
 import { scrubbing, syncChrome } from './reader.js'
-import { clearSel, sel, wireSelection } from './selection.js'
+import { caretAt, clearSel, sel, wireSelection } from './selection.js'
 import { openHighlight } from './sheet.js'
 import { hideMenu } from './shelf.js'
 import { lib, saveLib } from './store.js'
@@ -281,11 +281,38 @@ function rangeOf(from, to) {
   return ok && !r.collapsed ? r : null;
 }
 
+/* Строки слоя — отдельные куски, между ними пустота: поля, межстрочье, картинки.
+   Каретка, взятая там напрямую, встаёт в сам слой, и выделение растягивается на всю
+   страницу — потому и «моргало». Поэтому целимся в ближайшую строку, а если рядом нет
+   ни одной, каретки нет вовсе: край выделения просто остаётся на месте. */
+const NEAR = 80;
+
+function caretIn(v, x, y) {
+  const fits = r => r && r.startContainer.nodeType === 3 && v.layer.contains(r.startContainer);
+  const direct = caretAt(document, x, y);
+  if (fits(direct)) return direct;
+  let box = null, dist = Infinity;
+  for (const s of v.layer.querySelectorAll('span')) {
+    if (!s.firstChild) continue;
+    const b = s.getBoundingClientRect();
+    if (b.width < 0.5 || b.height < 0.5) continue;
+    const dx = x < b.left ? b.left - x : x > b.right ? x - b.right : 0;
+    const dy = y < b.top ? b.top - y : y > b.bottom ? y - b.bottom : 0;
+    const d = dy * 4 + dx;          // строку выбираем прежде всего по вертикали
+    if (d < dist) { dist = d; box = b; }
+  }
+  if (!box || dist > NEAR) return null;
+  const snap = caretAt(document, Math.min(Math.max(x, box.left + 1), box.right - 1),
+    box.top + box.height / 2);
+  return fits(snap) ? snap : null;
+}
+
 /** Поверхность выделения: диапазоны живут в самом окне, якорь — страница со смещениями. */
 function surface(v) {
   return {
     root: v.wrap, doc: document,
     origin: () => ({ left: 0, top: 0 }),
+    caret: (x, y) => caretIn(v, x, y),
     anchor: range => {
       const off = offsetsOf(range);
       return off ? `pdf:${v.page}:${off[0]}-${off[1]}` : null;
