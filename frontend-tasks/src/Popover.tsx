@@ -17,12 +17,20 @@ export function Popover({ anchor, className, onClose, children }: {
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const w = el.offsetWidth, h = el.offsetHeight, gap = 8, edge = 10;
-    let left = Math.min(anchor.left, anchor.right - w);
-    left = Math.max(edge, Math.min(left, window.innerWidth - w - edge));
-    let top = anchor.top - h - gap;                                 // prefer above
-    if (top < edge) top = Math.min(anchor.bottom + gap, window.innerHeight - h - edge);
-    setPos({ left, top });
+    const place = () => {
+      const w = el.offsetWidth, h = el.offsetHeight, gap = 8, edge = 10;
+      let left = Math.min(anchor.left, anchor.right - w);
+      left = Math.max(edge, Math.min(left, window.innerWidth - w - edge));
+      let top = anchor.top - h - gap;                                 // prefer above
+      if (top < edge) top = Math.min(anchor.bottom + gap, window.innerHeight - h - edge);
+      setPos({ left, top: Math.max(edge, top) });
+    };
+    place();
+    // Карточка повтора растёт и сжимается на ходу (появилась сетка чисел, ушли дни
+    // недели) — без пересчёта она вылезает за нижний край экрана вместе с «Готово».
+    const ro = new ResizeObserver(place);
+    ro.observe(el);
+    return () => ro.disconnect();
   }, [anchor]);
 
   useEffect(() => {
@@ -32,16 +40,22 @@ export function Popover({ anchor, className, onClose, children }: {
       e.clientX >= anchor.left && e.clientX <= anchor.right &&
       e.clientY >= anchor.top && e.clientY <= anchor.bottom;
     const onDown = (e: MouseEvent) => {
+      // Клик внутри любого поповера — не «снаружи»: у повтора календарь открывается
+      // поверх своей же карточки, и без этого он утаскивал бы её за собой.
+      if ((e.target as Element | null)?.closest?.(".pop")) return;
       if (ref.current && !ref.current.contains(e.target as Node) && !inAnchor(e)) onClose();
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    // Уезжает страница под поповером — закрываем, чтобы он не висел мимо якоря.
+    // Собственная прокрутка (длинная карточка повтора) при этом не считается.
+    const onScroll = (e: Event) => { if (!ref.current?.contains(e.target as Node)) onClose(); };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
-    window.addEventListener("scroll", onClose, true);
+    window.addEventListener("scroll", onScroll, true);
     return () => {
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
-      window.removeEventListener("scroll", onClose, true);
+      window.removeEventListener("scroll", onScroll, true);
     };
   }, [onClose, anchor]);
 

@@ -24,7 +24,7 @@ class TaskIn(BaseModel):
     project: str | int | None = None
     area_id: int | None = None
     tags: list[str] | None = None
-    repeat: dict | None = None  # {unit, interval, mode}
+    repeat: dict | None = None  # правило повтора, см. app/repeat.py
     kind: str = "task"  # 'heading' = section divider inside a project
 
 
@@ -38,7 +38,7 @@ class TaskPatch(BaseModel):
     tags: list[str] | None = None
     status: str | None = None
     sort: float | None = None
-    repeat: dict | None = None  # {} clears the rule (None = field untouched)
+    repeat: dict | None = None  # правило повтора; {} снимает его (None = поле не трогаем)
     # area_id: -1 detaches the task from its area (None = field untouched)
 
 

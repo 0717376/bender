@@ -5,7 +5,7 @@ import { MovePopover, type MoveDest } from "./Popover";
 import { RepeatPopover, repeatLabel } from "./RepeatPopover";
 import { isoToday } from "./dates";
 import { projectColor } from "./colors";
-import { t } from "./i18n";
+import { nextLabel, t } from "./i18n";
 import type { Area, Project, Task } from "./types";
 
 const fmt = (iso: string) => { const [, m, d] = iso.split("-"); return `${d}.${m}`; };
@@ -14,7 +14,7 @@ type Editor = "when" | "deadline" | "project" | "tags" | "checklist" | null;
 
 interface Ops {
   patch: (id: number, body: Record<string, unknown>) => void;
-  remove: (id: number, title: string) => void;
+  remove: (id: number, title: string, kind?: string) => void;
   checkAdd: (taskId: number, title: string) => void;
   checkToggle: (taskId: number, itemId: number, done: boolean) => void;
   checkRemove: (taskId: number, itemId: number) => void;
@@ -100,6 +100,8 @@ export default function TaskDetail({
   const isTodayWhen = task.when_date === isoToday();
   const scheduled = task.someday || !!task.when_date;
   const whenLabel = task.someday ? t("someday_short") : isTodayWhen ? t("view_today") : task.when_date ? fmt(task.when_date) : t("when");
+  // У шаблона нет своей даты: он не выполняется, а порождает копии по правилу.
+  const isTemplate = task.kind === "repeat";
 
   return (
     <div className="detail-inline" onFocusCapture={() => ops.beginEdit(task.id)} onBlurCapture={onBlurCapture}>
@@ -137,7 +139,7 @@ export default function TaskDetail({
         </form>
       )}
 
-      {(proj || area || task.deadline || task.repeat || task.tags.length > 0) && (
+      {(proj || area || task.deadline || task.repeat?.unit || task.tags.length > 0) && (
         <div className="d-chiprow">
           {proj && (
             <button className="vchip" onClick={openProj}>
@@ -149,10 +151,10 @@ export default function TaskDetail({
               <Layers size={12} strokeWidth={2} />{area.title}
             </button>
           )}
-          {task.deadline && (
+          {task.deadline && task.kind !== "repeat" && (
             <button className="vchip dl" onClick={(e) => openDate(e, "deadline")}><Flag size={12} strokeWidth={2} />{fmt(task.deadline)}</button>
           )}
-          {task.repeat && (
+          {task.repeat?.unit && (
             <button className="vchip" onClick={openRep}><Repeat size={12} strokeWidth={2} />{repeatLabel(task.repeat)}</button>
           )}
           {task.tags.map((tag) => (
@@ -182,17 +184,26 @@ export default function TaskDetail({
       )}
 
       <div className="d-bar">
-        <button className={"when-pill" + (scheduled ? " on" : "")} onClick={(e) => openDate(e, "when")}>
-          <Star size={14} strokeWidth={2} fill={isTodayWhen ? "currentColor" : "none"} />
-          {whenLabel}
-        </button>
+        {isTemplate ? (
+          <button className="when-pill on" onClick={openRep}>
+            <Repeat size={14} strokeWidth={2} />
+            {task.next_date ? nextLabel(task.next_date) : t("edit_repeat")}
+          </button>
+        ) : (
+          <button className={"when-pill" + (scheduled ? " on" : "")} onClick={(e) => openDate(e, "when")}>
+            <Star size={14} strokeWidth={2} fill={isTodayWhen ? "currentColor" : "none"} />
+            {whenLabel}
+          </button>
+        )}
         <div className="d-tools">
           <button className={"d-tool" + (task.tags.length ? " on" : "")} onClick={() => toggle("tags")} aria-label={t("tags")}><Hash size={16} strokeWidth={2} /></button>
           <button className={"d-tool" + (editor === "checklist" || checklist.length ? " on" : "")} onClick={() => toggle("checklist")} aria-label={t("checklist")}><ListChecks size={16} strokeWidth={2} /></button>
-          <button className={"d-tool" + (task.deadline ? " on" : "")} onClick={(e) => openDate(e, "deadline")} aria-label={t("deadline")}><Flag size={16} strokeWidth={2} /></button>
-          <button className={"d-tool" + (task.repeat ? " on" : "")} onClick={openRep} aria-label={t("repeat")}><Repeat size={16} strokeWidth={2} /></button>
+          {!isTemplate && (
+            <button className={"d-tool" + (task.deadline ? " on" : "")} onClick={(e) => openDate(e, "deadline")} aria-label={t("deadline")}><Flag size={16} strokeWidth={2} /></button>
+          )}
+          <button className={"d-tool" + (task.repeat?.unit ? " on" : "")} onClick={openRep} aria-label={t("repeat")}><Repeat size={16} strokeWidth={2} /></button>
           <button className={"d-tool" + (proj || area ? " on" : "")} onClick={openProj} aria-label={t("move_to")}><Folder size={16} strokeWidth={2} /></button>
-          <button className="d-tool del" onClick={() => ops.remove(task.id, task.title)} aria-label={t("delete")}><Trash2 size={16} strokeWidth={2} /></button>
+          <button className="d-tool del" onClick={() => ops.remove(task.id, task.title, task.kind)} aria-label={t("delete")}><Trash2 size={16} strokeWidth={2} /></button>
         </div>
       </div>
 
@@ -227,7 +238,7 @@ export default function TaskDetail({
       {repPop && (
         <RepeatPopover
           anchor={repPop}
-          value={task.repeat ?? null}
+          value={task.repeat?.unit ? task.repeat : null}
           onSave={(r) => { ops.patch(task.id, { repeat: r }); setRepPop(null); }}
           onClear={() => { ops.patch(task.id, { repeat: {} }); setRepPop(null); }}
           onClose={() => setRepPop(null)}
