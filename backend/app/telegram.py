@@ -26,7 +26,8 @@ TG_WELCOME = (
     "• Журнал: помню все прошлые разговоры и ищу по ним\n"
     "• Самообучение: запоминаю факты и предпочтения, выучиваю навыки из решённых "
     "задач, а в тихие часы консолидирую выученное\n\n"
-    "Пиши текстом или надиктовывай голосовые. Контекст общий с веб-версией.\n\n"
+    "Пиши текстом или надиктовывай голосовые. Контекст общий с вики и задачами; "
+    "у читалки свой разговор на каждую книгу.\n\n"
     "**Команды**\n"
     "/new — новая сессия (история сохраняется в журнале)\n"
     "/status — сессия, память, навыки, задания\n"
@@ -239,6 +240,24 @@ async def tg_transcribe(client: httpx.AsyncClient, file_id: str, mime: str | Non
     return None
 
 
+def quoted_note(msg: dict) -> str:
+    """На что человек отвечает, если жал «Ответить». Без этого якорь теряется совсем:
+    агент видит голое «давай попробуем» и достраивает смысл из текущего разговора —
+    а тот может быть про другое (например, про книгу, открытую полчаса назад).
+
+    `quote` — выделенный кусок цитаты (Bot API 7.0), он точнее целого сообщения.
+    """
+    src = msg.get("reply_to_message")
+    if not src:
+        return ""
+    body = (msg.get("quote") or {}).get("text") or src.get("text") or src.get("caption") or ""
+    body = " ".join(body.split())[:600]
+    if not body:
+        return ""
+    whose = "твоё" if (src.get("from") or {}).get("is_bot") else "своё"
+    return f"[Пользователь отвечает на {whose} сообщение: «{body}»]"
+
+
 async def tg_handle(client: httpx.AsyncClient, update: dict):
     msg = update.get("message") or update.get("edited_message")
     if not msg:
@@ -312,6 +331,10 @@ async def tg_handle(client: httpx.AsyncClient, update: dict):
         await tg_send(client, chat_id, build_status())
         return
 
+    note = quoted_note(msg)
+    if note:
+        text = f"{note}\n\n{text}"
+
     stop = asyncio.Event()
     typing = asyncio.create_task(tg_typing(client, chat_id, stop))
     draft = Draft(client, chat_id)
@@ -354,15 +377,32 @@ def _when(iso: str | None) -> str:
         return iso.replace("T", " ")[:16]
 
 
+def thread_label(key: str) -> str:
+    """«books:aposd» → «книга «A Philosophy of Software Design»»."""
+    if not key.startswith("books:"):
+        return key
+    from . import books_api
+    try:
+        title = (books_api.meta_of(key.split(":", 1)[1]) or {}).get("title") or ""
+    except Exception:  # noqa: BLE001 — книгу могли снять с полки, нить осталась
+        title = ""
+    return f"книга «{title}»" if title else key
+
+
 def build_status() -> str:
     """Snapshot for /status: session, memory, skills, scheduled jobs. Markdown → tg_send."""
     from . import cron_store, memory_store, session_log, skill_store
-    from .agent import load_session_state, session_age
+    from .agent import MAIN, threads_overview
 
-    sid, _ = load_session_state()
+    threads = threads_overview()
+    main = next((t for t in threads if t["key"] == MAIN), None)
     lines = []
-    lines.append(f"**Сессия** {session_age() or '?'} · {sid[:8]}" if sid
+    lines.append(f"**Сессия** {main['age'] or '?'} · {main['session_id'][:8]}" if main
                  else "**Сессия** новая, контекст пуст")
+    # Читалка ведёт свой разговор на книгу — в общий он не подмешивается.
+    for t in threads:
+        if t["key"] != MAIN:
+            lines.append(f"• {thread_label(t['key'])}: {t['age'] or '?'} · {t['session_id'][:8]}")
     s_n, m_n = session_log.stats()
     lines.append(f"**Журнал** {_plural(s_n, 'сессия', 'сессии', 'сессий')} · "
                  f"{_plural(m_n, 'сообщение', 'сообщения', 'сообщений')}")
