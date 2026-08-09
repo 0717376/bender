@@ -57,8 +57,54 @@ const fmtDM = (isoDate: string) => {
   return `${d} ${MONTHS_GEN[m - 1]}`;
 };
 
+/** ISO-номер дня недели (пн=1) из JS-индекса getDay() (вс=0). */
+const isoDay = (jsDay: number) => (jsDay === 0 ? 7 : jsDay);
+
+/** «вторникам», «вт» → номер дня; null, если это не день недели. */
+function weekdayOf(word: string): number | null {
+  const w = word.toLowerCase();
+  const stems: [string, number][] = [
+    ["понедельник", 1], ["пн", 1], ["вторник", 2], ["вт", 2], ["сред", 3], ["ср", 3],
+    ["четверг", 4], ["чт", 4], ["пятниц", 5], ["пт", 5], ["суббот", 6], ["сб", 6],
+    ["воскресень", 0], ["вс", 0],
+  ];
+  for (const [stem, day] of stems) if (w.startsWith(stem)) return day;
+  return null;
+}
+
 export function parseTitle(text: string): ParsedHint | null {
   let m: RegExpMatchArray | null;
+
+  // --- «по вторникам и четвергам», «по пн, ср, пт» ---
+  // «и» только как отдельное слово: внутри «вторникам» она тоже есть, и разделителем быть не должна
+  m = text.match(word("по\\s+([а-яё]+(?:\\s*,\\s*[а-яё]+|\\s+и\\s+[а-яё]+)*)"));
+  if (m) {
+    const parts = m[1].split(/\s*,\s*|\s+и\s+/u).filter(Boolean);
+    const days = parts.map(weekdayOf);
+    if (days.length && days.every((d) => d !== null)) {
+      const set = [...new Set(days as number[])];
+      const soonest = set.map(nextWeekday).sort()[0]; // ISO-строки сравниваются как даты
+      return {
+        when: soonest,
+        repeat: { unit: "week", interval: 1, mode: "schedule", weekdays: set.map(isoDay).sort((a, b) => a - b) },
+        matched: m[0],
+        label: `${m[0].toLowerCase()} · с ${fmtDM(soonest)}`,
+      };
+    }
+  }
+
+  // --- «каждое 15 число» ---
+  m = text.match(word("кажд(?:ое|ый)\\s+(\\d{1,2})\\s+числ[а-яё]*"));
+  if (m) {
+    const day = parseInt(m[1], 10);
+    if (day >= 1 && day <= 31) {
+      return {
+        repeat: { unit: "month", interval: 1, mode: "schedule", monthday: day },
+        matched: m[0],
+        label: `каждый месяц, ${day} числа`,
+      };
+    }
+  }
 
   // --- Repeat: «каждый день», «каждую неделю», «каждые 3 дня», «каждый вторник» ---
   m = text.match(word("кажд(?:ый|ую|ое|ые)\\s+(?:(\\d+)\\s+)?([а-яё]+)"));
@@ -74,7 +120,7 @@ export function parseTitle(text: string): ParsedHint | null {
         const when = nextWeekday(day);
         return {
           when,
-          repeat: { unit: "week", interval: 1, mode: "schedule" },
+          repeat: { unit: "week", interval: 1, mode: "schedule", weekdays: [isoDay(day)] },
           matched: m[0],
           label: `каждый ${WEEKDAY_LABELS[day]} · с ${fmtDM(when)}`,
         };

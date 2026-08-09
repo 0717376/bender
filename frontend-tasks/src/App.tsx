@@ -440,8 +440,11 @@ function Board() {
       )}
       {confirmDel && (
         <ConfirmModal
-          question={t(confirmDel.kind === "heading" ? "confirm_delete_heading" : "confirm_delete")}
-          detail={confirmDel.title}
+          question={t(confirmDel.kind === "heading" ? "confirm_delete_heading"
+            : confirmDel.kind === "repeat" ? "confirm_delete_repeat" : "confirm_delete")}
+          detail={confirmDel.kind === "repeat"
+            ? `${confirmDel.title} · ${t("confirm_delete_repeat_hint")}`
+            : confirmDel.title}
           onConfirm={() => {
             T.remove(confirmDel.id, confirmDel.title);
             setExpandedId((c) => (c === confirmDel.id ? null : c));

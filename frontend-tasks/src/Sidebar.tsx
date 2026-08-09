@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
-import { CalendarDays, Check, CheckCircle2, CircleDashed, Inbox, Layers, Moon, Plus, Settings, Star, X } from "lucide-react";
+import { CalendarDays, Check, CheckCircle2, CircleDashed, Inbox, Layers, Moon, Plus, Repeat, Settings, Star, X } from "lucide-react";
 import { projectColor } from "./colors";
 import { t } from "./i18n";
 import type { Overview } from "./types";
@@ -15,12 +15,13 @@ const TOP_VIEWS: { key: string; label: string; Icon: IconType }[] = [
   { key: "anytime", label: t("view_anytime"), Icon: Layers },
   { key: "someday", label: t("view_someday"), Icon: Moon },
 ];
+const REPEATS = { key: "repeats", label: t("view_repeats"), Icon: Repeat };
 const LOGBOOK = { key: "logbook", label: t("view_logbook"), Icon: CheckCircle2 };
 
 // Views that accept a dragged task (highlight + actual move). Others are droppable but no-op.
 const TARGET_VIEWS = new Set(["today", "upcoming", "anytime", "someday", "inbox"]);
 
-export const VIEWS = [...TOP_VIEWS, LOGBOOK];
+export const VIEWS = [...TOP_VIEWS, REPEATS, LOGBOOK];
 export const VIEW_ICON: Record<string, IconType> = Object.fromEntries(VIEWS.map((v) => [v.key, v.Icon]));
 
 function NavView({ keyName, label, Icon, active, count, onPick }: {
@@ -234,6 +235,7 @@ export default function Sidebar({
 
       <div className="spacer" />
       <div className="side-foot">
+        {navView(REPEATS.key, REPEATS.label, REPEATS.Icon)}
         {navView(LOGBOOK.key, LOGBOOK.label, LOGBOOK.Icon)}
         <button className="foot-gear" onClick={onSettings} aria-label={t("settings")}>
           <Settings size={16} strokeWidth={1.9} />

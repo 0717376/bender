@@ -112,12 +112,31 @@ const RU = {
   unit_week: "Неделя",
   unit_month: "Месяц",
   unit_year: "Год",
-  interval: "Интервал",
+  interval: "Каждые",
   less: "Меньше",
   more: "Больше",
   by_schedule: "По расписанию",
   after_completion: "После выполнения",
   done_btn: "Готово",
+  by_monthday: "По числу",
+  by_weekday: "По дню недели",
+  last_day: "Последний",
+  starts: "Начиная с",
+  ends: "Заканчивается",
+  end_never: "Никогда",
+  end_after: "После",
+  end_on: "До даты",
+  times_short: "раз",
+  next_up: "Дальше",
+  view_repeats: "Повторы",
+  empty_repeats: "Повторяющихся задач пока нет. Включи повтор в любой задаче — она станет появляться сама.",
+  kicker_repeats: "Правила, по которым задачи возвращаются",
+  repeats_section: "Повторяется",
+  repeat_template: "Шаблон повтора",
+  edit_repeat: "Изменить повтор",
+  skip_occurrence: "Пропустить",
+  confirm_delete_repeat: "Удалить повтор?",
+  confirm_delete_repeat_hint: "Будущие копии тоже исчезнут",
 
   // Sidebar
   close_menu: "Закрыть меню",
@@ -274,12 +293,31 @@ const EN: Record<keyof typeof RU, string> = {
   unit_week: "Week",
   unit_month: "Month",
   unit_year: "Year",
-  interval: "Interval",
+  interval: "Every",
   less: "Less",
   more: "More",
   by_schedule: "On schedule",
   after_completion: "After completion",
   done_btn: "Done",
+  by_monthday: "By date",
+  by_weekday: "By weekday",
+  last_day: "Last",
+  starts: "Starts",
+  ends: "Ends",
+  end_never: "Never",
+  end_after: "After",
+  end_on: "On date",
+  times_short: "times",
+  next_up: "Next",
+  view_repeats: "Repeating",
+  empty_repeats: "No repeating tasks yet. Turn on repeat in any task and it will come back on its own.",
+  kicker_repeats: "Rules that bring tasks back",
+  repeats_section: "Repeats",
+  repeat_template: "Repeat template",
+  edit_repeat: "Edit repeat",
+  skip_occurrence: "Skip",
+  confirm_delete_repeat: "Delete repeat?",
+  confirm_delete_repeat_hint: "Future occurrences will go too",
 
   close_menu: "Close menu",
   no_projects_yet: "No projects yet",
@@ -348,6 +386,9 @@ export const MONTHS: string[] = lang === "ru"
   ? ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
   : ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
+/** Сокращённые месяцы: сетка выбора месяца в правиле повтора. */
+export const MONTHS_SHORT: string[] = MONTHS.map((m) => m.slice(0, 3));
+
 /** Weekday headers for the calendar grid, Monday first. */
 export const WEEKDAYS_SHORT: string[] = lang === "ru"
   ? ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
@@ -388,11 +429,81 @@ const RU_EVERY_ONE: Record<RepeatRule["unit"], string> = {
   year: "каждый год",
 };
 
-/** «каждую неделю», «каждые 3 дня» / "every week", "every 3 days" (+ after-completion suffix). */
-export function repeatPhrase(unit: RepeatRule["unit"], interval: number, afterDone: boolean): string {
-  const base = lang === "ru"
-    ? (interval === 1 ? RU_EVERY_ONE[unit] : `каждые ${interval} ${ruPlural(interval, RU_FORMS[unit])}`)
-    : (interval === 1 ? `every ${unit}` : `every ${interval} ${unit}s`);
-  if (!afterDone) return base;
-  return lang === "ru" ? `${base} после выполнения` : `${base} after completion`;
+/** Родительный падеж: «12 марта» — для дат внутри фразы повтора. */
+export const MONTHS_GEN: string[] = lang === "ru"
+  ? ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"]
+  : MONTHS;
+
+/** «12 авг» — короткая дата для чипов и предпросмотра. */
+export const shortDate = (isoDate: string): string => {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  const month = MONTHS_GEN[m - 1].slice(0, lang === "ru" ? 3 : 3);
+  const year = new Date().getFullYear() === y ? "" : ` ${y}`;
+  return `${d} ${month}${year}`;
+};
+
+// «во вторую среду»: русский требует согласования по роду дня недели, иначе фраза
+// звучит как машинный перевод. Род по ISO-номеру дня: пн/вт/чт — м, ср/пт/сб — ж, вс — с.
+const RU_ORDINAL: Record<"m" | "f" | "n", Record<number, string>> = {
+  m: { 1: "первый", 2: "второй", 3: "третий", 4: "четвёртый", [-1]: "последний" },
+  f: { 1: "первую", 2: "вторую", 3: "третью", 4: "четвёртую", [-1]: "последнюю" },
+  n: { 1: "первое", 2: "второе", 3: "третье", 4: "четвёртое", [-1]: "последнее" },
+};
+const RU_GENDER: ("m" | "f" | "n")[] = ["m", "m", "m", "f", "m", "f", "f", "n"];
+const RU_WEEKDAY_ACC = ["", "понедельник", "вторник", "среду", "четверг", "пятницу", "субботу", "воскресенье"];
+const EN_ORDINALS: Record<number, string> = { 1: "first", 2: "second", 3: "third", 4: "fourth", [-1]: "last" };
+const EN_WEEKDAYS = ["", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+/** «во второй вторник» / "on the second Tuesday". */
+export const nthPhrase = (ordinal: number, weekday: number): string => {
+  if (lang !== "ru") return `on the ${EN_ORDINALS[ordinal]} ${EN_WEEKDAYS[weekday]}`;
+  const word = RU_ORDINAL[RU_GENDER[weekday]][ordinal];
+  return `${word.startsWith("в") ? "во" : "в"} ${word} ${RU_WEEKDAY_ACC[weekday]}`;
+};
+
+/** Короткая подпись переключателя порядка: «2-й» / "2nd". */
+export const ordinalLabel = (n: number): string =>
+  n === -1 ? (lang === "ru" ? "Посл." : "Last") : lang === "ru" ? `${n}-й` : `${n}${["st", "nd", "rd", "th"][n - 1]}`;
+
+/** Человеческое описание правила: «по вт и чт», «каждый месяц, 15 числа · до 31 дек». */
+export function repeatPhrase(rule: RepeatRule, short = false): string {
+  // Снятый повтор доезжает до чипа как пустой объект (так его убирают на сервере) —
+  // фразы у него нет, и падать на этом нельзя.
+  if (!rule?.unit) return "";
+  const { unit, interval } = rule;
+  const ru = lang === "ru";
+  const every = interval === 1
+    ? (ru ? RU_EVERY_ONE[unit] : `every ${unit}`)
+    : (ru ? `каждые ${interval} ${ruPlural(interval, RU_FORMS[unit])}` : `every ${interval} ${unit}s`);
+
+  let base = every;
+  if (unit === "week" && rule.weekdays?.length) {
+    const names = [...rule.weekdays].sort((a, b) => a - b).map((d) => WEEKDAYS_SHORT[d - 1].toLowerCase());
+    const days = ru ? `по ${names.join(", ")}` : `on ${names.join(", ")}`;
+    base = interval === 1 ? days : `${every}, ${days}`;
+  } else if (unit === "month" || unit === "year") {
+    let when = "";
+    if (rule.nth) when = nthPhrase(rule.nth[0], rule.nth[1]);
+    else if (rule.monthday === "last") when = ru ? "в последний день" : "on the last day";
+    else if (rule.monthday) {
+      when = unit === "year"
+        ? (ru ? `${rule.monthday} ${MONTHS_GEN[(rule.month ?? 1) - 1]}` : `on ${MONTHS[(rule.month ?? 1) - 1]} ${rule.monthday}`)
+        : (ru ? `${rule.monthday} числа` : `on the ${rule.monthday}th`);
+    }
+    if (when) base = `${every}, ${when}`;
+  }
+
+  if (rule.mode === "done") base = ru ? `${every} после выполнения` : `${every} after completion`;
+  if (short) return base;
+
+  if (rule.end && "after" in rule.end) {
+    base += ru ? ` · ${rule.end.after} ${ruPlural(rule.end.after, ["раз", "раза", "раз"])}` : ` · ${rule.end.after} times`;
+  } else if (rule.end && "on" in rule.end) {
+    base += ru ? ` · до ${shortDate(rule.end.on)}` : ` · until ${shortDate(rule.end.on)}`;
+  }
+  return base;
 }
+
+/** «следующая 12 авг» — подпись под правилом и в строке шаблона. */
+export const nextLabel = (isoDate: string): string =>
+  lang === "ru" ? `следующая ${shortDate(isoDate)}` : `next ${shortDate(isoDate)}`;

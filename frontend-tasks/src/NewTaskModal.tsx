@@ -121,7 +121,7 @@ export default function NewTaskModal({ view, projects, onCreate, onClose }: {
           onInput={grow}
         />
 
-        {(proj || deadline || repeat) && (
+        {(proj || deadline || repeat?.unit) && (
           <div className="d-chiprow">
             {proj && (
               <button className="vchip" onClick={open("project")}>
@@ -131,7 +131,7 @@ export default function NewTaskModal({ view, projects, onCreate, onClose }: {
             {deadline && (
               <button className="vchip dl" onClick={open("deadline")}><Flag size={12} strokeWidth={2} />{fmt(deadline)}</button>
             )}
-            {repeat && (
+            {repeat?.unit && (
               <button className="vchip" onClick={open("repeat")}><Repeat size={12} strokeWidth={2} />{repeatLabel(repeat)}</button>
             )}
           </div>
@@ -145,7 +145,7 @@ export default function NewTaskModal({ view, projects, onCreate, onClose }: {
           <div className="d-tools">
             <button className={"d-tool" + (deadline ? " on" : "")} onClick={open("deadline")} aria-label={t("deadline")}><Flag size={16} strokeWidth={2} /></button>
             <button className={"d-tool" + (proj ? " on" : "")} onClick={open("project")} aria-label={t("project")}><Folder size={16} strokeWidth={2} /></button>
-            <button className={"d-tool" + (repeat ? " on" : "")} onClick={open("repeat")} aria-label={t("repeat")}><Repeat size={16} strokeWidth={2} /></button>
+            <button className={"d-tool" + (repeat?.unit ? " on" : "")} onClick={open("repeat")} aria-label={t("repeat")}><Repeat size={16} strokeWidth={2} /></button>
           </div>
           <button className="ntm-create" disabled={!title.trim()} onClick={create}>{t("create")}</button>
         </div>

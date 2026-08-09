@@ -48,6 +48,33 @@ describe("parseTitle", () => {
     });
   });
 
+  it("день недели в повторе становится правилом «по вторникам»", () => {
+    expect(parseTitle("бассейн каждый вторник")).toMatchObject({
+      repeat: { unit: "week", interval: 1, weekdays: [2] },
+      when: "2026-07-28",
+    });
+  });
+
+  it("перечисление дней недели", () => {
+    expect(parseTitle("english по вторникам и четвергам")).toMatchObject({
+      repeat: { unit: "week", interval: 1, weekdays: [2, 4] },
+      when: "2026-07-28", // ближайший из перечисленных
+    });
+    expect(parseTitle("зал по пн, ср, пт")).toMatchObject({
+      repeat: { weekdays: [1, 3, 5] },
+    });
+  });
+
+  it("«по» без дней недели за повтор не считается", () => {
+    expect(parseTitle("позвонить по работе")).toBeNull();
+  });
+
+  it("«каждое 15 число» — правило по числу месяца", () => {
+    expect(parseTitle("оплатить квартиру каждое 15 число")).toMatchObject({
+      repeat: { unit: "month", interval: 1, monthday: 15 },
+    });
+  });
+
   it("без подсказки возвращает null", () => {
     expect(parseTitle("просто задача")).toBeNull();
   });

@@ -10,6 +10,7 @@ export type Sel = { kind: "view" | "project" | "area" | "tag"; key: string; id?:
 const VIEW_LABELS: Record<string, string> = {
   today: t("view_today"), inbox: t("view_inbox"), upcoming: t("view_upcoming"),
   anytime: t("view_anytime"), someday: t("view_someday"), logbook: t("view_logbook"),
+  repeats: t("view_repeats"),
 };
 
 // Selection ⇄ URL hash (#today, #project/5, #tag/дом): refresh restores the list, back/forward navigate.
@@ -274,8 +275,9 @@ export function useTasks(pushToast: (t: ToastMsg) => void) {
         const server = await api.patch(id, body);
         setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...server } : t)));
         loadOverview();
-        // when/project reconcile even mid-edit — the row must leave the view right away
-        const affectsMembership = "when" in body || "project" in body || "area_id" in body;
+        // when/project reconcile even mid-edit — the row must leave the view right away;
+        // правка повтора пересобирает будущие копии, поэтому список тоже надо перечитать
+        const affectsMembership = "when" in body || "project" in body || "area_id" in body || "repeat" in body;
         if (affectsMembership || !fieldFocused.current) void loadTasks();
       } catch {
         void reload();

@@ -6,22 +6,24 @@ import TaskDetail from "./TaskDetail";
 import { repeatLabel } from "./RepeatPopover";
 import { projectColor } from "./colors";
 import { isoToday } from "./dates";
-import { agoLabel, t } from "./i18n";
+import { agoLabel, nextLabel, t } from "./i18n";
 import type { Area, Project, Task } from "./types";
 
 const stop = (e: React.SyntheticEvent) => e.stopPropagation();
 
 /** Collapsed-row content (title + meta). Shared by the row and the drag overlay. */
 export function RowBody({ task, projects, areas, onTag }: { task: Task; projects: Project[]; areas: Area[]; onTag?: (tag: string) => void }) {
-  const overdue = task.when_date && task.when_date < isoToday();
+  const isTemplate = task.kind === "repeat";
+  const overdue = !isTemplate && task.when_date && task.when_date < isoToday();
   const overdueDays = overdue ? Math.round((Date.parse(isoToday()) - Date.parse(task.when_date!)) / 86400000) : 0;
   const stale = task.status === "open" && (task.moves ?? 0) >= 3;
   const checkTotal = task.checklist_total ?? 0;
   const proj = task.project_id != null ? projects.find((p) => p.id === task.project_id) : null;
   const area = !proj && task.area_id != null ? areas.find((a) => a.id === task.area_id) : null;
   // In Today every row's when_date == today → suppress that chip; keep overdue/future.
-  const showWhen = task.when_date && task.when_date !== isoToday();
-  const hasMeta = proj || area || showWhen || stale || task.deadline || task.repeat || checkTotal > 0 || task.tags.length > 0;
+  // У шаблона своей даты нет — вместо неё дата ближайшей копии.
+  const showWhen = !isTemplate && task.when_date && task.when_date !== isoToday();
+  const hasMeta = proj || area || showWhen || stale || task.deadline || task.repeat?.unit || checkTotal > 0 || task.tags.length > 0;
   return (
     <>
       <div className="title">{task.title}</div>
@@ -43,8 +45,9 @@ export function RowBody({ task, projects, areas, onTag }: { task: Task; projects
               <History size={12} strokeWidth={2} />×{task.moves}
             </span>
           )}
-          {task.deadline && <span className="chip dl"><Flag size={12} strokeWidth={2} />{task.deadline}</span>}
-          {task.repeat && <span className="chip"><Repeat size={12} strokeWidth={2} />{repeatLabel(task.repeat, true)}</span>}
+          {task.deadline && !isTemplate && <span className="chip dl"><Flag size={12} strokeWidth={2} />{task.deadline}</span>}
+          {task.repeat?.unit && <span className="chip"><Repeat size={12} strokeWidth={2} />{repeatLabel(task.repeat, true)}</span>}
+          {isTemplate && task.next_date && <span className="chip"><Calendar size={13} strokeWidth={2} />{nextLabel(task.next_date)}</span>}
           {checkTotal > 0 && (
             <span className="chip"><ListChecks size={13} strokeWidth={2} />{task.checklist_done ?? 0}/{checkTotal}</span>
           )}
@@ -219,14 +222,19 @@ export default function TaskRow({
       }
     >
       <div className="task-head" {...attributes} {...listeners} onClick={() => onExpand(expanded ? null : task.id)}>
-        <button
-          className={"check" + (done ? " done" : "")}
-          onPointerDown={stop}
-          onClick={(e) => { stop(e); ops.toggle(task); }}
-          aria-label={done ? t("mark_open") : t("mark_done")}
-        >
-          {done && <Check size={13} strokeWidth={3.2} />}
-        </button>
+        {task.kind === "repeat" ? (
+          // Шаблон нельзя выполнить — выполняют его копии, поэтому вместо галочки метка.
+          <span className="check repeat-mark" title={t("repeat_template")}><Repeat size={13} strokeWidth={2.4} /></span>
+        ) : (
+          <button
+            className={"check" + (done ? " done" : "")}
+            onPointerDown={stop}
+            onClick={(e) => { stop(e); ops.toggle(task); }}
+            aria-label={done ? t("mark_open") : t("mark_done")}
+          >
+            {done && <Check size={13} strokeWidth={3.2} />}
+          </button>
+        )}
 
         {expanded ? (
           <input

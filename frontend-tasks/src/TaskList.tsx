@@ -17,13 +17,14 @@ const EMPTY: Record<string, string> = {
   anytime: t("empty_anytime"),
   someday: t("empty_someday"),
   logbook: t("empty_logbook"),
+  repeats: t("empty_repeats"),
   project: t("empty_project"),
   tag: t("empty_tag"),
 };
 
 interface Ops {
   patch: (id: number, body: Record<string, unknown>) => void;
-  remove: (id: number, title: string) => void;
+  remove: (id: number, title: string, kind?: string) => void;
   toggle: (t: Task) => void;
   checkAdd: (taskId: number, title: string) => void;
   checkToggle: (taskId: number, itemId: number, done: boolean) => void;
@@ -37,6 +38,7 @@ const KICKERS: Record<string, string> = {
   upcoming: t("kicker_upcoming"),
   anytime: t("kicker_anytime"),
   someday: t("kicker_someday"),
+  repeats: t("kicker_repeats"),
 };
 
 function cap(s: string): string { return s.charAt(0).toUpperCase() + s.slice(1); }
@@ -169,7 +171,10 @@ export default function TaskList({
   const isToday = view.kind === "view" && view.key === "today";
   const isUpcoming = view.kind === "view" && view.key === "upcoming";
   const isLogbook = view.kind === "view" && view.key === "logbook";
+  const isRepeats = view.kind === "view" && view.key === "repeats";
   const draggable = isProject || isArea || (view.kind === "view" && DRAGGABLE_VIEWS.has(view.key));
+  // В проект и сферу шаблоны приезжают вместе с задачами — но живут отдельным блоком внизу.
+  const templates = isRepeats ? [] : tasks.filter((t) => t.kind === "repeat");
 
   const emptyMsg = isProject ? EMPTY.project : isArea ? t("empty_area")
     : view.kind === "tag" ? EMPTY.tag : EMPTY[view.key] ?? t("empty_generic");
@@ -198,9 +203,10 @@ export default function TaskList({
     : KICKERS[view.key] ?? "";
 
   const today = isoToday();
+  const items = templates.length ? tasks.filter((t) => t.kind !== "repeat") : tasks;
   // A task mid-drag from Overdue previews as a member of the Today group.
-  const overdue = isToday ? tasks.filter((t) => isOverdue(t, today) && t.id !== previewTodayId) : [];
-  const onTime = isToday ? tasks.filter((t) => !overdue.includes(t)) : tasks;
+  const overdue = isToday ? items.filter((t) => isOverdue(t, today) && t.id !== previewTodayId) : [];
+  const onTime = isToday ? items.filter((t) => !overdue.includes(t)) : items;
 
   const row = (t: Task, drag: boolean) => (
     <TaskRow
@@ -237,7 +243,7 @@ export default function TaskList({
               ? <TitleEdit key={`${view.kind}:${view.id}:${view.label}`} value={view.label} onSave={onRenameView} />
               : <h1>{view.label}</h1>}
           </div>
-          {(isToday || isProject) && <Ring done={doneTasks.length} open={tasks.filter((t) => t.kind !== "heading").length} />}
+          {(isToday || isProject) && <Ring done={doneTasks.length} open={items.filter((t) => t.kind !== "heading").length} />}
           {isProject && (
             <div className="head-actions">
               <button className="head-btn" onClick={() => setAddingHead(true)}>
@@ -310,7 +316,7 @@ export default function TaskList({
                 </SortableContext>
               </>
             ) : (
-              <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+              <SortableContext items={items.map((t) => t.id)} strategy={verticalListSortingStrategy}>
                 {isUpcoming || isLogbook
                   ? sections(onTime, (t) => (isUpcoming ? upcomingLabel(t.when_date ?? today) : logbookLabel(t.completed_at ?? today))).map((s) => (
                       <li key={s.label} className="group-li">
@@ -322,6 +328,13 @@ export default function TaskList({
               </SortableContext>
             )}
           </ul>
+        )}
+
+        {templates.length > 0 && (
+          <div className="rep-block">
+            <div className="group-head">{t("repeats_section")}</div>
+            <ul className="tasks">{templates.map((t) => row(t, false))}</ul>
+          </div>
         )}
 
         {addingHead && (
@@ -356,7 +369,8 @@ export default function TaskList({
         )}
       </div>
 
-      {view.key !== "logbook" && (
+      {/* «Повторы» — список правил, а не место для новой задачи: повтор включают в задаче */}
+      {view.key !== "logbook" && !isRepeats && (
         <button className="fab" onClick={onNewTask} aria-label={t("new_task")}>
           <Plus size={24} strokeWidth={2.2} />
         </button>
