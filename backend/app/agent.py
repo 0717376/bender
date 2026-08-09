@@ -338,8 +338,8 @@ async def _books_ro_hook(input_data, tool_use_id, context):  # noqa: ARG001 — 
     }
 
 
-def build_options(resume: str | None, surface: str = "wiki", interactive: bool = True,
-                  extra_context: str | None = None) -> ClaudeAgentOptions:
+def build_options(resume: str | None, surface: str = "wiki",
+                  interactive: bool = True) -> ClaudeAgentOptions:
     # Tasks, skills (read+author), memory-read injection and subagents (Task) are always
     # available. Cron/memory WRITE tools are interactive-only (not inside scheduled runs).
     tools = (config.ALLOWED_TOOLS + TASK_TOOL_NAMES + SKILL_TOOL_NAMES + SESSION_TOOL_NAMES
@@ -347,8 +347,6 @@ def build_options(resume: str | None, surface: str = "wiki", interactive: bool =
     if interactive:
         tools = tools + CRON_TOOL_NAMES + MEMORY_TOOL_NAMES
     append = _compose_prompt(surface, resume)
-    if extra_context:
-        append = f"{append}\n\n{extra_context}"
     # Domain skills (wiki/tasks) are native SDK Skills loaded from our plugin dir. The Skill
     # tool is auto-added by the SDK when skills are enabled. A per-surface hook nudges the
     # domain frontends toward the right skill; Telegram gets none (model self-selects).
@@ -415,14 +413,17 @@ async def run_ws(emit: Emit, message: str, surface: str = "wiki", thread: str = 
         raw = message
         message = f"{clock.stamp()}\n{message}"  # live clock: the session's system-prompt date goes stale
         # Крон пишет в телеграм, то есть в общую нить: в разговоре про книгу этот блок —
-        # чужой шум.
-        pending = cron_outbox.pending_block() if thread == MAIN else ""
+        # чужой шум. Клеится к реплике, а не к инструкциям: отправленное сообщение —
+        # часть беседы, и в стенограмме оно останется.
+        note, keys = cron_outbox.pending() if thread == MAIN else ("", [])
+        if note:
+            message = f"{note}\n\n{message}"
         try:
-            await _run_ws(emit, message, surface, pending, raw, thread)
+            await _run_ws(emit, message, surface, raw, thread, keys)
         except _StaleSession:
             logger.warning("stale session in run_ws; cleared, retrying fresh")
             clear_session(thread)
-            await _run_ws(emit, message, surface, pending, raw, thread)
+            await _run_ws(emit, message, surface, raw, thread, keys)
 
 
 EXPIRED_NOTE = (
@@ -431,8 +432,8 @@ EXPIRED_NOTE = (
 )
 
 
-async def _run_ws(emit: Emit, message: str, surface: str, pending: str, raw: str,
-                  thread: str = MAIN) -> None:
+async def _run_ws(emit: Emit, message: str, surface: str, raw: str,
+                  thread: str = MAIN, outbox_keys: list[str] | None = None) -> None:
     sid, expired = load_session_state(thread)
     if expired:
         message = EXPIRED_NOTE + message
@@ -451,7 +452,7 @@ async def _run_ws(emit: Emit, message: str, surface: str, pending: str, raw: str
         await emit(ev)
 
     try:
-        async for m in query(prompt=message, options=build_options(sid, surface, extra_context=pending)):
+        async for m in query(prompt=message, options=build_options(sid, surface)):
             if isinstance(m, StreamEvent):
                 ev = m.event
                 itype = ev.get("type", "")
@@ -493,6 +494,7 @@ async def _run_ws(emit: Emit, message: str, surface: str, pending: str, raw: str
                     await emit({"t": "error", "text": _error_text(m)})
 
         save_session(thread, final_sid)
+        cron_outbox.drop(outbox_keys or [])  # доехало до стенограммы — вычёркиваем
         session_log.log_turn(final_sid, surface, raw, "\n\n".join(reply_parts))
         await emit({"t": "done", "sid": final_sid})
         from . import reviewer
@@ -517,7 +519,9 @@ async def run_collect(message: str, on_tool: Callable[[str, str], Awaitable[None
     async with claude_lock:
         raw = message
         message = f"{clock.stamp()}\n{message}"  # live clock: the session's system-prompt date goes stale
-        pending = cron_outbox.pending_block() if thread == MAIN else ""
+        note, keys = cron_outbox.pending() if thread == MAIN else ("", [])
+        if note:
+            message = f"{note}\n\n{message}"
         for attempt in (1, 2):  # attempt 2 only runs after a stale-session reset
             sid, expired = load_session_state(thread)
             prompt = (EXPIRED_NOTE + message) if expired else message
@@ -528,7 +532,7 @@ async def run_collect(message: str, on_tool: Callable[[str, str], Awaitable[None
             had_error = False
 
             try:
-                async for m in query(prompt=prompt, options=build_options(sid, surface, extra_context=pending)):
+                async for m in query(prompt=prompt, options=build_options(sid, surface)):
                     if isinstance(m, StreamEvent) and on_delta:
                         ev = m.event
                         delta = ev.get("delta", {}) if ev.get("type") == "content_block_delta" else {}
@@ -564,6 +568,7 @@ async def run_collect(message: str, on_tool: Callable[[str, str], Awaitable[None
                 return "Что-то пошло не так при обработке запроса."
 
             save_session(thread, final_sid)
+            cron_outbox.drop(keys)  # доехало до стенограммы — вычёркиваем
             if had_error:
                 return "Ошибка Claude. Попробуйте начать новую сессию (/new)."
             reply = (result_text or "\n\n".join(texts)).strip()

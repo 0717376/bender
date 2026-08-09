@@ -27,15 +27,27 @@ NOW = datetime(2026, 8, 9, 20, 0)
 
 # ── Окно доставок ──
 
-def test_блок_не_выпивается_первым_ходом(outbox):
-    """Так и сломалось: доставку съел вопрос из читалки, а ответ в телеграм пришёл в пустоту."""
+def test_доставка_ждёт_пока_ход_не_дойдёт_до_конца(outbox):
+    """Так и сломалось: доставку съел вопрос из читалки, а ответ в телеграм пришёл
+    в пустоту. Пока ход не завершился, запись остаётся на месте."""
     outbox.record_delivery("Шкала Бёрнса", "Пора пройти шкалу за неделю", when=NOW)
 
-    first = outbox.pending_block(NOW + timedelta(minutes=19))
-    later = outbox.pending_block(NOW + timedelta(minutes=47))
+    first, _ = outbox.pending(NOW + timedelta(minutes=19))
+    later, keys = outbox.pending(NOW + timedelta(minutes=47))
 
     assert "Пора пройти шкалу" in first
     assert later == first
+    assert keys
+
+
+def test_вычеркнутая_доставка_не_возвращается(outbox):
+    """Ход дошёл до конца — доставка уже в стенограмме, второй раз клеить незачем."""
+    outbox.record_delivery("Шкала Бёрнса", "Пора пройти шкалу", when=NOW)
+    _, keys = outbox.pending(NOW)
+
+    outbox.drop(keys)
+
+    assert outbox.pending(NOW) == ("", [])
 
 
 def test_в_блоке_есть_задание(outbox):
@@ -43,7 +55,7 @@ def test_в_блоке_есть_задание(outbox):
     outbox.record_delivery("Шкала Бёрнса", "Пора пройти шкалу",
                            "Напомнить и записать балл; ответит баллом — оформить в вики", when=NOW)
 
-    assert "оформить в вики" in outbox.pending_block(NOW)
+    assert "оформить в вики" in outbox.pending(NOW)[0]
 
 
 def test_протухшее_уходит_и_из_файла(outbox):
@@ -51,7 +63,7 @@ def test_протухшее_уходит_и_из_файла(outbox):
     outbox.record_delivery("Вчерашнее", "старьё", when=old)
     outbox.record_delivery("Сегодняшнее", "свежак", when=NOW)
 
-    block = outbox.pending_block(NOW)
+    block, _ = outbox.pending(NOW)
 
     assert "свежак" in block and "старьё" not in block
     assert [d["name"] for d in outbox._read()] == ["Сегодняшнее"]
@@ -62,11 +74,11 @@ def test_запись_старого_формата_отбрасывается(o
     (tmp_path / "cron_outbox.json").write_text(
         '[{"at": "20:00", "name": "Старое", "text": "было"}]', encoding="utf-8")
 
-    assert outbox.pending_block(NOW) == ""
+    assert outbox.pending(NOW) == ("", [])
 
 
 def test_пусто_когда_нечего_отдавать(outbox):
-    assert outbox.pending_block(NOW) == ""
+    assert outbox.pending(NOW) == ("", [])
 
 
 # ── Якорь ответа в Telegram ──

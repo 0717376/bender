@@ -115,6 +115,7 @@ def engine(tmp_path, monkeypatch):
     seen: dict = {}
 
     def fake_query(prompt, options):
+        seen["prompt"] = prompt
         seen["append"] = options.system_prompt["append"]
 
         async def nothing():
@@ -134,14 +135,32 @@ def turn(engine, thread):
         return None
 
     asyncio.run(agent.run_ws(emit, "привет", "books", thread))
-    return seen["append"]
+    return seen
 
 
 def test_фоновые_доставки_идут_в_общую_нить(engine):
     _, cron_outbox, _ = engine
     cron_outbox.record_delivery("Шкала Бёрнса", "Пора пройти шкалу")
 
-    assert "ФОНОВЫЕ ДОСТАВКИ" in turn(engine, "main")
+    assert "ФОНОВЫЕ ДОСТАВКИ" in turn(engine, "main")["prompt"]
+
+
+def test_доставка_едет_в_реплике_а_не_в_инструкциях(engine):
+    """Системный промпт пересобирается каждый ход и в переписку не попадает; отправленное
+    сообщение — часть беседы, ему место в стенограмме."""
+    _, cron_outbox, _ = engine
+    cron_outbox.record_delivery("Шкала Бёрнса", "Пора пройти шкалу")
+
+    assert "ФОНОВЫЕ ДОСТАВКИ" not in turn(engine, "main")["append"]
+
+
+def test_доставка_вычёркивается_после_хода(engine):
+    """Она уже в стенограмме — клеить её к каждой следующей реплике незачем."""
+    _, cron_outbox, _ = engine
+    cron_outbox.record_delivery("Шкала Бёрнса", "Пора пройти шкалу")
+    turn(engine, "main")
+
+    assert "ФОНОВЫЕ ДОСТАВКИ" not in turn(engine, "main")["prompt"]
 
 
 def test_в_разговор_про_книгу_доставки_не_лезут(engine):
@@ -149,4 +168,4 @@ def test_в_разговор_про_книгу_доставки_не_лезут(
     _, cron_outbox, _ = engine
     cron_outbox.record_delivery("Шкала Бёрнса", "Пора пройти шкалу")
 
-    assert "ФОНОВЫЕ ДОСТАВКИ" not in turn(engine, "books:aposd")
+    assert "ФОНОВЫЕ ДОСТАВКИ" not in turn(engine, "books:aposd")["prompt"]
