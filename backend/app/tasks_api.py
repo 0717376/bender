@@ -206,6 +206,12 @@ async def project_patch(project_id: int, req: ProjectPatch):
     return p
 
 
+@router.delete("/projects/{project_id}")
+async def project_delete(project_id: int):
+    store.delete_project(project_id)
+    return {"ok": True}
+
+
 @router.post("/areas")
 async def area_create(req: AreaIn):
     return {"id": store.create_area(req.title)}

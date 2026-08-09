@@ -127,6 +127,7 @@ export default function TaskList({
   onAddHeading,
   onRenameView,
   onDeleteArea,
+  onDeleteProject,
   onOpenProject,
   progress,
   onTag,
@@ -151,6 +152,7 @@ export default function TaskList({
   onAddHeading: (title: string) => void;
   onRenameView: (title: string) => void;
   onDeleteArea: () => void;
+  onDeleteProject: () => void;
   onOpenProject: (id: number) => void;
   progress: Record<number, { open: number; total: number }>;
   onTag: (tag: string) => void;
@@ -248,6 +250,9 @@ export default function TaskList({
             <div className="head-actions">
               <button className="head-btn" onClick={() => setAddingHead(true)}>
                 <ListPlus size={13} strokeWidth={2} />{t("add_heading")}
+              </button>
+              <button className="head-btn" onClick={onDeleteProject}>
+                <Trash2 size={13} strokeWidth={2} />{t("delete")}
               </button>
             </div>
           )}

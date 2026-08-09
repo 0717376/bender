@@ -70,6 +70,7 @@ export const api = {
   reorder: (ids: number[]) => req<{ ok: boolean }>("POST", "/tasks/reorder", { ids }),
   createProject: (title: string, area_id?: number | null) =>
     req<{ id: number }>("POST", "/tasks/projects", { title, area_id }),
+  removeProject: (id: number) => req<{ ok: boolean }>("DELETE", `/tasks/projects/${id}`),
   createArea: (title: string) => req<{ id: number }>("POST", "/tasks/areas", { title }),
   updateArea: (id: number, title: string) =>
     req<Record<string, unknown>>("PATCH", `/tasks/areas/${id}`, { title }),

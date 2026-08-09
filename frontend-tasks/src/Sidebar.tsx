@@ -14,14 +14,15 @@ const TOP_VIEWS: { key: string; label: string; Icon: IconType }[] = [
   { key: "upcoming", label: t("view_upcoming"), Icon: CalendarDays },
   { key: "anytime", label: t("view_anytime"), Icon: Layers },
   { key: "someday", label: t("view_someday"), Icon: Moon },
+  // «Повторы» — такой же список задач, как остальные; в подвале он теснил Журнал с шестернёй
+  { key: "repeats", label: t("view_repeats"), Icon: Repeat },
 ];
-const REPEATS = { key: "repeats", label: t("view_repeats"), Icon: Repeat };
 const LOGBOOK = { key: "logbook", label: t("view_logbook"), Icon: CheckCircle2 };
 
 // Views that accept a dragged task (highlight + actual move). Others are droppable but no-op.
 const TARGET_VIEWS = new Set(["today", "upcoming", "anytime", "someday", "inbox"]);
 
-export const VIEWS = [...TOP_VIEWS, REPEATS, LOGBOOK];
+export const VIEWS = [...TOP_VIEWS, LOGBOOK];
 export const VIEW_ICON: Record<string, IconType> = Object.fromEntries(VIEWS.map((v) => [v.key, v.Icon]));
 
 function NavView({ keyName, label, Icon, active, count, onPick }: {
@@ -161,81 +162,82 @@ export default function Sidebar({
   const ungrouped = projects.filter((p) => p.area_id == null);
 
   return (
-    <aside className={"sidebar scroll" + (dragging ? " dragging" : "")}>
+    <aside className={"sidebar" + (dragging ? " dragging" : "")}>
       <div className="brand">
         <span className="logo"><Check size={16} strokeWidth={3} /></span>
         <span className="word">{t("app_title")}</span>
         {onClose && <button className="side-x" onClick={onClose} aria-label={t("close_menu")}><X size={16} /></button>}
       </div>
 
-      {TOP_VIEWS.map((v) => navView(v.key, v.label, v.Icon))}
+      <div className="side-scroll scroll">
+        {TOP_VIEWS.map((v) => navView(v.key, v.label, v.Icon))}
 
-      <div className="side-divider" />
+        <div className="side-divider" />
 
-      {areas.map((a) => {
-        const inArea = projects.filter((p) => p.area_id === a.id);
-        return (
-          <div key={a.id}>
-            <AreaBtn
-              id={a.id}
-              title={a.title}
-              active={view.kind === "area" && view.id === a.id}
-              onPick={() => pick({ kind: "area", key: "a", id: a.id, label: a.title })}
+        {areas.map((a) => {
+          const inArea = projects.filter((p) => p.area_id === a.id);
+          return (
+            <div key={a.id}>
+              <AreaBtn
+                id={a.id}
+                title={a.title}
+                active={view.kind === "area" && view.id === a.id}
+                onPick={() => pick({ kind: "area", key: "a", id: a.id, label: a.title })}
+              />
+              {inArea.map(projBtn)}
+            </div>
+          );
+        })}
+
+        {(ungrouped.length > 0 || draggingProject) && <NoAreaTarget highlight={!!draggingProject} />}
+        {ungrouped.map(projBtn)}
+
+        {adding === "project" || adding === "area" ? (
+          <form
+            className="proj-add"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (name.trim()) (adding === "area" ? onCreateArea : onCreateProject)(name.trim());
+              setName("");
+              setAdding(null);
+            }}
+          >
+            <input
+              autoFocus
+              placeholder={adding === "area" ? t("area_name") : t("project_name")}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onBlur={() => { if (!name.trim()) setAdding(null); }}
+              onKeyDown={(e) => e.key === "Escape" && setAdding(null)}
             />
-            {inArea.map(projBtn)}
+          </form>
+        ) : adding === "choose" ? (
+          <div className="newlist" onMouseLeave={() => setAdding(null)}>
+            <button className="newlist-opt" onClick={() => setAdding("project")}>
+              <span className="ic"><CircleDashed size={16} strokeWidth={1.9} /></span>
+              <span>
+                <span className="nl-name">{t("new_project")}</span>
+                <span className="nl-hint">{t("new_project_hint")}</span>
+              </span>
+            </button>
+            <button className="newlist-opt" onClick={() => setAdding("area")}>
+              <span className="ic"><Layers size={16} strokeWidth={1.9} /></span>
+              <span>
+                <span className="nl-name">{t("new_area")}</span>
+                <span className="nl-hint">{t("new_area_hint")}</span>
+              </span>
+            </button>
           </div>
-        );
-      })}
-
-      {(ungrouped.length > 0 || draggingProject) && <NoAreaTarget highlight={!!draggingProject} />}
-      {ungrouped.map(projBtn)}
-
-      {adding === "project" || adding === "area" ? (
-        <form
-          className="proj-add"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (name.trim()) (adding === "area" ? onCreateArea : onCreateProject)(name.trim());
-            setName("");
-            setAdding(null);
-          }}
-        >
-          <input
-            autoFocus
-            placeholder={adding === "area" ? t("area_name") : t("project_name")}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onBlur={() => { if (!name.trim()) setAdding(null); }}
-            onKeyDown={(e) => e.key === "Escape" && setAdding(null)}
-          />
-        </form>
-      ) : adding === "choose" ? (
-        <div className="newlist" onMouseLeave={() => setAdding(null)}>
-          <button className="newlist-opt" onClick={() => setAdding("project")}>
-            <span className="ic"><CircleDashed size={16} strokeWidth={1.9} /></span>
-            <span>
-              <span className="nl-name">{t("new_project")}</span>
-              <span className="nl-hint">{t("new_project_hint")}</span>
-            </span>
+        ) : (
+          <button className="nav muted" onClick={() => setAdding("choose")}>
+            <span className="ic"><Plus size={16} strokeWidth={1.9} /></span>
+            <span className="lbl">{t("new_list")}</span>
           </button>
-          <button className="newlist-opt" onClick={() => setAdding("area")}>
-            <span className="ic"><Layers size={16} strokeWidth={1.9} /></span>
-            <span>
-              <span className="nl-name">{t("new_area")}</span>
-              <span className="nl-hint">{t("new_area_hint")}</span>
-            </span>
-          </button>
-        </div>
-      ) : (
-        <button className="nav muted" onClick={() => setAdding("choose")}>
-          <span className="ic"><Plus size={16} strokeWidth={1.9} /></span>
-          <span className="lbl">{t("new_list")}</span>
-        </button>
-      )}
+        )}
 
-      <div className="spacer" />
+      </div>
+
       <div className="side-foot">
-        {navView(REPEATS.key, REPEATS.label, REPEATS.Icon)}
         {navView(LOGBOOK.key, LOGBOOK.label, LOGBOOK.Icon)}
         <button className="foot-gear" onClick={onSettings} aria-label={t("settings")}>
           <Settings size={16} strokeWidth={1.9} />
