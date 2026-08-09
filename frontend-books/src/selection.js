@@ -175,7 +175,10 @@ export function wireSelection(surf) {
     if (selSpan()) paintSel(); else sel.focus = was;
   }, { passive: false });
 
+  // Только своё отпускание: слушаем весь документ, и без этой проверки палец, снятый
+  // с кнопки панели, пересобирал бы панель — кнопку сносит из DOM раньше, чем долетит клик.
   const finish = () => {
+    if (!pressing) return;
     pressing = false; sel.pendingMouse = null; clearTimeout(timer);
     if (sel.on) { sel.justEnded = true; commitSel(); }
   };

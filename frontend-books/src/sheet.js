@@ -344,26 +344,79 @@ export function followUp(text) {
   send(text);
 }
 
-/** Минимальный markdown: агент отвечает списками и жирным, а не голым текстом. */
+/* ── Markdown ──
+   Агент отвечает разметкой, и читать её решёткой и звёздочками — то же, что читать
+   исходник. Разбираем построчно: заголовки, списки (в том числе нумерованные), цитаты,
+   код и линейку. Вложенных списков и таблиц сознательно нет — агент их в ответах
+   про книгу не пишет, а разбор от них раздувается вдвое. */
+
+const BULLET = /^\s*[-*•·]\s+(.*)$/;
+const NUMBER = /^\s*(\d{1,3})[.)]\s+(.*)$/;
+const QUOTE = /^\s*>\s?(.*)$/;
+const RULE = /^\s*(?:[-*_]\s*){3,}$/;
+const HEAD = /^\s*(#{1,6})\s+(.*)$/;
+
 export function md(text) {
-  const src = String(text || '');
-  const blocks = src.split(/\n{2,}/);
-  return blocks.map(b => {
-    const lines = b.split('\n');
-    if (/^```/.test(b)) return '<pre>' + escapeHtml(b.replace(/^```\w*\n?|```$/g, '')) + '</pre>';
-    if (lines.every(l => /^\s*[-*·]\s+/.test(l) || !l.trim())) {
-      const li = lines.filter(l => l.trim()).map(l => '<li>' + inline(l.replace(/^\s*[-*·]\s+/, '')) + '</li>').join('');
-      return '<ul>' + li + '</ul>';
+  const lines = String(text || '').replace(/\r/g, '').split('\n');
+  const out = [];
+  let i = 0;
+  const take = (re, pick) => {           // подряд идущие строки одного вида
+    const got = [];
+    while (i < lines.length) {
+      const m = re.exec(lines[i]);
+      if (!m) break;
+      got.push(pick(m)); i++;
     }
-    if (/^#{1,6}\s+/.test(b)) return '<b class="h">' + inline(b.replace(/^#{1,6}\s+/, '')) + '</b>';
-    return '<p>' + lines.map(inline).join('<br>') + '</p>';
-  }).join('');
+    return got;
+  };
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line.trim()) { i++; continue; }
+    if (/^\s*```/.test(line)) {
+      i++;
+      const code = [];
+      while (i < lines.length && !/^\s*```/.test(lines[i])) code.push(lines[i++]);
+      i++;                                // закрывающая ограда (её может и не быть)
+      out.push('<pre>' + escapeHtml(code.join('\n')) + '</pre>');
+      continue;
+    }
+    if (RULE.test(line)) { out.push('<hr>'); i++; continue; }
+    const h = HEAD.exec(line);
+    if (h) { out.push(`<b class="h h${h[1].length}">${inline(h[2])}</b>`); i++; continue; }
+    if (BULLET.test(line)) {
+      out.push('<ul>' + take(BULLET, m => `<li>${inline(m[1])}</li>`).join('') + '</ul>');
+      continue;
+    }
+    if (NUMBER.test(line)) {
+      const start = +NUMBER.exec(line)[1];
+      const li = take(NUMBER, m => `<li>${inline(m[2])}</li>`).join('');
+      out.push(`<ol${start > 1 ? ` start="${start}"` : ''}>${li}</ol>`);
+      continue;
+    }
+    if (QUOTE.test(line)) {
+      out.push('<blockquote>' + take(QUOTE, m => inline(m[1])).join('<br>') + '</blockquote>');
+      continue;
+    }
+    // Абзац — до пустой строки или до начала другого блока.
+    const para = [];
+    while (i < lines.length && lines[i].trim() && !BULLET.test(lines[i]) && !NUMBER.test(lines[i])
+      && !QUOTE.test(lines[i]) && !HEAD.test(lines[i]) && !RULE.test(lines[i])
+      && !/^\s*```/.test(lines[i])) para.push(lines[i++]);
+    out.push('<p>' + para.map(inline).join('<br>') + '</p>');
+  }
+  return out.join('');
 }
+
 export function inline(s) {
   return escapeHtml(s)
     .replace(/`([^`]+)`/g, '<code>$1</code>')
+    // Ссылки только http(s): подставлять в href что угодно из ответа нельзя.
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
     .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
-    .replace(/(^|[\s(])\*([^*\n]+)\*/g, '$1<i>$2</i>');
+    .replace(/__([^_]+)__/g, '<b>$1</b>')
+    .replace(/~~([^~]+)~~/g, '<s>$1</s>')
+    .replace(/(^|[\s(])\*([^*\n]+)\*/g, '$1<i>$2</i>')
+    .replace(/(^|[\s(])_([^_\n]+)_/g, '$1<i>$2</i>');
 }
 
 export function openHighlight(h) {

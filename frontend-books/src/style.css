@@ -327,9 +327,16 @@ canvas.pdfpage { display: block; box-shadow: 0 1px 8px rgba(0, 0, 0, .12); borde
 #sheetBody { flex: 1 1 auto; min-height: 0; padding: 0 16px 12px; overflow: auto;
   font-size: 15px; line-height: 1.6; -webkit-overflow-scrolling: touch; }
 #sheetBody p { margin: 0 0 11px; }
-#sheetBody ul { margin: 0 0 11px; padding-left: 20px; }
+#sheetBody ul, #sheetBody ol { margin: 0 0 11px; padding-left: 22px; }
 #sheetBody li { margin: 0 0 5px; }
+#sheetBody li::marker { color: var(--text-3); }
 #sheetBody b.h { display: block; margin: 14px 0 6px; font-size: 14px; }
+#sheetBody b.h1, #sheetBody b.h2 { font-size: 16px; margin-top: 16px; }
+#sheetBody b.h:first-child { margin-top: 0; }
+#sheetBody blockquote { margin: 0 0 11px; padding: 2px 0 2px 12px; color: var(--text-2);
+  border-left: 2px solid var(--border-3); }
+#sheetBody hr { border: 0; border-top: 1px solid var(--border); margin: 14px 0; }
+#sheetBody a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
 #sheetBody pre { background: var(--bg-2); border-radius: 9px; padding: 10px 12px; overflow: auto;
   font-size: 12.5px; line-height: 1.5; margin: 0 0 11px; }
 #sheetBody code { background: var(--bg-2); border-radius: 5px; padding: 1px 5px; font-size: .9em; }

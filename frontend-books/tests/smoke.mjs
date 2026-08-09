@@ -35,7 +35,9 @@ const STUB = () => {
       const steps = [
         { t: 'tool', name: 'Grep', pattern: 'сложность' },
         { t: 'text', id: 'm1', text: 'Автор' },
-        { t: 'text', id: 'm1', text: 'Автор говорит о **сложности**.\n\n- накапливается по мелочи\n- убирается тоже по мелочи\n\n' + tail },
+        { t: 'text', id: 'm1', text: 'Автор говорит о **сложности**.\n\n- накапливается по мелочи\n'
+          + '- убирается тоже по мелочи\n\n## Что делать\n\n1. чинить по одной\n2. мерить\n\n'
+          + '> цитата автора\n\nПодробнее — [в вики](https://wiki.example/ru) и `в коде`.\n\n' + tail },
         { t: 'done', sid: 's1' },
       ]
       steps.forEach((s, i) => setTimeout(() => this.onmessage && this.onmessage({ data: JSON.stringify(s) }), 70 * (i + 1)))
@@ -350,6 +352,13 @@ const answer = await page.evaluate(() => {
   return { html: n ? n.innerHTML : '', tool: !!document.querySelector('#sheetBody .tool') }
 })
 check('агент: ответ отрисован с разметкой', /<b>сложности<\/b>/.test(answer.html) && /<ul>/.test(answer.html))
+check('агент: markdown — заголовок, нумерованный список, цитата, ссылка, код',
+  /<b class="h h2">Что делать<\/b>/.test(answer.html)
+  && /<ol><li>чинить по одной<\/li><li>мерить<\/li><\/ol>/.test(answer.html)
+  && /<blockquote>цитата автора<\/blockquote>/.test(answer.html)
+  && /<a href="https:\/\/wiki\.example\/ru" target="_blank" rel="noopener">в вики<\/a>/.test(answer.html)
+  && /<code>в коде<\/code>/.test(answer.html),
+  answer.html.slice(0, 200))
 // Прокрутка остаётся у начала ответа: стриминг дописывает вниз, а не тащит за собой.
 const flow = await page.evaluate(() => {
   const body = document.querySelector('#sheetBody')
@@ -1089,6 +1098,29 @@ check('pdf: выделение на слое даёт якорь страниц�
 check('pdf: панель выделения и метка на странице', pSel.bar && pSel.marks > 0 && pSel.id === pSel.hid,
   `меток: ${pSel.marks}`)
 check('pdf: у выписки записана глава', pSel.chapter === 'Начало', pSel.chapter)
+// Панель над выделением должна доживать до клика: палец снимается с самой кнопки, и
+// раньше отпускание пересобирало панель — кнопку сносило из DOM раньше, чем долетал клик.
+const pBar = await tpage.evaluate(async () => {
+  const layer = document.querySelector('.textLayer')
+  const span = [...layer.querySelectorAll('span')].find(s => s.textContent.trim().length > 12)
+  const b = span.getBoundingClientRect(), y = b.top + b.height / 2
+  const w = state.pdf.surf.word(b.left + 3, y)
+  sel.on = true; sel.surf = state.pdf.surf; sel.anchor = w[0]; sel.focus = state.pdf.surf.at(b.right - 3, y)
+  commitSel()
+  // Палец отпускают уже над кнопкой — документ получает pointerup не от страницы.
+  document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))
+  await new Promise(r => setTimeout(r, 60))
+  const btn = [...document.querySelectorAll('#selActs .act')].find(n => n.textContent.includes('Объяснить'))
+  if (!btn) return { err: 'кнопки нет' }
+  btn.click()
+  await new Promise(r => setTimeout(r, 300))
+  return { open: document.querySelector('#sheet').classList.contains('on'),
+           title: document.querySelector('#sheetTitle').textContent,
+           quote: document.querySelector('#sheetQuote').textContent }
+})
+check('pdf: кнопка над выделением открывает агента', pBar.open && pBar.title === 'Объяснение'
+  && /Slova/.test(pBar.quote || ''), JSON.stringify(pBar).slice(0, 120))
+await tpage.evaluate(() => closeSheet())
 // Точка вне текста тянется к ближайшей строке, а не растягивает выделение на всю страницу.
 const pCaret = await tpage.evaluate(() => {
   const span = [...document.querySelectorAll('.textLayer span')]
