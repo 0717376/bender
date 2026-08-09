@@ -42,6 +42,8 @@ export function toast(msg) {
 
 export const state = {
   book: null, rendition: null, entry: null, meta: null,
+  kind: '',            // чем открыта книга: 'epub' | 'pdf'
+  pdf: null,           // состояние pdf-движка (см. pdfview.js)
   hl: [],              // выписки: {id, cfi, text, color, chapter, thread, ts}
   pending: null,       // выделение до того, как его закрасили
   active: null,        // выписка, открытая в шторке

@@ -215,6 +215,17 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 #viewer svg g[class^="hl-"] { mix-blend-mode: multiply; }
 :root[data-theme="dark"] #viewer svg g[class^="hl-"] { mix-blend-mode: screen; }
 
+/* ── PDF ──
+   Страница — канвас по центру окна. Выписок у pdf нет (нечего выделять на растре),
+   кнопка выписок прячется. В тёмной теме страницу инвертируем, как взрослые читалки:
+   белый лист ночью слепит. hue-rotate возвращает цветам их тон после инверсии. */
+#reader.pdf #viewer { display: flex; align-items: center; justify-content: center; }
+#reader.pdf #btnHl { display: none; }
+canvas.pdfpage { display: block; box-shadow: 0 1px 8px rgba(0, 0, 0, .12); border-radius: 2px; }
+:root[data-theme="dark"] canvas.pdfpage { filter: invert(.93) hue-rotate(180deg);
+  box-shadow: 0 1px 8px rgba(0, 0, 0, .5); }
+:root[data-theme="sepia"] canvas.pdfpage { filter: sepia(.14); }
+
 /* ── Панель над выделением ──
    Два ряда, а не один: пять цветов и три действия в строку дают 550px — в телефон не лезет. */
 #selbar { position: fixed; z-index: 60; display: none; background: var(--panel); border: 1px solid var(--border);

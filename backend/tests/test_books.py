@@ -147,6 +147,107 @@ def test_чистая_книга_остаётся_валидным_zip(books):
         assert z.getinfo("mimetype").compress_type == zipfile.ZIP_STORED
 
 
+# ── PDF ──
+
+
+def _pdfstr(s):
+    """Строка pdf: ASCII — литералом, остальное — UTF-16BE с BOM в hex-строке."""
+    try:
+        s.encode("ascii")
+        return "(" + s.replace("\\", r"\\").replace("(", r"\(").replace(")", r"\)") + ")"
+    except UnicodeEncodeError:
+        return "<" + ("\ufeff" + s).encode("utf-16-be").hex().upper() + ">"
+
+
+def make_pdf(pages=6, *, outline=True, title="Проверка PDF", author="Автор Пдф"):
+    """Минимальный валидный pdf: строка текста на странице, три закладки-раздела.
+    Собирается руками, чтобы тест не зависел от библиотек записи."""
+    n = pages
+    objs = {}
+    objs[2] = ("<< /Type /Pages /Kids [" + " ".join(f"{4 + i} 0 R" for i in range(1, n + 1))
+               + f"] /Count {n} >>")
+    objs[3] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
+    objs[4] = f"<< /Title {_pdfstr(title)} /Author {_pdfstr(author)} >>"
+    for i in range(1, n + 1):
+        objs[4 + i] = (f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 540 648] "
+                       f"/Resources << /Font << /F1 3 0 R >> >> /Contents {4 + n + i} 0 R >>")
+        line = f"Page {i}. Slova dlya poiska i agenta."
+        stream = f"BT /F1 12 Tf 72 600 Td ({line}) Tj ET"
+        objs[4 + n + i] = f"<< /Length {len(stream)} >>\nstream\n{stream}\nendstream"
+    root = ""
+    if outline:
+        assert n >= 5
+        o = 5 + 2 * n
+        marks = [("Начало", 1), ("Середина", 3), ("Конец", 5)]
+        objs[o] = f"<< /Type /Outlines /First {o + 1} 0 R /Last {o + 3} 0 R /Count 3 >>"
+        for k, (t, pg) in enumerate(marks, 1):
+            around = (f" /Prev {o + k - 1} 0 R" if k > 1 else "") \
+                + (f" /Next {o + k + 1} 0 R" if k < len(marks) else "")
+            objs[o + k] = (f"<< /Title {_pdfstr(t)} /Parent {o} 0 R{around} "
+                           f"/Dest [{4 + pg} 0 R /XYZ null null null] >>")
+        root = f" /Outlines {o} 0 R"
+    objs[1] = f"<< /Type /Catalog /Pages 2 0 R{root} >>"
+
+    out = io.BytesIO()
+    out.write(b"%PDF-1.4\n")
+    offsets = {}
+    for num in sorted(objs):
+        offsets[num] = out.tell()
+        out.write(f"{num} 0 obj\n{objs[num]}\nendobj\n".encode("ascii"))
+    xref = out.tell()
+    total = max(objs) + 1
+    out.write(f"xref\n0 {total}\n".encode("ascii"))
+    out.write(b"0000000000 65535 f \n")
+    for num in range(1, total):
+        out.write(f"{offsets[num]:010d} 00000 n \n".encode("ascii"))
+    out.write(f"trailer\n<< /Size {total} /Root 1 0 R /Info 4 0 R >>\n"
+              f"startxref\n{xref}\n%%EOF\n".encode("ascii"))
+    return out.getvalue()
+
+
+def test_pdf_читается_и_режется_главами_по_закладкам(books):
+    meta = books.ingest(make_pdf(), "kniga.pdf")
+    assert meta["kind"] == "pdf"
+    assert meta["file"] == "book.pdf"
+    assert meta["pages"] == 6
+    assert meta["title"] == "Проверка PDF"
+    assert meta["author"] == "Автор Пдф"
+    toc = books.chapters(meta["id"])
+    assert [c["title"] for c in toc] == ["Начало", "Середина", "Конец"]
+    assert all(c["chars"] > 0 for c in toc)
+    # Вторая закладка — страницы 3–4: текст этих страниц достаётся агенту.
+    text = books.chapter_text(meta["id"], 2)
+    assert "Page 3" in text and "Page 4" in text and "Page 5" not in text
+    assert books.search(meta["id"], "poiska")
+
+
+def test_pdf_без_закладок_режется_пачками_страниц(books):
+    meta = books.ingest(make_pdf(pages=60, outline=False), "plain.pdf")
+    toc = books.chapters(meta["id"])
+    assert len(toc) == 3                      # 60 страниц по 25: 25 + 25 + 10
+    assert toc[0]["title"] == "Страницы 1–25"
+    assert toc[2]["title"] == "Страницы 51–60"
+
+
+def test_pdf_файл_отдаётся_как_pdf(api, books):
+    from app import config
+
+    meta = books.ingest(make_pdf(), "kniga.pdf")
+    r = api.get(f"/books/{meta['id']}/file", params={"token": config.AUTH_TOKEN})
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+    assert r.content[:5] == b"%PDF-"
+
+
+def test_совсем_не_книга_отвергается(books):
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as e:
+        books.ingest(b"hello, just bytes", "note.txt")
+    assert e.value.status_code == 400
+    assert "PDF" in e.value.detail
+
+
 # ── Библиотека ──
 
 

@@ -1,12 +1,15 @@
-"""Библиотека книг: epub-файлы и их производные на диске под BOOKS_DIR.
+"""Библиотека книг: epub и pdf с их производными на диске под BOOKS_DIR.
 
 Источник правды — файловая система, как в вики и хранилище. На книгу — папка:
-    <id>/book.epub      сам файл, уже без скриптов (см. sanitize)
-    <id>/meta.json      название, автор, размер, когда добавлена
-    <id>/cover.<ext>    обложка из epub, как есть
-    <id>/thumb.jpg      её же миниатюра: полке хватает, а качать в двадцать раз меньше
-    <id>/text/NNN.txt   текст глав: кэш, чтобы агент не разбирал zip на каждый вопрос
+    <id>/book.epub      сам файл, уже без скриптов (см. sanitize); у pdf — book.pdf
+    <id>/meta.json      название, автор, размер, когда добавлена; у pdf ещё kind и pages
+    <id>/cover.<ext>    обложка из epub, как есть (у pdf обложки нет — только миниатюра)
+    <id>/thumb.jpg      миниатюра: полке хватает, а качать в двадцать раз меньше
+    <id>/text/NNN.txt   текст глав: кэш, чтобы агент не разбирал файл на каждый вопрос
     <id>/chapters.json  оглавление: номер главы, файл, название, длина
+
+Главы у pdf — куски по закладкам оглавления (или ровные пачки страниц, когда закладок
+нет): агенту и поиску всё равно, из чего склеен NNN.txt, и они работают как с epub.
 
 id — первые 8 байт SHA-256 файла: одна и та же книга, залитая дважды, не двоится.
 Удаление — в .trash/, а не rm.
@@ -32,6 +35,7 @@ from xml.etree import ElementTree
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from pypdf import PdfReader
 from sse_starlette.sse import EventSourceResponse
 
 from . import books_store, config
@@ -214,7 +218,7 @@ def parse_epub(data: bytes) -> dict:
     try:
         zf = zipfile.ZipFile(io.BytesIO(data))
     except zipfile.BadZipFile:
-        raise HTTPException(400, "Это не epub") from None
+        raise HTTPException(400, "Это не epub и не PDF") from None
     try:
         root = ElementTree.fromstring(zf.read(CONTAINER))
     except KeyError:
@@ -269,6 +273,89 @@ def parse_epub(data: bytes) -> dict:
         "chapters": chapters,
         "zip": zf,
     }
+
+
+# ── Разбор pdf ──
+
+PDF_MAGIC = b"%PDF-"
+PDF_CHUNK = 25          # без закладок главы режем ровными пачками страниц
+
+
+def _pdf_outline(reader: PdfReader) -> list[dict]:
+    """Закладки двух верхних уровней: (название, страница с нуля). Один уровень —
+    слишком крупно: у книг с частями «Part I» покрывает треть тома, и агент читал бы
+    её одним куском. Глубже двух — уже параграфы, это дробить незачем."""
+    out: list[dict] = []
+    try:
+        items = reader.outline or []
+    except Exception:  # noqa: BLE001 — кривые закладки не повод терять книгу
+        return out
+
+    def walk(items: list, depth: int) -> None:
+        for it in items:
+            if isinstance(it, list):
+                if depth < 1:
+                    walk(it, depth + 1)
+                continue
+            try:
+                title = " ".join((it.title or "").split())
+                page = reader.get_destination_page_number(it)
+            except Exception:  # noqa: BLE001 — битая закладка пропускается, остальные в деле
+                continue
+            if title and page is not None:
+                out.append({"title": title, "page": int(page)})
+
+    walk(items, 0)
+    out.sort(key=lambda x: x["page"])
+    return out
+
+
+def pdf_sections(reader: PdfReader) -> list[dict]:
+    """Диапазоны страниц будущих глав (страницы с нуля, включительно)."""
+    n = len(reader.pages)
+    marks = _pdf_outline(reader)
+    secs: list[dict] = []
+    if len(marks) >= 2:
+        # Страницы до первой закладки (обложка, выходные данные) — тоже текст книги.
+        if marks[0]["page"] > 0:
+            secs.append({"title": "", "from": 0, "to": marks[0]["page"] - 1})
+        for i, m in enumerate(marks):
+            last = (marks[i + 1]["page"] - 1) if i + 1 < len(marks) else n - 1
+            secs.append({"title": m["title"], "from": m["page"], "to": max(m["page"], last)})
+    else:
+        for start in range(0, n, PDF_CHUNK):
+            end = min(start + PDF_CHUNK, n) - 1
+            secs.append({"title": f"Страницы {start + 1}–{end + 1}", "from": start, "to": end})
+    return secs
+
+
+def parse_pdf(data: bytes) -> dict:
+    try:
+        reader = PdfReader(io.BytesIO(data))
+        pages = len(reader.pages)
+    except Exception:  # noqa: BLE001 — pypdf кидает разное, наружу это всё «не читается»
+        raise HTTPException(400, "Не читается как PDF") from None
+    if not pages:
+        raise HTTPException(400, "В PDF нет ни одной страницы")
+    info = reader.metadata or {}
+
+    def field(name: str) -> str:
+        v = info.get(name)
+        return " ".join(str(v).split()) if v else ""
+
+    return {"title": field("/Title"), "author": field("/Author"),
+            "pages": pages, "reader": reader, "sections": pdf_sections(reader)}
+
+
+def pdf_text(reader: PdfReader, sec: dict) -> str:
+    parts = []
+    for p in range(sec["from"], sec["to"] + 1):
+        try:
+            parts.append(reader.pages[p].extract_text() or "")
+        except Exception:  # noqa: BLE001 — одна битая страница не повод терять главу
+            parts.append("")
+    text = re.sub(r"[ \t\r\f\v]+", " ", "\n".join(parts))
+    return re.sub(r"\n\s*\n\s*\n+", "\n\n", text).strip()
 
 
 # ── Чистка ──
@@ -348,6 +435,8 @@ def ingest(data: bytes, filename: str = "", book_id: str | None = None) -> dict:
         meta = meta_of(bid)
         meta["known"] = True
         return meta
+    if data[:len(PDF_MAGIC)] == PDF_MAGIC:
+        return ingest_pdf(bid, data, filename)
 
     book = parse_epub(data)
     zf = book["zip"]
@@ -384,6 +473,45 @@ def ingest(data: bytes, filename: str = "", book_id: str | None = None) -> dict:
         "chapters": len(book["chapters"]),
         "cover": cover_name,
         "thumb": "",          # появится, когда клиент пришлёт уменьшенную (см. put_thumb)
+    }
+    with open(os.path.join(tmp, "meta.json"), "w", encoding="utf-8") as f:
+        json.dump(meta, f, ensure_ascii=False, indent=1)
+    os.rename(tmp, book_dir(bid))
+    return meta
+
+
+def ingest_pdf(bid: str, data: bytes, filename: str = "") -> dict:
+    """PDF ложится той же папкой, что и epub: файл, meta, главы текстом. Чистить его не
+    надо (pdf.js скрипты внутри файла не исполняет), обложки нет — миниатюру первой
+    страницы пришлёт клиент, у него уже есть рендер."""
+    book = parse_pdf(data)
+    tmp = book_dir(bid) + ".part"
+    shutil.rmtree(tmp, ignore_errors=True)
+    os.makedirs(os.path.join(tmp, TEXT), exist_ok=True)
+    with open(os.path.join(tmp, "book.pdf"), "wb") as f:
+        f.write(data)
+    toc = []
+    for n, sec in enumerate(book["sections"], 1):
+        text = pdf_text(book["reader"], sec)
+        with open(os.path.join(tmp, TEXT, f"{n:03d}.txt"), "w", encoding="utf-8") as f:
+            f.write(text)
+        toc.append({"n": n, "title": sec["title"] or headline(text), "chars": len(text),
+                    "pages": [sec["from"] + 1, sec["to"] + 1]})
+    with open(os.path.join(tmp, CHAPTERS), "w", encoding="utf-8") as f:
+        json.dump(toc, f, ensure_ascii=False, indent=1)
+
+    meta = {
+        "id": bid,
+        "kind": "pdf",
+        "file": "book.pdf",
+        "title": book["title"] or os.path.splitext(filename)[0] or "Книга",
+        "author": book["author"],
+        "added": int(time.time()),
+        "size": len(data),
+        "chapters": len(toc),
+        "pages": book["pages"],
+        "cover": "",
+        "thumb": "",          # появится, когда клиент пришлёт первую страницу (см. put_thumb)
     }
     with open(os.path.join(tmp, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=1)
@@ -634,7 +762,9 @@ def _guard(request: Request, token: str) -> None:
 async def book_file(book_id: str, request: Request, token: str = ""):
     _guard(request, token)
     meta = meta_of(book_id)
-    return _send(book_id, "book.epub", f"{meta.get('title') or book_id}.epub")
+    name = meta.get("file") or "book.epub"
+    ext = posixpath.splitext(name)[1] or ".epub"
+    return _send(book_id, name, f"{meta.get('title') or book_id}{ext}")
 
 
 @router.api_route("/{book_id}/cover", methods=["GET", "HEAD"])
