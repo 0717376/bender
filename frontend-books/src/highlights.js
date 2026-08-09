@@ -65,7 +65,7 @@ export function paint(colorId) {
   const exists = live().find(x => x.cfi === h.cfi);
   if (exists) {
     exists.color = colorId; touch(exists);
-    state.rendition.annotations.remove(exists.cfi, 'highlight');
+    eraseHighlight(exists);
     drawHighlight(exists);
   } else {
     h.color = colorId; touch(h);
@@ -77,18 +77,27 @@ export function paint(colorId) {
   toast(colorOf(colorId).name);
 }
 
+/* Метки epub рисует сам движок по cfi, в pdf их кладём мы поверх страницы — но зовётся
+   это одинаково: кто рисует, решает вид книги, а не тот, кто сохранил выписку. */
 export function drawHighlight(h) {
+  if (state.kind === 'pdf') { if (state.pdf) state.pdf.redraw(); return; }
   try {
     state.rendition.annotations.highlight(h.cfi, { id: h.id }, () => {}, 'hl-' + h.color,
       { fill: colorOf(h.color).hex, 'fill-opacity': '.32' });
   } catch (e) { console.warn('highlight failed', h.cfi, e); }
 }
 
+export function eraseHighlight(h) {
+  if (state.kind === 'pdf') return;      // метки pdf перерисовываются целиком, стирать нечего
+  try { state.rendition.annotations.remove(h.cfi, 'highlight'); } catch {}
+}
+
 /* Смена кегля перекладывает текст, но не пересоздаёт страницы — и нарисованные
    прямоугольники остаются от старой раскладки. Пересоздаём метки по живым выпискам. */
 export function redrawHighlights() {
+  if (state.kind === 'pdf') { if (state.pdf) state.pdf.redraw(); return; }
   if (!state.rendition) return;
-  live().forEach(h => { try { state.rendition.annotations.remove(h.cfi, 'highlight'); } catch {} });
+  live().forEach(eraseHighlight);
   live().forEach(drawHighlight);
 }
 

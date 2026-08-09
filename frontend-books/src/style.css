@@ -216,15 +216,35 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 :root[data-theme="dark"] #viewer svg g[class^="hl-"] { mix-blend-mode: screen; }
 
 /* ── PDF ──
-   Страница — канвас по центру окна. Выписок у pdf нет (нечего выделять на растре),
-   кнопка выписок прячется. В тёмной теме страницу инвертируем, как взрослые читалки:
-   белый лист ночью слепит. hue-rotate возвращает цветам их тон после инверсии. */
+   Страница — три слоя в общей обёртке: канвас, метки выписок и прозрачный текст поверх.
+   В тёмной теме инвертируем только канвас, как взрослые читалки: белый лист ночью слепит.
+   hue-rotate возвращает цветам их тон после инверсии. */
 #reader.pdf #viewer { display: flex; align-items: center; justify-content: center; }
-#reader.pdf #btnHl { display: none; }
+.pdfwrap { position: relative; }
 canvas.pdfpage { display: block; box-shadow: 0 1px 8px rgba(0, 0, 0, .12); border-radius: 2px; }
 :root[data-theme="dark"] canvas.pdfpage { filter: invert(.93) hue-rotate(180deg);
   box-shadow: 0 1px 8px rgba(0, 0, 0, .5); }
 :root[data-theme="sepia"] canvas.pdfpage { filter: sepia(.14); }
+
+/* Метки выписок — под текстовым слоем, поверх страницы: инверсия тёмной темы их не трогает. */
+.pdfhl { position: absolute; inset: 0; pointer-events: none; }
+.pdfhl .hlrect { position: absolute; opacity: .34; border-radius: 2px; mix-blend-mode: multiply; }
+:root[data-theme="dark"] .pdfhl .hlrect { mix-blend-mode: screen; opacity: .3; }
+
+/* Текстовый слой pdf.js: строки-невидимки ровно по глифам — по ним браузер считает
+   каретку, а выделение и метки рисуем мы сами. Свои правила вместо pdf_viewer.css:
+   оттуда нужен десяток строк, а тянет он весь интерфейс просмотрщика. */
+.textLayer { position: absolute; inset: 0; overflow: clip; line-height: 1; text-align: initial;
+  text-size-adjust: none; forced-color-adjust: none; transform-origin: 0 0; caret-color: transparent;
+  --min-font-size: 1;
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: none; }
+.textLayer span, .textLayer br { color: transparent; position: absolute; white-space: pre;
+  transform-origin: 0% 0%; }
+.textLayer > :not(.markedContent), .textLayer .markedContent span:not(.markedContent) {
+  --font-height: 0; --scale-x: 1; --rotate: 0deg;
+  font-size: calc(var(--total-scale-factor) * var(--min-font-size) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(calc(1 / var(--min-font-size))); }
+.textLayer .markedContent { display: contents; }
 
 /* ── Панель над выделением ──
    Два ряда, а не один: пять цветов и три действия в строку дают 550px — в телефон не лезет. */

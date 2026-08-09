@@ -55,6 +55,7 @@ function applyHighlights(id, list) {
     if (!n.del) delete cur.del;
     return Object.assign(cur, n);
   });
+  if (state.kind === 'pdf') { if (state.pdf) state.pdf.redraw(); return; }
   if (state.rendition) live().forEach(h => {
     try { state.rendition.annotations.remove(h.cfi, 'highlight'); } catch {}
     drawHighlight(h);

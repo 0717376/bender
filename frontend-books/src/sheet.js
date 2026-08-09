@@ -2,7 +2,7 @@ import { agent } from './agent.js'
 import { auth, showAuth } from './auth.js'
 import { $, COLORS, colorOf, el, escapeHtml, state, toast } from './core.js'
 import { closeDrawer } from './drawers.js'
-import { ACTS, drawHighlight, hideSelbar, save, touch } from './highlights.js'
+import { ACTS, drawHighlight, eraseHighlight, hideSelbar, save, touch } from './highlights.js'
 import { relayoutNow, windowSig } from './reader.js'
 import { sel } from './selection.js'
 import { live } from './sync.js'
@@ -18,6 +18,8 @@ export const TITLES = { translate: 'Перевод', explain: 'Объяснен�
 
 /** Текст вокруг выделения — агенту нужен абзац-другой, иначе он гадает по одной фразе. */
 export async function contextAround(cfi, before = 900, after = 900) {
+  // В pdf текст берётся со страницы, а не из главы: свою окрестность движок знает сам.
+  if (state.kind === 'pdf') return state.pdf ? state.pdf.context(cfi, before, after) : '';
   try {
     const range = await state.book.getRange(cfi);
     if (!range) return '';
@@ -378,7 +380,7 @@ export function openHighlight(h) {
     const d = el('button', 'dot' + (c.id === h.color ? ' sel' : '')); d.style.background = c.hex;
     d.onclick = () => {
       h.color = c.id;
-      try { state.rendition.annotations.remove(h.cfi, 'highlight'); } catch {}
+      eraseHighlight(h);
       drawHighlight(h); save(); openHighlight(h);
     };
     box.appendChild(d);
@@ -397,7 +399,7 @@ export function openHighlight(h) {
   box.appendChild(wiki);
   const del = el('button', 'chip', '<svg class="icon"><use href="#i-trash"/></svg>Удалить');
   del.onclick = () => {
-    try { state.rendition.annotations.remove(h.cfi, 'highlight'); } catch {}
+    eraseHighlight(h);
     // Не выкидываем, а помечаем: иначе удаление воскреснет со второго устройства.
     h.del = 1; touch(h);
     save(); closeSheet(); toast('Выписка удалена');

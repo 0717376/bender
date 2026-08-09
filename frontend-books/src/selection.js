@@ -1,15 +1,19 @@
 import { $, el, state } from './core.js'
 import { hideSelbar, showSelbar } from './highlights.js'
-import { chapterName } from './reader.js'
 import { live } from './sync.js'
 
 /* ── Своё выделение ──
    iOS показывает своё меню над любым выделением, которое сделал пользователь, и убрать его
    нечем. Поэтому браузер у нас не выделяет вовсе (user-select: none): по долгому нажатию мы
-   сами находим слово, сами красим строки и сами тянем края за маркеры. */
+   сами находим слово, сами красим строки и сами тянем края за маркеры.
+
+   Движков два, а жест один: механика ниже работает с «поверхностью» — это epub-глава
+   в iframe или текстовый слой поверх страницы pdf. Поверхность знает три вещи:
+   где её документ лежит в окне, как назвать выделенное место (cfi или 'pdf:стр:от-до')
+   и в какой оно главе. Всё остальное — общее. */
 
 export const LONGPRESS_MS = 330;
-export const sel = { on: false, contents: null, anchor: null, focus: null, drag: null, justEnded: false, dismissed: false };
+export const sel = { on: false, surf: null, anchor: null, focus: null, drag: null, justEnded: false, dismissed: false };
 
 export function caretAt(doc, x, y) {
   if (doc.caretRangeFromPoint) return doc.caretRangeFromPoint(x, y);
@@ -36,8 +40,8 @@ export function wordAt(doc, x, y) {
 
 /** Диапазон от якоря к текущему краю — в правильном порядке, за какой бы маркер ни тянули. */
 export function selRange() {
-  if (!sel.anchor || !sel.focus || !sel.contents) return null;
-  const doc = sel.contents.document;
+  if (!sel.anchor || !sel.focus || !sel.surf) return null;
+  const doc = sel.surf.doc;
   const r = doc.createRange();
   const back = sel.anchor.compareBoundaryPoints(Range.START_TO_START, sel.focus) > 0;
   const [from, to] = back ? [sel.focus, sel.anchor] : [sel.anchor, sel.focus];
@@ -59,7 +63,7 @@ export function makeHandle(kind) {
     if (!range) return;
     sel.drag = kind;
     // Тянем один край — второй становится якорем.
-    const other = sel.contents.document.createRange();
+    const other = sel.surf.doc.createRange();
     if (kind === 'start') other.setStart(range.endContainer, range.endOffset);
     else other.setStart(range.startContainer, range.startOffset);
     other.collapse(true);
@@ -70,10 +74,10 @@ export function makeHandle(kind) {
   d.addEventListener('pointermove', e => {
     if (sel.drag !== kind) return;
     e.preventDefault();
-    const fr = sel.contents.document.defaultView.frameElement.getBoundingClientRect();
+    const fr = sel.surf.origin();
     // Целимся мимо пальца: иначе он закрывает ровно ту строку, которую тянешь.
     const dy = kind === 'end' ? -12 : 12;
-    const caret = caretAt(sel.contents.document, e.clientX - fr.left, e.clientY - fr.top + dy);
+    const caret = caretAt(sel.surf.doc, e.clientX - fr.left, e.clientY - fr.top + dy);
     if (caret) { sel.focus = caret; paintSel(); }
   });
   const done = () => { if (sel.drag === kind) { sel.drag = null; commitSel(); } };
@@ -98,7 +102,7 @@ export function paintSel() {
     Object.values(handles).forEach(h => { h.style.display = 'none'; });
     return;
   }
-  const fr = sel.contents.document.defaultView.frameElement.getBoundingClientRect();
+  const fr = sel.surf.origin();
   rects.forEach(r => {
     const d = el('div', 'selrect');
     d.style.cssText = `left:${fr.left + r.left}px; top:${fr.top + r.top}px; width:${r.width}px; height:${r.height}px`;
@@ -109,11 +113,11 @@ export function paintSel() {
   placeHandle('end', fr.left + last.right, fr.top + last.top, last.height);
 }
 
-export function wireSelection(contents) {
-  const doc = contents.document;
+export function wireSelection(surf) {
+  const doc = surf.doc, root = surf.root || doc;
   let timer = null, sx = 0, sy = 0, pressing = false;
 
-  doc.addEventListener('pointerdown', e => {
+  root.addEventListener('pointerdown', e => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     // Нажатие по тексту снимает прошлое выделение сразу, а не по отпусканию:
     // иначе обычный клик мимо заново коммитил бы старый диапазон.
@@ -124,20 +128,20 @@ export function wireSelection(contents) {
     const begin = () => {
       const r = wordAt(doc, sx, sy);
       if (!r) return;
-      sel.on = true; sel.contents = contents; sel.anchor = r; sel.focus = r;
+      sel.on = true; sel.surf = surf; sel.anchor = r; sel.focus = r;
       hideSelbar(); paintSel();
     };
     // Мышь выделяет сразу протаскиванием, палец — только после удержания:
     // иначе любой свайп по странице превращался бы в выделение.
     timer = e.pointerType === 'mouse' ? null : setTimeout(begin, LONGPRESS_MS);
-    if (e.pointerType === 'mouse') sel.pendingMouse = { x: sx, y: sy, contents };
+    if (e.pointerType === 'mouse') sel.pendingMouse = { x: sx, y: sy };
   }, { passive: true });
 
-  doc.addEventListener('pointermove', e => {
+  root.addEventListener('pointermove', e => {
     if (!pressing) return;
     if (sel.pendingMouse && !sel.on && Math.hypot(e.clientX - sx, e.clientY - sy) > 4) {
       const r = wordAt(doc, sel.pendingMouse.x, sel.pendingMouse.y);
-      if (r) { sel.on = true; sel.contents = contents; sel.anchor = r; sel.focus = r; }
+      if (r) { sel.on = true; sel.surf = surf; sel.anchor = r; sel.focus = r; }
     }
     if (!sel.on) {
       // Палец дрожит всегда; 14px — это уже осознанный свайп, а не удержание.
@@ -153,8 +157,8 @@ export function wireSelection(contents) {
     pressing = false; sel.pendingMouse = null; clearTimeout(timer);
     if (sel.on) { sel.justEnded = true; commitSel(); }
   };
-  doc.addEventListener('pointerup', finish);
-  doc.addEventListener('pointercancel', finish);
+  root.addEventListener('pointerup', finish);
+  root.addEventListener('pointercancel', finish);
 }
 
 export function commitSel() {
@@ -163,18 +167,17 @@ export function commitSel() {
   const text = range.toString().replace(/\s+/g, ' ').trim();
   if (!text) return clearSel();
   let cfi = null;
-  try { cfi = sel.contents.cfiFromRange(range); } catch (e) { console.warn('cfi failed', e); }
+  try { cfi = sel.surf.anchor(range); } catch (e) { console.warn('anchor failed', e); }
   if (!cfi) return clearSel();
-  const loc = state.rendition.currentLocation();
   const known = live().find(h => h.cfi === cfi);
   state.pending = known || {
     id: 'h' + Date.now().toString(36), cfi, text,
-    chapter: chapterName(loc && loc.start ? loc.start.href : '') || '',
+    chapter: sel.surf.chapter() || '',
     color: null, thread: [], ts: Date.now(),
   };
   paintSel();
   const rects = [...range.getClientRects()].filter(r => r.width > 0.5);
-  const fr = sel.contents.document.defaultView.frameElement.getBoundingClientRect();
+  const fr = sel.surf.origin();
   const first = rects[0], last = rects[rects.length - 1];
   showSelbar(first && {
     top: fr.top + first.top, bottom: fr.top + last.bottom,

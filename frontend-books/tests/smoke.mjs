@@ -227,7 +227,7 @@ const paintAt = p => p.evaluate(() => {
     const a = wordAt(doc, vb.left + vb.width * 0.22 - fr.left, y - fr.top)
     const f = caretAt(doc, vb.left + vb.width * 0.62 - fr.left, y - fr.top)
     if (!a || !f) continue
-    sel.on = true; sel.contents = contents; sel.anchor = a; sel.focus = f
+    sel.on = true; sel.surf = epubSurface(contents); sel.anchor = a; sel.focus = f
     commitSel()
     if (!state.pending || !state.pending.text) continue
     const t = state.pending.text
@@ -1010,14 +1010,21 @@ const pOpen = await tpage.evaluate(() => ({
     for (let i = 0; i < d.length; i += 4) if (d[i] < 128) return true
     return false
   })(),
-  hlHidden: getComputedStyle(document.querySelector('#btnHl')).display === 'none',
+  hlShown: getComputedStyle(document.querySelector('#btnHl')).display !== 'none',
   scrub: !document.querySelector('#scrub').disabled,
+  // Текстовый слой лежит поверх канваса строка в строку — по нему и выделяют.
+  layer: (() => {
+    const l = document.querySelector('.textLayer')
+    return l ? { spans: l.querySelectorAll('span').length, text: l.textContent } : null
+  })(),
 }))
 check('pdf: импорт открыл книгу на канвасе', pOpen.kind === 'pdf' && pOpen.drawn,
   `${pOpen.pages} страниц`)
 check('pdf: полоса — страница, глава, ползунок', pOpen.info === '1 из 6' && pOpen.chap === 'Начало' && pOpen.scrub,
   `${pOpen.info} · ${pOpen.chap}`)
-check('pdf: кнопка выписок спрятана', pOpen.hlHidden)
+check('pdf: текстовый слой поверх страницы', !!pOpen.layer && pOpen.layer.spans > 0
+  && /Slova dlya poiska/.test(pOpen.layer.text), JSON.stringify(pOpen.layer))
+check('pdf: кнопка выписок доступна', pOpen.hlShown)
 // Листание тапом у правого края — жест общий с epub.
 const pv = await tpage.evaluate(() => {
   const v = document.querySelector('#viewer').getBoundingClientRect()
@@ -1056,6 +1063,75 @@ await tpage.waitForTimeout(600)
 const pJump = await tpage.evaluate(() => state.pdf.page)
 check('pdf: поиск по тексту находит и подсвечивает', pFound.n >= 6 && pFound.mark, `находок: ${pFound.n}`)
 check('pdf: у находки страница, по ней и переход', /стр\. 1/.test(pFound.where) && pJump === 1, pFound.where)
+
+// Выделение по текстовому слою: тем же путём, что и палец — каретка по точке на экране.
+const pSel = await tpage.evaluate(() => {
+  const span = [...document.querySelectorAll('.textLayer span')]
+    .find(s => s.textContent.trim().length > 12)
+  if (!span) return { err: 'нет строк в слое' }
+  const b = span.getBoundingClientRect()
+  const y = b.top + b.height / 2
+  const a = wordAt(document, b.left + 3, y), f = caretAt(document, b.right - 3, y)
+  if (!a || !f) return { err: 'каретка не встала на слой' }
+  sel.on = true; sel.surf = state.pdf.surf; sel.anchor = a; sel.focus = f
+  commitSel()
+  const pend = state.pending
+  if (!pend || !pend.text) return { err: 'выделение не собралось' }
+  const bar = document.querySelector('#selbar').classList.contains('on')
+  paint('imp')
+  const rects = [...document.querySelectorAll('.pdfhl .hlrect')]
+  return { text: pend.text, cfi: pend.cfi, chapter: pend.chapter, bar,
+           marks: rects.length, id: rects[0] && rects[0].dataset.id, hid: pend.id }
+})
+check('pdf: выделение на слое даёт якорь страницы', !pSel.err && /^pdf:1:\d+-\d+$/.test(pSel.cfi || '')
+  && /Slova/.test(pSel.text || ''), pSel.err || `${pSel.cfi} · ${pSel.text}`)
+check('pdf: панель выделения и метка на странице', pSel.bar && pSel.marks > 0 && pSel.id === pSel.hid,
+  `меток: ${pSel.marks}`)
+check('pdf: у выписки записана глава', pSel.chapter === 'Начало', pSel.chapter)
+// Метка держится за текст: уходим на другую страницу и возвращаемся.
+await tpage.evaluate(() => state.pdf.goto(3))
+await tpage.waitForTimeout(500)
+const pAway = await tpage.evaluate(() => document.querySelectorAll('.pdfhl .hlrect').length)
+await tpage.evaluate(() => state.pdf.goto(1))
+await tpage.waitForTimeout(600)
+const pBackMark = await tpage.evaluate(() => {
+  const r = document.querySelector('.pdfhl .hlrect')
+  if (!r) return null
+  const b = r.getBoundingClientRect()
+  return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) }
+})
+check('pdf: метка живёт только на своей странице', pAway === 0 && !!pBackMark,
+  `на чужой: ${pAway}`)
+// Тап по метке открывает шторку с выпиской — как в epub.
+await tpage.touchscreen.tap(pBackMark.x, pBackMark.y)
+await tpage.waitForSelector('#sheet.on', { timeout: 6000 })
+const pSheet = await tpage.evaluate(() => ({
+  quote: document.querySelector('#sheetQuote').textContent,
+  page: state.pdf.page,
+}))
+check('pdf: тап по метке открывает выписку, а не листает', /Slova/.test(pSheet.quote) && pSheet.page === 1,
+  `стр. ${pSheet.page}`)
+await tpage.evaluate(() => closeSheet())
+// Агенту нужен текст вокруг цитаты — движок берёт его со страницы.
+const pCtx = await tpage.evaluate(() => state.pdf.context(live()[0].cfi, 200, 200))
+check('pdf: агенту уезжает текст вокруг цитаты', /Stranica 1/.test(pCtx) && pCtx.length > 20,
+  pCtx.slice(0, 60))
+// Список выписок и переход по нему.
+await tpage.evaluate(() => state.pdf.goto(4))
+await tpage.waitForTimeout(400)
+await tpage.click('#btnHl')
+await tpage.waitForSelector('#drawer.on')
+const pHlList = await tpage.locator('#drawerBody .item').count()
+await tpage.click('#drawerBody .item')
+await tpage.waitForTimeout(700)
+const pHlJump = await tpage.evaluate(() => state.pdf.page)
+await tpage.evaluate(() => { closeSheet(); closeDrawer() })
+check('pdf: выписка в списке и переход по ней', pHlList === 1 && pHlJump === 1, `стр. ${pHlJump}`)
+await tpage.evaluate(() => sync.run({ force: true }))
+await tpage.waitForTimeout(700)
+const pHlSrv = Object.values(srv.hl[PDF_ID] || {})
+check('pdf: выписка уехала на сервер', pHlSrv.length === 1 && /^pdf:1:/.test(pHlSrv[0].cfi || ''),
+  JSON.stringify(pHlSrv.map(h => h.cfi)))
 // Тёмная тема инвертирует страницу — белый лист ночью слепит.
 await tpage.evaluate(() => { state.theme = 'dark'; applyTheme() })
 await tpage.waitForTimeout(300)
