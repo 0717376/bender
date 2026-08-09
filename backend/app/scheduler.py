@@ -5,7 +5,7 @@ import asyncio
 import logging
 from datetime import datetime
 
-from . import agent, clock, cron_outbox, cron_store, curator
+from . import agent, clock, cron_outbox, cron_store, curator, session_log
 from .telegram import notify
 
 logger = logging.getLogger("wiki.cron")
@@ -97,7 +97,13 @@ async def run_job(job: dict) -> None:
         header = f"{job['name']}\n\n"
         await notify(header + text)
         # Mirror into the shared session so the interactive agent knows it was sent.
-        cron_outbox.record_delivery(job["name"], text)
+        cron_outbox.record_delivery(job["name"], text, job["prompt"])
+        # И в журнал — окно outbox живёт часы, а «ты мне про это уже писал?» спрашивают
+        # днями позже. Ход прошёл в изолированной сессии, поэтому шьём его к своей нити
+        # задания: все прогоны одного задания читаются подряд. Молчаливые прогоны не
+        # пишем — журнал про то, что человек видел.
+        session_log.log_turn(f"cron-{job['id']}", "cron",
+                             f"[Запланированное задание «{job['name']}»]\n{job['prompt']}", text)
 
 
 async def tick() -> None:

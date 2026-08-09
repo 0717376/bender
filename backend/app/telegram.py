@@ -239,6 +239,24 @@ async def tg_transcribe(client: httpx.AsyncClient, file_id: str, mime: str | Non
     return None
 
 
+def quoted_note(msg: dict) -> str:
+    """На что человек отвечает, если жал «Ответить». Без этого якорь теряется совсем:
+    агент видит голое «давай попробуем» и достраивает смысл из текущего разговора —
+    а тот может быть про другое (например, про книгу, открытую полчаса назад).
+
+    `quote` — выделенный кусок цитаты (Bot API 7.0), он точнее целого сообщения.
+    """
+    src = msg.get("reply_to_message")
+    if not src:
+        return ""
+    body = (msg.get("quote") or {}).get("text") or src.get("text") or src.get("caption") or ""
+    body = " ".join(body.split())[:600]
+    if not body:
+        return ""
+    whose = "твоё" if (src.get("from") or {}).get("is_bot") else "своё"
+    return f"[Пользователь отвечает на {whose} сообщение: «{body}»]"
+
+
 async def tg_handle(client: httpx.AsyncClient, update: dict):
     msg = update.get("message") or update.get("edited_message")
     if not msg:
@@ -311,6 +329,10 @@ async def tg_handle(client: httpx.AsyncClient, update: dict):
     if text == "/status":
         await tg_send(client, chat_id, build_status())
         return
+
+    note = quoted_note(msg)
+    if note:
+        text = f"{note}\n\n{text}"
 
     stop = asyncio.Event()
     typing = asyncio.create_task(tg_typing(client, chat_id, stop))

@@ -373,7 +373,7 @@ async def run_ws(emit: Emit, message: str, surface: str = "wiki") -> None:
     async with claude_lock:
         raw = message
         message = f"{clock.stamp()}\n{message}"  # live clock: the session's system-prompt date goes stale
-        pending = cron_outbox.drain_as_prompt()
+        pending = cron_outbox.pending_block()
         try:
             await _run_ws(emit, message, surface, pending, raw)
         except _StaleSession:
@@ -472,7 +472,7 @@ async def run_collect(message: str, on_tool: Callable[[str, str], Awaitable[None
     async with claude_lock:
         raw = message
         message = f"{clock.stamp()}\n{message}"  # live clock: the session's system-prompt date goes stale
-        pending = cron_outbox.drain_as_prompt()
+        pending = cron_outbox.pending_block()
         for attempt in (1, 2):  # attempt 2 only runs after a stale-session reset
             sid, expired = load_session_state()
             prompt = (EXPIRED_NOTE + message) if expired else message
