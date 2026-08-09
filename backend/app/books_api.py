@@ -26,6 +26,8 @@ import os
 import posixpath
 import re
 import shutil
+import subprocess
+import threading
 import time
 import urllib.parse
 import zipfile
@@ -57,6 +59,11 @@ THUMB = "thumb.jpg"
 THUMB_MAX = 512 * 1024
 TEXT = "text"
 CHAPTERS = "chapters.json"
+IMG = "img"             # <id>/img/ — рисунки, вынутые из книги по требованию агента
+MARK = "\x00img{}\x00"  # место рисунка в сыром тексте главы, до нумерации
+MIN_IMG = 2048          # меньше — украшательство вёрстки, а не рисунок
+PAGE_DPI = 110          # на 110 точках график читается, а страница остаётся лёгкой
+TEXT_V = 2              # версия разбора текста; 2 — с метками рисунков (см. retext)
 
 
 def init() -> None:
@@ -80,6 +87,9 @@ def init() -> None:
     moved = migrate_legacy_state()
     if moved:
         logger.info("Books: прогресс перенесён из вики, книг: %d", moved)
+    # Перебор текстов — в сторонке: толстый pdf разбирается с минуту, а держать из-за
+    # него запуск бэкенда незачем. Пока не перебралась, книга читается по-старому.
+    threading.Thread(target=retext_all, name="books-retext", daemon=True).start()
 
 
 LEGACY_STATE = os.path.join(".reader", "state.json")
@@ -121,35 +131,106 @@ def migrate_legacy_state() -> int:
 
 
 class _Text(HTMLParser):
+    """Текст главы + рисунки. На месте каждого рисунка остаётся метка MARK: чем он
+    окажется в тексте, решает уже вызывающий — ему видны размеры файлов в книге."""
+
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.parts: list[str] = []
+        self.imgs: list[dict] = []
         self.skip = 0
+        self.fig = 0      # сколько картинок было до открытия <figure>
+        self.cap = -1     # чей <figcaption> сейчас читаем
 
     def handle_starttag(self, tag, attrs):
         if tag in ("script", "style", "title"):   # заголовок из head — не текст главы
             self.skip += 1
+        elif tag in ("img", "image"):
+            a = dict(attrs)
+            src = a.get("src") or a.get("xlink:href") or a.get("href") or ""
+            if src and not src.startswith("data:"):
+                self.parts.append(MARK.format(len(self.imgs)))
+                self.imgs.append({"src": src, "alt": " ".join((a.get("alt") or "").split()),
+                                  "caption": ""})
+        elif tag == "figure":
+            self.fig = len(self.imgs)
+        elif tag == "figcaption":
+            # Подпись — той картинке, что открыта этой же <figure>; подпись без картинки
+            # (бывает у таблиц) ни к кому не приклеиваем.
+            self.cap = len(self.imgs) - 1 if len(self.imgs) > self.fig else -1
 
     def handle_endtag(self, tag):
         if tag in ("script", "style", "title") and self.skip:
             self.skip -= 1
+        elif tag == "figcaption":
+            self.cap = -1
         elif tag in ("p", "div", "br", "li", "h1", "h2", "h3", "h4", "h5", "h6"):
             self.parts.append("\n")
 
     def handle_data(self, data):
-        if not self.skip:
-            self.parts.append(data)
+        if self.skip:
+            return
+        self.parts.append(data)
+        if self.cap >= 0:
+            self.imgs[self.cap]["caption"] += data
 
 
-def plain_text(markup: bytes) -> str:
+def parse_markup(markup: bytes) -> tuple[str, list[dict]]:
+    """Текст главы с метками рисунков и сами рисунки по порядку встречи."""
     p = _Text()
     try:
         p.feed(markup.decode("utf-8", "replace"))
     except Exception:  # noqa: BLE001 — рваная вёрстка не повод терять главу
         pass
-    text = "".join(p.parts)
+    for im in p.imgs:
+        im["caption"] = " ".join(im["caption"].split())
+    return "".join(p.parts), p.imgs
+
+
+def tidy(text: str) -> str:
     text = re.sub(r"[ \t\r\f\v]+", " ", text)
     return re.sub(r"\n\s*\n\s*\n+", "\n\n", text).strip()
+
+
+def mark_figures(text: str, imgs: list[dict]) -> str:
+    """Метки → «[рисунок N]». Картинки без номера отсеяны, их метки просто исчезают.
+
+    Подпись в метку не дублируем: <figcaption> и так остался текстом рядом. В метке —
+    alt, которого в тексте нет нигде: без него агент не поймёт, что за рисунок пропущен."""
+    for i, im in enumerate(imgs):
+        n = im.get("n")
+        alt = im.get("alt") or ""
+        text = text.replace(MARK.format(i),
+                            f"\n[рисунок {n}{': ' + alt if alt else ''}]\n" if n else "")
+    return text
+
+
+def plain_text(markup: bytes) -> str:
+    """Текст главы, когда книги под рукой нет: нумеруем все рисунки подряд."""
+    text, imgs = parse_markup(markup)
+    for n, im in enumerate(imgs, 1):
+        im["n"] = n
+    return tidy(mark_figures(text, imgs))
+
+
+def chapter_content(zf: zipfile.ZipFile, href: str, names: set[str] | None = None
+                    ) -> tuple[str, list[dict]]:
+    """Текст главы с метками рисунков и список самих рисунков (путь в архиве, alt, подпись).
+    Нумерация здесь одна на оба выхода — по «рисунок 3» из текста агент достаёт третий."""
+    raw, imgs = parse_markup(zf.read(href))
+    names = names if names is not None else set(zf.namelist())
+    base = posixpath.dirname(href)
+    kept = []
+    for im in imgs:
+        im["path"] = _join(base, im["src"])
+        size = zf.getinfo(im["path"]).file_size if im["path"] in names else 0
+        # Буквицы, линейки и прозрачные распорки — не рисунки: метка о них только мешает,
+        # а доставать их агенту тем более незачем.
+        if size < MIN_IMG:
+            continue
+        im["n"], im["size"] = len(kept) + 1, size
+        kept.append(im)
+    return tidy(mark_figures(raw, imgs)), kept
 
 
 class _Links(HTMLParser):
@@ -347,15 +428,34 @@ def parse_pdf(data: bytes) -> dict:
             "pages": pages, "reader": reader, "sections": pdf_sections(reader)}
 
 
+def page_has_image(page) -> bool:
+    """Есть ли на странице рисунок. Смотрим только опись ресурсов: доставать пиксели
+    незачем, страницу всё равно рисуем целиком и только ту, о которой спросят."""
+    try:
+        xo = page["/Resources"]["/XObject"]
+        return any(xo[k].get("/Subtype") == "/Image" for k in xo)
+    except Exception:  # noqa: BLE001 — нет ресурсов, битая ссылка, что угодно: значит нет
+        return False
+
+
+def pdf_image_pages(reader: PdfReader, sec: dict) -> list[int]:
+    """Страницы главы с рисунками, нумерация человеческая (с единицы)."""
+    return [p + 1 for p in range(sec["from"], sec["to"] + 1) if page_has_image(reader.pages[p])]
+
+
 def pdf_text(reader: PdfReader, sec: dict) -> str:
     parts = []
     for p in range(sec["from"], sec["to"] + 1):
         try:
-            parts.append(reader.pages[p].extract_text() or "")
+            page = reader.pages[p]
+            parts.append(page.extract_text() or "")
+            # Метка страницы, а не рисунка: в PDF рисунок — это пиксели без имени,
+            # достанем мы его рендером всей страницы (см. page_image).
+            if page_has_image(page):
+                parts.append(f"[рисунок, стр. {p + 1}]")
         except Exception:  # noqa: BLE001 — одна битая страница не повод терять главу
             parts.append("")
-    text = re.sub(r"[ \t\r\f\v]+", " ", "\n".join(parts))
-    return re.sub(r"\n\s*\n\s*\n+", "\n\n", text).strip()
+    return tidy("\n".join(parts))
 
 
 # ── Чистка ──
@@ -454,9 +554,10 @@ def ingest(data: bytes, filename: str = "", book_id: str | None = None) -> dict:
         cover_name = "cover" + (posixpath.splitext(book["cover"])[1] or ".jpg")
         with open(os.path.join(tmp, cover_name), "wb") as f:
             f.write(zf.read(book["cover"]))
+    names = set(zf.namelist())
     toc = []
     for n, ch in enumerate(book["chapters"], 1):
-        text = plain_text(zf.read(ch["href"]))
+        text, _ = chapter_content(zf, ch["href"], names)
         with open(os.path.join(tmp, TEXT, f"{n:03d}.txt"), "w", encoding="utf-8") as f:
             f.write(text)
         toc.append({"n": n, "href": ch["href"], "title": ch["title"] or headline(text),
@@ -473,6 +574,7 @@ def ingest(data: bytes, filename: str = "", book_id: str | None = None) -> dict:
         "chapters": len(book["chapters"]),
         "cover": cover_name,
         "thumb": "",          # появится, когда клиент пришлёт уменьшенную (см. put_thumb)
+        "text_v": TEXT_V,
     }
     with open(os.path.join(tmp, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=1)
@@ -512,6 +614,7 @@ def ingest_pdf(bid: str, data: bytes, filename: str = "") -> dict:
         "pages": book["pages"],
         "cover": "",
         "thumb": "",          # появится, когда клиент пришлёт первую страницу (см. put_thumb)
+        "text_v": TEXT_V,
     }
     with open(os.path.join(tmp, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=1)
@@ -586,6 +689,118 @@ def backfill_chapters(book_id: str) -> bool:
     with open(path, "w", encoding="utf-8") as f:
         json.dump(toc, f, ensure_ascii=False, indent=1)
     return True
+
+
+def _write_text(book_id: str, n: int, text: str) -> None:
+    path = os.path.join(book_dir(book_id), TEXT, f"{n:03d}.txt")
+    with open(path + ".part", "w", encoding="utf-8") as f:
+        f.write(text)
+    os.replace(path + ".part", path)   # эту главу может читать агент прямо сейчас
+
+
+def retext(book_id: str) -> bool:
+    """Перебрать тексты глав из самой книги: разбор поменялся (TEXT_V), а книга та же.
+    Без этого метки рисунков появились бы только у книг, залитых после обновления."""
+    meta = meta_of(book_id)
+    if meta.get("text_v") == TEXT_V:
+        return False
+    d = book_dir(book_id)
+    with open(os.path.join(d, meta.get("file") or "book.epub"), "rb") as f:
+        data = f.read()
+    toc = []
+    if meta.get("kind") == "pdf":
+        book = parse_pdf(data)
+        for n, sec in enumerate(book["sections"], 1):
+            text = pdf_text(book["reader"], sec)
+            _write_text(book_id, n, text)
+            toc.append({"n": n, "title": sec["title"] or headline(text), "chars": len(text),
+                        "pages": [sec["from"] + 1, sec["to"] + 1]})
+    else:
+        book = parse_epub(data)
+        names = set(book["zip"].namelist())
+        for n, ch in enumerate(book["chapters"], 1):
+            text, _ = chapter_content(book["zip"], ch["href"], names)
+            _write_text(book_id, n, text)
+            toc.append({"n": n, "href": ch["href"], "title": ch["title"] or headline(text),
+                        "chars": len(text)})
+    with open(os.path.join(d, CHAPTERS), "w", encoding="utf-8") as f:
+        json.dump(toc, f, ensure_ascii=False, indent=1)
+    meta["text_v"] = TEXT_V
+    with open(os.path.join(d, "meta.json"), "w", encoding="utf-8") as f:
+        json.dump(meta, f, ensure_ascii=False, indent=1)
+    shutil.rmtree(os.path.join(d, IMG), ignore_errors=True)   # нумерация рисунков могла съехать
+    return True
+
+
+def retext_all() -> None:
+    for m in catalog():
+        try:
+            if retext(m["id"]):
+                logger.info("Books: %s перебрана под разбор v%d", m["id"], TEXT_V)
+        except Exception as e:  # noqa: BLE001 — одна книга не должна утащить остальные
+            logger.warning("Books: %s не перебралась (%s)", m.get("id"), e)
+
+
+# ── Рисунки (для агента) ──
+
+
+def figures(book_id: str, chapter: int) -> list[dict]:
+    """Рисунки главы. У epub это файлы: достаём их из книги и кладём рядом, чтобы второй
+    раз не распаковывать. У pdf рисунок — пиксели без имени, поэтому отдаём номера
+    страниц, которые стоит нарисовать (см. page_image)."""
+    meta = meta_of(book_id)
+    d = book_dir(book_id)
+    n = int(chapter)
+    with open(os.path.join(d, meta.get("file") or "book.epub"), "rb") as f:
+        data = f.read()
+
+    if meta.get("kind") == "pdf":
+        book = parse_pdf(data)
+        secs = book["sections"]
+        if not 1 <= n <= len(secs):
+            raise HTTPException(404, f"В книге нет главы {n}")
+        return [{"page": p} for p in pdf_image_pages(book["reader"], secs[n - 1])]
+
+    book = parse_epub(data)
+    chs = book["chapters"]
+    if not 1 <= n <= len(chs):
+        raise HTTPException(404, f"В книге нет главы {n}")
+    _, imgs = chapter_content(book["zip"], chs[n - 1]["href"])
+    out = []
+    for im in imgs:
+        name = f"{n:03d}-{im['n']}{posixpath.splitext(im['path'])[1].lower() or '.img'}"
+        dest = os.path.join(d, IMG, name)
+        if not os.path.isfile(dest):
+            os.makedirs(os.path.join(d, IMG), exist_ok=True)
+            with open(dest, "wb") as f:
+                f.write(book["zip"].read(im["path"]))
+        out.append({"n": im["n"], "alt": im["alt"], "caption": im["caption"], "file": dest})
+    return out
+
+
+def page_image(book_id: str, page: int) -> dict:
+    """Страница pdf картинкой: график чаще всего нарисован векторами, вынуть его файлом
+    нельзя — можно только отрисовать страницу целиком. Рисуем pdftoppm, он уже в образе."""
+    meta = meta_of(book_id)
+    if meta.get("kind") != "pdf":
+        raise HTTPException(400, "Страницы есть только у pdf; рисунки epub достаёт chapter_images")
+    total = int(meta.get("pages") or 0)
+    p = int(page)
+    if not 1 <= p <= total:
+        raise HTTPException(404, f"В книге {total} страниц, {p}-й нет")
+    d = book_dir(book_id)
+    root = os.path.join(d, IMG, f"p{p:04d}")
+    if not os.path.isfile(root + ".jpg"):
+        os.makedirs(os.path.join(d, IMG), exist_ok=True)
+        cmd = ["pdftoppm", "-jpeg", "-r", str(PAGE_DPI), "-f", str(p), "-l", str(p),
+               "-singlefile", os.path.join(d, meta.get("file") or "book.pdf"), root]
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, timeout=120)
+        except FileNotFoundError:
+            raise HTTPException(500, "Нечем нарисовать страницу: нет pdftoppm") from None
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            raise HTTPException(500, f"Страница не нарисовалась: {e}") from None
+    return {"page": p, "file": root + ".jpg"}
 
 
 def chapter_text(book_id: str, n: int) -> str:

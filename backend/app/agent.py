@@ -279,6 +279,24 @@ async def _no_rm_hook(input_data, tool_use_id, context):  # noqa: ARG001 — SDK
     }
 
 
+async def _books_ro_hook(input_data, tool_use_id, context):  # noqa: ARG001 — SDK callback signature
+    """Библиотека открыта агенту на чтение (иначе он не увидит рисунок), но не на запись:
+    книги, прогресс и выписки правит сам человек в читалке."""
+    path = os.path.abspath((input_data.get("tool_input") or {}).get("file_path") or "")
+    if not path.startswith(config.BOOKS_DIR + os.sep):
+        return {}
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": (
+                "В библиотеку книг писать нельзя: она открыта только на чтение "
+                "(рисунки и страницы — инструментами chapter_images и page_image)."
+            ),
+        }
+    }
+
+
 def build_options(resume: str | None, surface: str = "wiki", interactive: bool = True,
                   extra_context: str | None = None) -> ClaudeAgentOptions:
     # Tasks, skills (read+author), memory-read injection and subagents (Task) are always
@@ -293,7 +311,11 @@ def build_options(resume: str | None, surface: str = "wiki", interactive: bool =
     # Domain skills (wiki/tasks) are native SDK Skills loaded from our plugin dir. The Skill
     # tool is auto-added by the SDK when skills are enabled. A per-surface hook nudges the
     # domain frontends toward the right skill; Telegram gets none (model self-selects).
-    hooks: dict = {"PreToolUse": [HookMatcher(matcher="Bash", hooks=[_no_rm_hook])]}
+    hooks: dict = {"PreToolUse": [
+        HookMatcher(matcher="Bash", hooks=[_no_rm_hook]),
+        HookMatcher(matcher="Write", hooks=[_books_ro_hook]),
+        HookMatcher(matcher="Edit", hooks=[_books_ro_hook]),
+    ]}
     nudge = _surface_nudge_hook(surface)
     if nudge:
         hooks["UserPromptSubmit"] = [HookMatcher(hooks=[nudge])]
@@ -317,6 +339,10 @@ def build_options(resume: str | None, surface: str = "wiki", interactive: bool =
         skills=allowed_skills,
         hooks=hooks,
         cwd=config.WIKI_DIR,
+        # Библиотека лежит вне рабочей директории, а Read по ней нужен: только так агент
+        # видит рисунок из книги (пути выдают chapter_images/page_image). Запись закрыта
+        # хуком выше.
+        add_dirs=[config.BOOKS_DIR],
         include_partial_messages=True,
         resume=resume,
         # Don't inherit host ~/.claude project/user settings — keep the agent self-contained.
