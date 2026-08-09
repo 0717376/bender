@@ -74,74 +74,108 @@ Emit = Callable[[dict], Awaitable[None]]
 
 
 # --- Session persistence ---
+#
+# Нитей несколько. Телеграм, вики и задачи — одна общая («main»): это один и тот же
+# разговор с ассистентом, просто из разных окон, и общий контекст там полезен
+# («положи это в задачи»). Читалка — своя нить на книгу: разговор про книгу состоит
+# из микроходов («переведи слово», «а можешь пример»), их много, они объёмные и вне
+# книги не нужны. В одной нити они выдавливали общий разговор — реплика из телеграма
+# приходила в контекст, на девять десятых забитый чужой книгой, и агент достраивал
+# ответ из неё. Знание при этом не теряется: журнал общий на все нити.
 
-def load_session_state() -> tuple[str | None, bool]:
-    """(session_id, expired). A session idle beyond SESSION_FRESH_HOURS is
-    discarded (freshness window): expired=True so the caller can tell
-    the fresh agent why the conversation restarted."""
+MAIN = "main"
+
+
+def thread_key(surface: str, book_id: str = "") -> str:
+    """Нить разговора. Книга — по id: между двумя книгами связь не нужна и мешает."""
+    return f"books:{book_id}" if surface == "books" and book_id else MAIN
+
+
+def _read_threads() -> dict:
+    """Карта нитей. Файл старого формата (одна сессия в корне) читается как main."""
     try:
         with open(config.SESSION_FILE) as f:
             data = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
-        return None, False
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    if "session_id" in data:
+        return {MAIN: data}
+    threads = data.get("threads")
+    return threads if isinstance(threads, dict) else {}
+
+
+def _write_threads(threads: dict) -> None:
+    os.makedirs(config.DATA_DIR, exist_ok=True)
+    with open(config.SESSION_FILE, "w") as f:
+        json.dump({"threads": threads}, f)
+
+
+def load_session_state(thread: str = MAIN) -> tuple[str | None, bool]:
+    """(session_id, expired). A session idle beyond SESSION_FRESH_HOURS is
+    discarded (freshness window): expired=True so the caller can tell
+    the fresh agent why the conversation restarted."""
+    data = _read_threads().get(thread) or {}
     sid = data.get("session_id")
     last = data.get("last_used")
     if sid and last and config.SESSION_FRESH_HOURS > 0:
         try:
             if datetime.now() - datetime.fromisoformat(last) > timedelta(hours=config.SESSION_FRESH_HOURS):
-                logger.info("session %s expired (idle > %sh) — starting fresh", sid[:8], config.SESSION_FRESH_HOURS)
+                logger.info("session %s (%s) expired (idle > %sh) — starting fresh",
+                            sid[:8], thread, config.SESSION_FRESH_HOURS)
                 session_log.end(sid, "expired")
-                clear_session()
+                clear_session(thread)
                 return None, True
         except ValueError:
             pass
     return sid, False
 
 
-def load_session() -> str | None:
-    return load_session_state()[0]
+def load_session(thread: str = MAIN) -> str | None:
+    return load_session_state(thread)[0]
 
 
-def session_age() -> str | None:
-    """Human-readable age of the current session (for /status)."""
+def _age(started: str | None) -> str | None:
     try:
-        with open(config.SESSION_FILE) as f:
-            data = json.load(f)
-        started = datetime.fromisoformat(data["started"])
-    except (FileNotFoundError, json.JSONDecodeError, KeyError, ValueError):
+        mins = int((datetime.now() - datetime.fromisoformat(started)).total_seconds() // 60)
+    except (TypeError, ValueError):
         return None
-    mins = int((datetime.now() - started).total_seconds() // 60)
     return f"{mins // 60}ч {mins % 60}м" if mins >= 60 else f"{mins}м"
 
 
-def save_session(session_id: str | None) -> None:
+def session_age(thread: str = MAIN) -> str | None:
+    """Human-readable age of the thread's session (for /status)."""
+    return _age((_read_threads().get(thread) or {}).get("started"))
+
+
+def threads_overview() -> list[dict]:
+    """Живые нити для /status: ключ, id сессии, возраст."""
+    out = []
+    for key, d in sorted(_read_threads().items()):
+        if d.get("session_id"):
+            out.append({"key": key, "session_id": d["session_id"], "age": _age(d.get("started"))})
+    return out
+
+
+def save_session(thread: str, session_id: str | None) -> None:
     if not session_id:
         return
-    os.makedirs(config.DATA_DIR, exist_ok=True)
-    started = None
-    try:
-        with open(config.SESSION_FILE) as f:
-            prev = json.load(f)
-        if prev.get("session_id") == session_id:
-            started = prev.get("started")
-    except (FileNotFoundError, json.JSONDecodeError):
-        pass
+    threads = _read_threads()
+    prev = threads.get(thread) or {}
     now = datetime.now().isoformat(timespec="seconds")
-    with open(config.SESSION_FILE, "w") as f:
-        json.dump({"session_id": session_id, "last_used": now, "started": started or now}, f)
+    started = prev.get("started") if prev.get("session_id") == session_id else None
+    threads[thread] = {"session_id": session_id, "last_used": now, "started": started or now}
+    _write_threads(threads)
 
 
-def clear_session() -> None:
-    try:
-        with open(config.SESSION_FILE) as f:
-            sid = json.load(f).get("session_id")
-        session_log.end(sid, "clear")  # journal keeps the transcript; only the pointer dies
-    except (FileNotFoundError, json.JSONDecodeError):
-        pass
-    try:
-        os.remove(config.SESSION_FILE)
-    except FileNotFoundError:
-        pass
+def clear_session(thread: str = MAIN) -> None:
+    threads = _read_threads()
+    data = threads.pop(thread, None)
+    if data is None:
+        return
+    session_log.end(data.get("session_id"), "clear")  # journal keeps the transcript; only the pointer dies
+    _write_threads(threads)
 
 
 # --- Options ---
@@ -149,19 +183,29 @@ def clear_session() -> None:
 # Frozen per session: memory is re-read only when the session
 # changes, so a mid-session remember() doesn't bust the prompt prefix cache.
 # Writes still hit disk immediately; the snapshot refreshes on the next session.
-_mem_snapshot = {"key": "", "text": ""}
+# Снимок на каждую сессию, а не один общий: нити чередуются (книга ↔ телеграм),
+# и с одним снимком каждое переключение перечитывало бы память заново.
+_SNAP_MAX = 8  # нитей столько и не бывает; страховка от роста на долгом аптайме
+_mem_snapshots: dict[str, str] = {}
+
+
+def _snapshot(cache: dict[str, str], resume: str | None, read: Callable[[], str]) -> str:
+    if resume is None:  # новая сессия — берём свежее
+        return read()
+    if resume not in cache:
+        if len(cache) >= _SNAP_MAX:
+            cache.clear()
+        cache[resume] = read()
+    return cache[resume]
 
 
 def _memory_snapshot(resume: str | None) -> str:
-    if resume is None or resume != _mem_snapshot["key"]:
-        _mem_snapshot["key"] = resume
-        _mem_snapshot["text"] = memory_store.as_prompt()
-    return _mem_snapshot["text"]
+    return _snapshot(_mem_snapshots, resume, memory_store.as_prompt)
 
 
 # Persona (SOUL.md-style): a wiki page the user edits like any note; injected as the
 # first prompt block. Frozen per session (same reason as the memory snapshot).
-_persona_snapshot: dict = {"key": "", "text": ""}  # key "" = never read (resume is None or a sid)
+_persona_snapshots: dict[str, str] = {}
 
 DEFAULT_PERSONA = (
     "# Персона ассистента\n\n"
@@ -191,10 +235,7 @@ def _read_persona() -> str:
 
 
 def _persona(resume: str | None) -> str:
-    if resume != _persona_snapshot["key"]:
-        _persona_snapshot["key"] = resume
-        _persona_snapshot["text"] = _read_persona()
-    return _persona_snapshot["text"]
+    return _snapshot(_persona_snapshots, resume, _read_persona)
 
 
 def _compose_prompt(surface: str, resume: str | None) -> str:
@@ -369,17 +410,19 @@ def _is_stale_session(exc: Exception) -> bool:
 
 # --- Web: stream events to a WebSocket-like emitter ---
 
-async def run_ws(emit: Emit, message: str, surface: str = "wiki") -> None:
+async def run_ws(emit: Emit, message: str, surface: str = "wiki", thread: str = MAIN) -> None:
     async with claude_lock:
         raw = message
         message = f"{clock.stamp()}\n{message}"  # live clock: the session's system-prompt date goes stale
-        pending = cron_outbox.pending_block()
+        # Крон пишет в телеграм, то есть в общую нить: в разговоре про книгу этот блок —
+        # чужой шум.
+        pending = cron_outbox.pending_block() if thread == MAIN else ""
         try:
-            await _run_ws(emit, message, surface, pending, raw)
+            await _run_ws(emit, message, surface, pending, raw, thread)
         except _StaleSession:
             logger.warning("stale session in run_ws; cleared, retrying fresh")
-            clear_session()
-            await _run_ws(emit, message, surface, pending, raw)
+            clear_session(thread)
+            await _run_ws(emit, message, surface, pending, raw, thread)
 
 
 EXPIRED_NOTE = (
@@ -388,8 +431,9 @@ EXPIRED_NOTE = (
 )
 
 
-async def _run_ws(emit: Emit, message: str, surface: str, pending: str, raw: str) -> None:
-    sid, expired = load_session_state()
+async def _run_ws(emit: Emit, message: str, surface: str, pending: str, raw: str,
+                  thread: str = MAIN) -> None:
+    sid, expired = load_session_state(thread)
     if expired:
         message = EXPIRED_NOTE + message
     streaming_text = ""
@@ -448,7 +492,7 @@ async def _run_ws(emit: Emit, message: str, surface: str, pending: str, raw: str
                 if m.is_error:
                     await emit({"t": "error", "text": _error_text(m)})
 
-        save_session(final_sid)
+        save_session(thread, final_sid)
         session_log.log_turn(final_sid, surface, raw, "\n\n".join(reply_parts))
         await emit({"t": "done", "sid": final_sid})
         from . import reviewer
@@ -459,22 +503,23 @@ async def _run_ws(emit: Emit, message: str, surface: str, pending: str, raw: str
             raise _StaleSession from e  # nothing emitted yet → safe to retry fresh
         logger.exception("run_ws failed")
         await emit({"t": "error", "text": str(e)})
-        await emit({"t": "done", "sid": load_session()})
+        await emit({"t": "done", "sid": load_session(thread)})
 
 
 # --- Telegram: run one turn, return the full reply text ---
 
 async def run_collect(message: str, on_tool: Callable[[str, str], Awaitable[None]] | None = None,
                       surface: str = "telegram",
-                      on_delta: Callable[[str], Awaitable[None]] | None = None) -> str:
+                      on_delta: Callable[[str], Awaitable[None]] | None = None,
+                      thread: str = MAIN) -> str:
     """Run one turn and return the full reply. `on_delta` (if given) receives the
     accumulated reply text as it streams — used for Telegram draft previews."""
     async with claude_lock:
         raw = message
         message = f"{clock.stamp()}\n{message}"  # live clock: the session's system-prompt date goes stale
-        pending = cron_outbox.pending_block()
+        pending = cron_outbox.pending_block() if thread == MAIN else ""
         for attempt in (1, 2):  # attempt 2 only runs after a stale-session reset
-            sid, expired = load_session_state()
+            sid, expired = load_session_state(thread)
             prompt = (EXPIRED_NOTE + message) if expired else message
             texts: list[str] = []
             partial = ""
@@ -513,12 +558,12 @@ async def run_collect(message: str, on_tool: Callable[[str, str], Awaitable[None
             except Exception as e:
                 if attempt == 1 and _is_stale_session(e):
                     logger.warning("stale session in run_collect; cleared, retrying fresh")
-                    clear_session()
+                    clear_session(thread)
                     continue
                 logger.exception("run_collect failed")
                 return "Что-то пошло не так при обработке запроса."
 
-            save_session(final_sid)
+            save_session(thread, final_sid)
             if had_error:
                 return "Ошибка Claude. Попробуйте начать новую сессию (/new)."
             reply = (result_text or "\n\n".join(texts)).strip()

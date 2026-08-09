@@ -26,7 +26,8 @@ TG_WELCOME = (
     "• Журнал: помню все прошлые разговоры и ищу по ним\n"
     "• Самообучение: запоминаю факты и предпочтения, выучиваю навыки из решённых "
     "задач, а в тихие часы консолидирую выученное\n\n"
-    "Пиши текстом или надиктовывай голосовые. Контекст общий с веб-версией.\n\n"
+    "Пиши текстом или надиктовывай голосовые. Контекст общий с вики и задачами; "
+    "у читалки свой разговор на каждую книгу.\n\n"
     "**Команды**\n"
     "/new — новая сессия (история сохраняется в журнале)\n"
     "/status — сессия, память, навыки, задания\n"
@@ -376,15 +377,32 @@ def _when(iso: str | None) -> str:
         return iso.replace("T", " ")[:16]
 
 
+def thread_label(key: str) -> str:
+    """«books:aposd» → «книга «A Philosophy of Software Design»»."""
+    if not key.startswith("books:"):
+        return key
+    from . import books_api
+    try:
+        title = (books_api.meta_of(key.split(":", 1)[1]) or {}).get("title") or ""
+    except Exception:  # noqa: BLE001 — книгу могли снять с полки, нить осталась
+        title = ""
+    return f"книга «{title}»" if title else key
+
+
 def build_status() -> str:
     """Snapshot for /status: session, memory, skills, scheduled jobs. Markdown → tg_send."""
     from . import cron_store, memory_store, session_log, skill_store
-    from .agent import load_session_state, session_age
+    from .agent import MAIN, threads_overview
 
-    sid, _ = load_session_state()
+    threads = threads_overview()
+    main = next((t for t in threads if t["key"] == MAIN), None)
     lines = []
-    lines.append(f"**Сессия** {session_age() or '?'} · {sid[:8]}" if sid
+    lines.append(f"**Сессия** {main['age'] or '?'} · {main['session_id'][:8]}" if main
                  else "**Сессия** новая, контекст пуст")
+    # Читалка ведёт свой разговор на книгу — в общий он не подмешивается.
+    for t in threads:
+        if t["key"] != MAIN:
+            lines.append(f"• {thread_label(t['key'])}: {t['age'] or '?'} · {t['session_id'][:8]}")
     s_n, m_n = session_log.stats()
     lines.append(f"**Журнал** {_plural(s_n, 'сессия', 'сессии', 'сессий')} · "
                  f"{_plural(m_n, 'сообщение', 'сообщения', 'сообщений')}")

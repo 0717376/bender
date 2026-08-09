@@ -65,21 +65,26 @@ async def chat_ws(ws: WebSocket, token: str = "", surface: str = "wiki"):
                 continue
             curator.mark_activity()
 
+            # Читалка ведёт разговор про конкретную книгу — своей нитью, отдельно от
+            # общего разговора с ассистентом (см. thread_key).
+            ctx = data.get("context") or {}
+            thread = agent.thread_key(surface, str((ctx.get("book") or {}).get("id") or ""))
+
             # Session control handled by the backend.
             if message in ("/clear", "/new"):
-                agent.clear_session()
+                agent.clear_session(thread)
                 await emit({"t": "text", "id": "sys", "text": "Начал новую сессию. Прошлый разговор сохранён в журнале."})
                 await emit({"t": "done", "sid": None})
                 continue
 
             try:
-                await agent.run_ws(emit, with_context(message, data.get("context") or {}), surface)
+                await agent.run_ws(emit, with_context(message, ctx), surface, thread)
             except WebSocketDisconnect:
                 raise
             except Exception as e:  # noqa: BLE001
                 logger.error("run_ws error: %s", e)
                 await emit({"t": "error", "text": str(e)})
-                await emit({"t": "done", "sid": agent.load_session()})
+                await emit({"t": "done", "sid": agent.load_session(thread)})
 
     except WebSocketDisconnect:
         logger.info("WS disconnected")
