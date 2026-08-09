@@ -14,8 +14,12 @@ COVER = b"\x89PNG\r\n\x1a\n" + b"0" * 40
 JPEG = b"\xff\xd8\xff" + b"0" * 200          # миниатюра: важно только начало файла
 
 
+CHART = b"\x89PNG\r\n\x1a\n" + b"7" * 4000     # «график»: лишь бы не меньше MIN_IMG
+ORNAMENT = b"\x89PNG\r\n\x1a\n" + b"0" * 60    # буквица/линейка: в рисунки не идёт
+
+
 def make_epub(title="Проверка чтения", author="Тестовый Автор", *, script=False,
-              cover=True, chapters=2, broken=False, nav=True, ncx=False):
+              cover=True, chapters=2, broken=False, nav=True, ncx=False, figures=False):
     """Минимальный валидный epub. script=True — со скриптом и обработчиком, как в чужой книге."""
     if broken:
         return b"not a zip at all"
@@ -32,6 +36,10 @@ def make_epub(title="Проверка чтения", author="Тестовый А
             items.append(f'<item id="c{i}" href="c{i}.xhtml" media-type="application/xhtml+xml"/>')
             refs.append(f'<itemref idref="c{i}"/>')
             body = f"<p>Глава {i}. Текст, который потом читает агент.</p>"
+            if figures and i == 1:
+                body += ('<figure><img src="im/chart.png" alt="Рост выручки"/>'
+                         "<figcaption>Рис. 1. Выручка по годам</figcaption></figure>"
+                         '<p>А тут <img src="im/dot.png" alt=""/> украшательство.</p>')
             if script:
                 body += ('<script>fetch("/auth/me")</script>'
                          '<p onclick="alert(1)">кнопка</p>'
@@ -42,6 +50,11 @@ def make_epub(title="Проверка чтения", author="Тестовый А
         if script:
             z.writestr("OEBPS/js/track.js", "navigator.sendBeacon('/x')")
             items.append('<item id="js" href="js/track.js" media-type="text/javascript"/>')
+        if figures:
+            z.writestr("OEBPS/im/chart.png", CHART)
+            z.writestr("OEBPS/im/dot.png", ORNAMENT)
+            items.append('<item id="ch" href="im/chart.png" media-type="image/png"/>')
+            items.append('<item id="dt" href="im/dot.png" media-type="image/png"/>')
         if cover:
             z.writestr("OEBPS/cover.png", COVER)
             items.append('<item id="cv" href="cover.png" media-type="image/png" properties="cover-image"/>')
@@ -762,6 +775,126 @@ def test_выписки_агенту_идут_со_смыслом_цвета(boo
     assert got[0]["talk"][0]["text"] == "почему?"
     assert got[0]["date"].startswith("20")
     assert books_tools.highlights(meta["id"], color="imp") == []
+
+
+# ── Рисунки ──
+
+
+def test_рисунок_оставляет_в_тексте_метку(books):
+    meta = books.ingest(make_epub(figures=True), "book.epub")
+    text = books.chapter_text(meta["id"], 1)
+    assert "[рисунок 1: Рост выручки]" in text
+    assert "Рис. 1. Выручка по годам" in text        # подпись и так была текстом
+    assert text.count("[рисунок") == 1               # буквица рисунком не считается
+
+
+def test_рисунок_достаётся_файлом(books):
+    meta = books.ingest(make_epub(figures=True), "book.epub")
+    got = books.figures(meta["id"], 1)
+    assert len(got) == 1
+    assert got[0]["n"] == 1 and got[0]["alt"] == "Рост выручки"
+    assert got[0]["caption"] == "Рис. 1. Выручка по годам"
+    with open(got[0]["file"], "rb") as f:
+        assert f.read() == CHART
+    assert books.figures(meta["id"], 2) == []        # в главе без рисунков — пусто
+
+
+def test_у_главы_которой_нет_рисунков_не_спросишь(books):
+    from fastapi import HTTPException
+
+    meta = books.ingest(make_epub(figures=True), "book.epub")
+    with pytest.raises(HTTPException) as e:
+        books.figures(meta["id"], 9)
+    assert e.value.status_code == 404
+
+
+def test_рисунок_агенту_приходит_с_подсказкой_открыть_read(books):
+    from app import books_tools
+
+    meta = books.ingest(make_epub(figures=True), "book.epub")
+    out = books_tools.figures(meta["id"], 1)
+    assert out["kind"] == "epub" and len(out["figures"]) == 1
+    assert "Read" in out["how"]
+
+
+def test_книга_прошлой_версии_перебирается_под_новый_разбор(books):
+    """Метки рисунков должны появиться и у книг, залитых до этой версии."""
+    meta = books.ingest(make_epub(figures=True), "book.epub")
+    root = os.path.join(str(books.config.BOOKS_DIR), meta["id"])
+    # откатываем книгу к прошлому виду: текст без меток, в meta про версию ни слова
+    with open(os.path.join(root, "text", "001.txt"), "w", encoding="utf-8") as f:
+        f.write("Глава 1. Текст, который потом читает агент.")
+    old = dict(meta)
+    old.pop("text_v")
+    with open(os.path.join(root, "meta.json"), "w", encoding="utf-8") as f:
+        json.dump(old, f, ensure_ascii=False)
+
+    assert books.retext(meta["id"]) is True
+    assert "[рисунок 1: Рост выручки]" in books.chapter_text(meta["id"], 1)
+    assert books.meta_of(meta["id"])["text_v"] == books.TEXT_V
+    assert books.retext(meta["id"]) is False        # второй раз перебирать нечего
+
+
+def test_страница_pdf_рисуется_целиком(books, tmp_path):
+    """У pdf вынуть график файлом нельзя — только отрисовать страницу."""
+    import shutil
+
+    from pypdf import PdfWriter
+
+    if not shutil.which("pdftoppm"):
+        pytest.skip("нет pdftoppm")
+    w = PdfWriter()
+    w.add_blank_page(width=200, height=200)
+    w.add_blank_page(width=200, height=200)
+    buf = io.BytesIO()
+    w.write(buf)
+    meta = books.ingest(buf.getvalue(), "book.pdf")
+
+    out = books.page_image(meta["id"], 2)
+    assert out["page"] == 2 and os.path.getsize(out["file"]) > 0
+    assert books.page_image(meta["id"], 2)["file"] == out["file"]      # второй раз из кэша
+
+
+def test_страницы_есть_только_у_pdf(books):
+    from fastapi import HTTPException
+
+    from pypdf import PdfWriter
+
+    epub = books.ingest(make_epub(), "book.epub")
+    with pytest.raises(HTTPException) as e:
+        books.page_image(epub["id"], 1)
+    assert e.value.status_code == 400
+
+    w = PdfWriter()
+    w.add_blank_page(width=200, height=200)
+    buf = io.BytesIO()
+    w.write(buf)
+    pdf = books.ingest(buf.getvalue(), "book.pdf")
+    with pytest.raises(HTTPException) as e:
+        books.page_image(pdf["id"], 7)
+    assert e.value.status_code == 404
+
+
+def test_страница_с_рисунком_видна_по_описи_ресурсов(books):
+    page = {"/Resources": {"/XObject": {"/I0": {"/Subtype": "/Image"}}}}
+    assert books.page_has_image(page) is True
+    assert books.page_has_image({"/Resources": {"/XObject": {"/F0": {"/Subtype": "/Form"}}}}) is False
+    assert books.page_has_image({}) is False
+
+
+def test_метка_рисунка_в_pdf_несёт_номер_страницы(books, monkeypatch):
+    from pypdf import PdfWriter
+
+    w = PdfWriter()
+    for _ in range(3):
+        w.add_blank_page(width=200, height=200)
+    buf = io.BytesIO()
+    w.write(buf)
+    monkeypatch.setattr(books, "page_has_image", lambda page: True)
+    book = books.parse_pdf(buf.getvalue())
+    sec = {"from": 1, "to": 2}
+    assert "[рисунок, стр. 2]" in books.pdf_text(book["reader"], sec)
+    assert books.pdf_image_pages(book["reader"], sec) == [2, 3]
 
 
 def test_книга_доезжает_до_промпта_агента(books):

@@ -52,6 +52,21 @@ def read(book_id: str, chapter: int, offset: int = 0, limit: int = CHUNK) -> dic
     }
 
 
+def figures(book_id: str, chapter: int) -> dict:
+    """Рисунки главы. Файл открывают инструментом Read — тогда картинка и правда видна."""
+    items = books_api.figures(book_id, chapter)
+    if items and "page" in items[0]:
+        return {"chapter": chapter, "kind": "pdf", "pages": [i["page"] for i in items],
+                "how": "страницу с рисунком покажет page_image"}
+    return {"chapter": chapter, "kind": "epub", "figures": items,
+            "how": "открой file инструментом Read — иначе рисунок не увидишь"}
+
+
+def page(book_id: str, page: int) -> dict:
+    out = books_api.page_image(book_id, page)
+    return {**out, "how": "открой file инструментом Read — иначе страницу не увидишь"}
+
+
 def highlights(book_id: str, color: str | None = None) -> list[dict]:
     out = []
     for h in books_store.highlights(book_id):
@@ -153,6 +168,50 @@ async def search_book(args):
 
 
 @tool(
+    "chapter_images",
+    "Рисунки главы: в тексте они помечены «[рисунок N]» или «[рисунок, стр. N]», сам текст "
+    "их не описывает. У epub возвращает пути к файлам — открой нужный инструментом Read, "
+    "только тогда ты увидишь картинку. У pdf возвращает номера страниц с рисунками: "
+    "страницу рисует page_image.",
+    {
+        "type": "object",
+        "properties": {
+            "book_id": {"type": "string"},
+            "chapter": {"type": "integer", "description": "номер главы из book_chapters"},
+        },
+        "required": ["book_id", "chapter"],
+    },
+)
+async def chapter_images(args):
+    try:
+        return _text(figures(args["book_id"], int(args["chapter"])))
+    except HTTPException as e:
+        return _fail(e)
+
+
+@tool(
+    "page_image",
+    "Страница pdf картинкой (только pdf). График в pdf нарисован векторами, вынуть его "
+    "отдельным файлом нельзя — поэтому рисуем страницу целиком. Вернёт путь: открой его "
+    "инструментом Read, иначе страницу не увидишь. Номер страницы — из метки «[рисунок, "
+    "стр. N]» в тексте или из выписки.",
+    {
+        "type": "object",
+        "properties": {
+            "book_id": {"type": "string"},
+            "page": {"type": "integer", "description": "номер страницы книги, с единицы"},
+        },
+        "required": ["book_id", "page"],
+    },
+)
+async def page_image(args):
+    try:
+        return _text(page(args["book_id"], int(args["page"])))
+    except HTTPException as e:
+        return _fail(e)
+
+
+@tool(
     "list_highlights",
     "Выписки пользователя из книги: цитата, цвет-смысл (Важное, Не согласен, Вопрос, "
     "В вики, Красиво сказано), глава, дата, своя заметка и разговор о ней, если он был.",
@@ -192,7 +251,8 @@ async def reading_stats(args):
     })
 
 
-TOOLS = [list_books, book_chapters, read_chapter, search_book, list_highlights, reading_stats]
+TOOLS = [list_books, book_chapters, read_chapter, search_book, chapter_images, page_image,
+         list_highlights, reading_stats]
 
 TOOL_NAMES = [f"mcp__books__{t.name}" for t in TOOLS]
 

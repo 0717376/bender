@@ -388,6 +388,21 @@ def books_search(book_id: str, query: str, regex: bool = False, limit: int = 20)
 
 
 @mcp.tool()
+def books_images(book_id: str, chapter: int) -> dict:
+    """Рисунки главы: в тексте от них остались метки «[рисунок N]» / «[рисунок, стр. N]».
+    У epub — пути к файлам, у pdf — номера страниц с рисунками (страницу рисует
+    books_page_image). Пути — на сервере читалки: открывать их придётся оттуда."""
+    return books_tools.figures(book_id, chapter)
+
+
+@mcp.tool()
+def books_page_image(book_id: str, page: int) -> dict:
+    """Страница pdf картинкой: вернёт путь к отрисованному файлу на сервере читалки.
+    Векторный график иначе не увидеть — вынуть его отдельным файлом нельзя."""
+    return books_tools.page(book_id, page)
+
+
+@mcp.tool()
 def books_stats(tz: int = 0, window: int = 182) -> dict:
     """Статистика чтения: по дням (секунды и выписки), по книгам, серия дней подряд и
     рекорд. tz — сдвиг часового пояса читателя в минутах (Москва — 180)."""
