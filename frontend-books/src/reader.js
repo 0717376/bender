@@ -192,6 +192,12 @@ const onScreen = (loc, at) => !before(at, loc.start.cfi) && !before(loc.end ? lo
 /** Переход по книге: оглавление, поиск, ползунок, выписка. Цель прыжка и есть новая
     позиция — страница вокруг неё почти всегда начинается раньше. */
 export async function jumpTo(target) {
+  // Место в pdf — просто страница: и позиция, и якорь выписки начинаются с 'pdf:'.
+  if (state.kind === 'pdf') {
+    const m = /^pdf:(\d+)/.exec(String(target || ''));
+    if (m && state.pdf) return state.pdf.goto(+m[1]);
+    return;
+  }
   noteJump();
   pin = typeof target === 'string' && target.startsWith('epubcfi(') ? target : null;
   try { await state.rendition.display(target); } catch { toast('Не нашёл это место в книге'); }
@@ -272,6 +278,7 @@ export async function mountRendition(at) {
 /* Попадание по выписке считаем сами. Свой markClicked epub.js зовёт ещё на touchstart —
    шторка встаёт под палец, и click, прилетающий следом, попадает уже в затемнение. */
 export function hlAt(x, y) {
+  if (state.kind === 'pdf') return state.pdf ? state.pdf.hlAt(x, y) : null;
   for (const g of document.querySelectorAll('#viewer svg g[data-id]')) {
     for (const r of g.children) {
       const b = r.getBoundingClientRect();
@@ -289,6 +296,19 @@ export function hlAt(x, y) {
 export function inWindow(contents, x, y) {
   const fr = contents.document.defaultView.frameElement.getBoundingClientRect();
   return [fr.left + x, fr.top + y];
+}
+
+/** Глава epub как поверхность выделения: диапазон живёт в iframe, якорь — cfi. */
+export function epubSurface(contents) {
+  return {
+    root: contents.document, doc: contents.document,
+    origin: () => contents.document.defaultView.frameElement.getBoundingClientRect(),
+    anchor: range => contents.cfiFromRange(range),
+    chapter: () => {
+      const loc = state.rendition && state.rendition.currentLocation();
+      return chapterName(loc && loc.start ? loc.start.href : '') || '';
+    },
+  };
 }
 
 export async function reopen() {
@@ -470,7 +490,7 @@ export function wireContent() {
   state.rendition.hooks.content.register(contents => {
     const doc = contents.document;
     applyTouchRules();
-    wireSelection(contents);
+    wireSelection(epubSurface(contents));
     // Переносы работают, только когда браузер знает язык текста, а главы без lang — не редкость.
     const lang = ((state.meta && state.meta.language) || '').split('-')[0];
     if (lang && !doc.documentElement.lang) doc.documentElement.lang = lang;
@@ -575,7 +595,9 @@ export function wireGlobal() {
     const had = sel.on || $('#selbar').classList.contains('on');
     sel.dismissed = false;
     if (!had) return;
-    if (e.target.closest('#selbar, #selLayer')) return;
+    // Страница pdf лежит в том же документе, и её собственный слушатель разберётся сам —
+    // иначе снятие выделения посчиталось бы дважды, и тап заодно перелистнул бы страницу.
+    if (e.target.closest('#selbar, #selLayer, .pdfwrap')) return;
     clearSel();
     sel.dismissed = true;
   }, true);

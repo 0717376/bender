@@ -4,7 +4,7 @@ import { caretAt, commitSel, sel, wordAt } from './selection.js'
 import { auth, showAuth } from './auth.js'
 import { $, state } from './core.js'
 import { allToWiki, closeDrawer, drawerFind, drawerHighlights, drawerPrefs, drawerSettings, drawerToc, openDrawer } from './drawers.js'
-import { applyTheme, closeBook, openBook, wireGlobal, wireScrub } from './reader.js'
+import { applyTheme, closeBook, epubSurface, openBook, wireGlobal, wireScrub } from './reader.js'
 import { bubbleMe, closeSheet, contextAround, followUp, openHighlight, promptFor, send, wireScrim, wireSheetKeyboard } from './sheet.js'
 import { buildShelf, pickFile, refreshShelf, wireShelfDrop } from './shelf.js'
 import { lib } from './store.js'
@@ -93,7 +93,7 @@ async function boot() {
    изнутри страницы и ему нужны те же функции, что и интерфейсу. */
 window.__books = {
   state, sel, sync, lib, live, refreshShelf,
-  commitSel, paint, wordAt, caretAt,
+  commitSel, paint, wordAt, caretAt, epubSurface,
   openBook, closeBook, openHighlight, closeSheet, closeDrawer, applyTheme,
   openStats, closeStats,
 };
