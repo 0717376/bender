@@ -4,7 +4,7 @@ import { auth, showAuth } from './auth.js'
 import { $, ls, state, toast } from './core.js'
 import { closeDrawer } from './drawers.js'
 import { drawHighlight, hideSelbar, touch } from './highlights.js'
-import { clearSel, onSelected, sel, wireSelection } from './selection.js'
+import { caretAt, clearSel, onSelected, sel, wireSelection, wordAt } from './selection.js'
 import { closeSheet, openHighlight, sheet } from './sheet.js'
 import { buildShelf, hideMenu } from './shelf.js'
 import { bookBytes } from './library.js'
@@ -298,12 +298,32 @@ export function inWindow(contents, x, y) {
   return [fr.left + x, fr.top + y];
 }
 
-/** Глава epub как поверхность выделения: диапазон живёт в iframe, якорь — cfi. */
+/** Глава epub как поверхность выделения: точка — каретка, отрезок — диапазон, якорь — cfi.
+    Текст перетекает по колонкам, поэтому порядок точек знает сам браузер. */
 export function epubSurface(contents) {
+  const doc = contents.document;
+  const caret = (node, at) => { const r = doc.createRange(); r.setStart(node, at); r.collapse(true); return r; };
   return {
-    root: contents.document, doc: contents.document,
-    origin: () => contents.document.defaultView.frameElement.getBoundingClientRect(),
-    anchor: range => contents.cfiFromRange(range),
+    root: doc, doc,
+    origin: () => doc.defaultView.frameElement.getBoundingClientRect(),
+    at: (x, y) => caretAt(doc, x, y),
+    word: (x, y) => {
+      const r = wordAt(doc, x, y);
+      return r && [caret(r.startContainer, r.startOffset), caret(r.endContainer, r.endOffset)];
+    },
+    span: (a, b) => {
+      const back = a.compareBoundaryPoints(Range.START_TO_START, b) > 0;
+      const [from, to] = back ? [b, a] : [a, b];
+      const r = doc.createRange();
+      r.setStart(from.startContainer, from.startOffset);
+      r.setEnd(to.endContainer, to.endOffset);
+      if (r.collapsed) return null;
+      return {
+        from, to, text: r.toString(),
+        rects: [...r.getClientRects()].filter(q => q.width > 0.5 && q.height > 0.5),
+        id: () => contents.cfiFromRange(r),
+      };
+    },
     chapter: () => {
       const loc = state.rendition && state.rendition.currentLocation();
       return chapterName(loc && loc.start ? loc.start.href : '') || '';

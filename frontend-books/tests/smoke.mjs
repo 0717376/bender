@@ -822,9 +822,10 @@ check('десктоп: клик по затемнению закрывает ш�
 await selectByDrag(dpage)
 await dpage.keyboard.press('Escape')
 await dpage.waitForTimeout(200)
+// Полосы выделения переиспользуются, а не пересоздаются — снятое просто спрятано.
 check('десктоп: Escape снимает выделение',
   await dpage.evaluate(() => !document.querySelector('#selbar').classList.contains('on')
-    && document.querySelectorAll('#selLayer .selrect').length === 0))
+    && [...document.querySelectorAll('#selLayer .selrect')].every(n => n.style.display === 'none')))
 await dpage.screenshot({ path: shot('desktop') })
 
 // 9. Тема и PWA
@@ -1071,9 +1072,9 @@ const pSel = await tpage.evaluate(() => {
   if (!span) return { err: 'нет строк в слое' }
   const b = span.getBoundingClientRect()
   const y = b.top + b.height / 2
-  const a = wordAt(document, b.left + 3, y), f = caretAt(document, b.right - 3, y)
-  if (!a || !f) return { err: 'каретка не встала на слой' }
-  sel.on = true; sel.surf = state.pdf.surf; sel.anchor = a; sel.focus = f
+  const w = state.pdf.surf.word(b.left + 3, y), f = state.pdf.surf.at(b.right - 3, y)
+  if (!w || !f) return { err: 'точка не встала на строку' }
+  sel.on = true; sel.surf = state.pdf.surf; sel.anchor = w[0]; sel.focus = f
   commitSel()
   const pend = state.pending
   if (!pend || !pend.text) return { err: 'выделение не собралось' }
@@ -1088,17 +1089,21 @@ check('pdf: выделение на слое даёт якорь страниц�
 check('pdf: панель выделения и метка на странице', pSel.bar && pSel.marks > 0 && pSel.id === pSel.hid,
   `меток: ${pSel.marks}`)
 check('pdf: у выписки записана глава', pSel.chapter === 'Начало', pSel.chapter)
-// Мимо строки каретку в слой ставить нельзя: от такой выделение растягивалось на всю страницу.
+// Точка вне текста тянется к ближайшей строке, а не растягивает выделение на всю страницу.
 const pCaret = await tpage.evaluate(() => {
   const span = [...document.querySelectorAll('.textLayer span')]
     .find(s => s.textContent.trim().length > 12)
   const b = span.getBoundingClientRect()
-  const near = state.pdf.surf.caret(b.left + 10, b.bottom + 8)
-  const far = state.pdf.surf.caret(b.left + 10, b.bottom + 400)
-  return { near: !!near && near.startContainer.nodeType === 3 && span.contains(near.startContainer),
-           far: far === null }
+  const mid = state.pdf.surf.at(b.left + b.width / 2, b.top + b.height / 2)
+  const below = state.pdf.surf.at(b.left + b.width / 2, b.bottom + 300)
+  const left = state.pdf.surf.at(b.left - 200, b.top + b.height / 2)
+  const s = state.pdf.surf.span(state.pdf.surf.at(b.left + 2, b.top + 2), below)
+  return { mid: mid && mid.oi, below: below && below.li === mid.li,
+           left: left && left.oi === 0, whole: s && s.text.length }
 })
-check('pdf: каретка целится в строку, а не в пустоту', pCaret.near && pCaret.far, JSON.stringify(pCaret))
+check('pdf: точка вне текста тянется к строке, выделение не разрастается',
+  pCaret.mid > 0 && pCaret.below && pCaret.left && pCaret.whole > 5 && pCaret.whole < 60,
+  JSON.stringify(pCaret))
 // Метка держится за текст: уходим на другую страницу и возвращаемся.
 await tpage.evaluate(() => state.pdf.goto(3))
 await tpage.waitForTimeout(500)
