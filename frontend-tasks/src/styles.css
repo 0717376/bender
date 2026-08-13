@@ -115,6 +115,11 @@ button, input, textarea, select { font-family: inherit; -webkit-tap-highlight-co
 .kicker { font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--accent-ink); font-weight: 700; margin-bottom: 9px; }
 .list-head h1 { font-weight: 800; font-size: 36px; line-height: 1.05; letter-spacing: -.025em; color: var(--text); }
 .h1-edit { width: 100%; border: 0; outline: 0; background: transparent; padding: 0; font-family: inherit; font-weight: 800; font-size: 36px; line-height: 1.05; letter-spacing: -.025em; color: var(--text); }
+/* Заметка проекта — отдельной строкой под шапкой, а не внутри неё: иначе кольцо
+   прогресса и кнопки прижимаются к низу описания вместо заголовка. */
+.list-head.with-notes { margin-bottom: 6px; }
+.head-notes { display: block; width: 100%; margin: 0 0 22px; border: 0; outline: 0; background: transparent; resize: none; font: inherit; font-size: 14.5px; line-height: 1.6; color: var(--text-2); min-height: 23px; overflow: hidden; padding: 0; }
+.head-notes::placeholder { color: var(--text-4); }
 
 /* Area home: the area's projects as clickable rows above its loose tasks. */
 .area-projects { list-style: none; margin: 0 0 20px; padding: 0; }

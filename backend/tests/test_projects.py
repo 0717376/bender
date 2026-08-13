@@ -38,3 +38,22 @@ def test_deleting_a_project_takes_its_repeat_templates_along(store):
     tpl = store.list_tasks(view="repeats")
     assert len(tpl) == 1 and tpl[0]["project_id"] is None
     assert len(store.list_tasks(view="upcoming")) == 3
+
+
+def test_описание_проекта_живёт_и_правится(store):
+    """Поле было в схеме с самого начала, но им никто не пользовался — теперь им правят
+    описание списка из шапки и из агента."""
+    pid = store.create_project("Ремонт", notes="Кухня и коридор до сентября")
+
+    assert store.list_projects()[0]["notes"] == "Кухня и коридор до сентября"
+
+    upd = store.update_project(pid, notes="Только кухня")
+    assert upd["notes"] == "Только кухня"
+    assert upd["title"] == "Ремонт", "правка заметки не должна трогать остальное"
+
+
+def test_у_проекта_без_описания_пустая_строка(store):
+    """Фронтенд кладёт значение в textarea напрямую — null там обернулся бы «null»."""
+    store.create_project("Ремонт")
+
+    assert store.list_projects()[0]["notes"] == ""

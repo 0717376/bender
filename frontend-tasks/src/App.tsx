@@ -286,6 +286,14 @@ function Board() {
     call.then(() => { T.setView({ ...v, label: title }); T.reload(); }).catch(() => {});
   };
 
+  // Заметка проекта: описание списка целиком — зачем он и чем закончится. Живёт в шапке,
+  // сохраняется по уходу фокуса, как и переименование.
+  const saveProjectNotes = (notes: string) => {
+    const v = T.view;
+    if (v.kind !== "project" || v.id == null) return;
+    api.updateProject(v.id, { notes }).then(() => T.reload()).catch(() => {});
+  };
+
   // Удаление списка: область и проект ведут себя одинаково — задачи внутри переживают их
   // (FK ON DELETE SET NULL) и остаются в «В любое время», а не исчезают вместе со списком.
   const [confirmList, setConfirmList] = useState<{ kind: "area" | "project"; id: number; title: string } | null>(null);
@@ -411,6 +419,7 @@ function Board() {
           onNewTask={() => setNewTaskOpen(true)}
           onAddHeading={(title) => void T.add(title, { project: T.view.id, kind: "heading" })}
           onRenameView={renameView}
+          onProjectNotes={saveProjectNotes}
           onDeleteProject={() => {
             if (T.view.kind === "project" && T.view.id != null) setConfirmList({ kind: "project", id: T.view.id, title: T.view.label });
           }}
