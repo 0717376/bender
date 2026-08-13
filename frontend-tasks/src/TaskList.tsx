@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { ChevronDown, ChevronRight, ListPlus, Plus, Trash2, TriangleAlert } from "lucide-react";
 import TaskRow from "./TaskRow";
@@ -94,6 +94,28 @@ function TitleEdit({ value, onSave }: { value: string; onSave: (title: string) =
   );
 }
 
+/* Заметка проекта — как в задаче: тот же вид, автовысота, сохранение по уходу фокуса.
+   Ключ по проекту сбрасывает состояние при переключении списка. */
+function NotesEdit({ value, onSave }: { value: string; onSave: (notes: string) => void }) {
+  const [v, setV] = useState(value);
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const grow = () => { const el = ref.current; if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } };
+  useLayoutEffect(grow, [v]);
+  useEffect(() => setV(value), [value]);
+  return (
+    <textarea
+      ref={ref}
+      className="head-notes"
+      placeholder={t("notes")}
+      value={v}
+      rows={1}
+      onChange={(e) => setV(e.target.value)}
+      onBlur={() => { if (v !== value) onSave(v); }}
+      onKeyDown={(e) => { if (e.key === "Escape") { setV(value); (e.target as HTMLTextAreaElement).blur(); } }}
+    />
+  );
+}
+
 function Ring({ done, open }: { done: number; open: number }) {
   const total = done + open;
   if (!total) return null;
@@ -126,6 +148,7 @@ export default function TaskList({
   onNewTask,
   onAddHeading,
   onRenameView,
+  onProjectNotes,
   onDeleteArea,
   onDeleteProject,
   onOpenProject,
@@ -151,6 +174,7 @@ export default function TaskList({
   onNewTask: () => void;
   onAddHeading: (title: string) => void;
   onRenameView: (title: string) => void;
+  onProjectNotes: (notes: string) => void;
   onDeleteArea: () => void;
   onDeleteProject: () => void;
   onOpenProject: (id: number) => void;
@@ -169,6 +193,7 @@ export default function TaskList({
   const [headTitle, setHeadTitle] = useState("");
 
   const isProject = view.kind === "project";
+  const thisProject = isProject ? projects.find((p) => p.id === view.id) : undefined;
   const isArea = view.kind === "area";
   const isToday = view.kind === "view" && view.key === "today";
   const isUpcoming = view.kind === "view" && view.key === "upcoming";
@@ -238,7 +263,7 @@ export default function TaskList({
   return (
     <main className="list-pane">
       <div className="list-scroll scroll">
-        <div className="list-head">
+        <div className={"list-head" + (isProject ? " with-notes" : "")}>
           <div className="head-text">
             {kicker && <div className="kicker">{kicker}</div>}
             {isProject || isArea
@@ -264,6 +289,10 @@ export default function TaskList({
             </div>
           )}
         </div>
+
+        {isProject && (
+          <NotesEdit key={`notes:${view.id}`} value={thisProject?.notes ?? ""} onSave={onProjectNotes} />
+        )}
 
         {areaProjects.length > 0 && (
           <ul className="area-projects">

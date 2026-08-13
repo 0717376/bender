@@ -123,7 +123,18 @@ async def create_project(args):
     return _text({"id": pid})
 
 
-TOOLS = [list_tasks, create_task, update_task, complete_task, delete_task, list_projects, create_project]
+@tool("update_project", "Изменить проект по id: title, notes (описание проекта), area_id, status.",
+      {"type": "object", "properties": {"id": {"type": "integer"}, "title": {"type": "string"},
+                                        "notes": {"type": "string"}, "area_id": {"type": "integer"},
+                                        "status": {"type": "string"}},
+       "required": ["id"]})
+async def update_project(args):
+    fields = {k: v for k, v in args.items() if k != "id" and v is not None}
+    return _text(store.update_project(args["id"], **fields) or {"error": "проект не найден"})
+
+
+TOOLS = [list_tasks, create_task, update_task, complete_task, delete_task, list_projects,
+         create_project, update_project]
 
 # Tool names as Claude sees them, for allowed_tools.
 TOOL_NAMES = [f"mcp__tasks__{t.name}" for t in TOOLS]
