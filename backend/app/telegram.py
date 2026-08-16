@@ -10,7 +10,7 @@ import time
 
 import httpx
 
-from . import config
+from . import config, pairing
 from .agent import clear_session, run_collect
 
 logger = logging.getLogger("wiki.tg")
@@ -265,12 +265,16 @@ async def tg_handle(client: httpx.AsyncClient, update: dict):
     chat_id = msg["chat"]["id"]
     user_id = (msg.get("from") or {}).get("id")
 
-    if not config.TELEGRAM_ALLOWED_IDS:
-        await tg_api(client, "sendMessage", chat_id=chat_id,
-                     text=f"Бот ещё не настроен. Ваш Telegram ID: {user_id}\n"
-                          f"Добавьте его в TELEGRAM_ALLOWED_IDS и перезапустите backend.")
+    allowed = pairing.allowed_ids()
+    if not allowed:
+        if pairing.try_pair(user_id, msg.get("text") or ""):
+            await tg_send(client, chat_id, "Чат привязан. " + TG_WELCOME)
+        else:
+            await tg_api(client, "sendMessage", chat_id=chat_id,
+                         text="Бот ещё не привязан. Отправьте код привязки — его напечатал "
+                              "установщик, а показать снова можно командой ./bender pair.")
         return
-    if user_id not in config.TELEGRAM_ALLOWED_IDS:
+    if user_id not in allowed:
         await tg_api(client, "sendMessage", chat_id=chat_id, text="Это приватный бот.")
         return
 
@@ -429,10 +433,11 @@ def build_status() -> str:
 async def notify(text: str) -> None:
     """Push a message to all allowed Telegram users (used by the cron scheduler).
     In a private chat, chat_id == user_id, so the allowlist doubles as the target list."""
-    if not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_ALLOWED_IDS or not text.strip():
+    targets = pairing.allowed_ids()
+    if not config.TELEGRAM_BOT_TOKEN or not targets or not text.strip():
         return
     async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
-        for chat_id in config.TELEGRAM_ALLOWED_IDS:
+        for chat_id in targets:
             await tg_send(client, chat_id, text)
 
 

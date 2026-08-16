@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# Управление стендом: обновление, проверка, привязка Telegram, логи.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+source ./scripts/common.sh
+env_load .env
+
+STAMP=data/.last_deploy   # сюда пишем коммит перед обновлением — для отката
+
+usage() {
+  cat <<'USAGE'
+Использование: ./bender <команда>
+
+  doctor            проверить стенд: контейнеры, авторизация, бот, место на диске
+  update [--check]  обновить: git pull, свежие образы, рестарт (--check — только посмотреть)
+  rollback          вернуться на версию, что была до последнего update
+  pair [--reset]    код привязки Telegram (--reset — отвязать все чаты)
+  token             выпустить новый долгоживущий токен Claude и записать в .env
+  logs [сервис]     логи (по умолчанию все, Ctrl-C — выход)
+  up | down | restart
+  version
+USAGE
+}
+
+cmd_version() {
+  local sha; sha=$(git rev-parse --short HEAD 2>/dev/null || echo "не git")
+  say "версия:  $sha ($(git log -1 --format=%cd --date=short 2>/dev/null || echo '?'))"
+  say "образы:  ${BENDER_TAG:-local}$([ "${BENDER_TAG:-local}" = local ] && echo ' (сборка из исходников)' || echo ' (готовые из GHCR)')"
+  say "модель:  ${CLAUDE_MODEL:-sonnet}"
+}
+
+behind() {  # сколько коммитов мы отстаём от origin/main
+  git fetch -q origin 2>/dev/null || return 1
+  git rev-list --count HEAD..origin/main 2>/dev/null || return 1
+}
+
+cmd_doctor() {
+  title "Проверка стенда"
+  local fails=0
+
+  have docker && docker info >/dev/null 2>&1 && ok "docker работает" || { bad "docker недоступен"; return 1; }
+
+  local want="backend frontend-wiki frontend-tasks frontend-books" running s
+  running=$(dc ps --services --filter status=running 2>/dev/null || true)
+  for s in $want; do
+    if printf '%s\n' "$running" | grep -qx "$s"; then ok "контейнер $s"
+    else bad "контейнер $s не запущен"; fails=$((fails + 1)); fi
+  done
+
+  if backend_health; then ok "бэкенд отвечает"; else bad "бэкенд не отвечает (./bender logs backend)"; fails=$((fails + 1)); fi
+
+  local name port
+  for name in "вики:${WIKI_PORT:-8842}" "задачи:${TASKS_PORT:-8851}" "книги:${BOOKS_PORT:-8899}"; do
+    port=${name#*:}
+    if ! have curl; then dim "интерфейс ${name%%:*}: нечем проверить (нет curl)"
+    elif curl -fsS -m 5 -o /dev/null "http://127.0.0.1:$port/"; then ok "интерфейс ${name%%:*} на порту $port"
+    else bad "интерфейс ${name%%:*} не отвечает на порту $port"; fails=$((fails + 1)); fi
+  done
+
+  if check_auth; then
+    ok "агент авторизован в Claude"
+  else
+    bad "агент не авторизован — выпустите токен: ./bender token"; fails=$((fails + 1))
+  fi
+
+  if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
+    local bot; bot=$(dc exec -T backend curl -fsS -m 10 \
+      "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getMe" 2>/dev/null | \
+      sed -n 's/.*"username":"\([^"]*\)".*/\1/p' | head -1) || true
+    if [ -n "$bot" ]; then ok "бот @$bot на связи"; else bad "бот не отвечает — проверьте токен"; fails=$((fails + 1)); fi
+    local code; code=$(pair_code 1 || true)
+    if [ -n "$code" ]; then warn "чат не привязан — отправьте боту код $code"; else ok "чат привязан"; fi
+  else
+    dim "Telegram не настроен"
+  fi
+
+  if [ -n "${ASR_UPSTREAM:-}" ]; then
+    if dc exec -T backend curl -fsS -m 5 -o /dev/null "$ASR_UPSTREAM" 2>/dev/null; then ok "распознавание речи отвечает"
+    else warn "сервис распознавания речи ($ASR_UPSTREAM) не отвечает"; fi
+  fi
+
+  local free; free=$(df -h . | awk 'NR==2 {print $4}')
+  say
+  dim "свободно на диске: $free · время в контейнере: $(dc exec -T backend date '+%F %T %Z' 2>/dev/null || echo '?')"
+  cmd_version | while IFS= read -r l; do dim "$l"; done
+  local n; n=$(behind || echo "")
+  [ -n "$n" ] && [ "$n" != 0 ] && say && warn "вышло обновление: $n коммит(ов). Обновиться: ./bender update"
+
+  say
+  [ "$fails" = 0 ] && ok "всё на месте" || bad "проблем: $fails"
+  return 0
+}
+
+cmd_update() {
+  if [ "${1:-}" = "--check" ]; then
+    local n; n=$(behind) || die "не дотянуться до origin — проверьте сеть"
+    [ "$n" = 0 ] && ok "уже последняя версия" || {
+      warn "доступно обновление: $n коммит(ов)"
+      git log --oneline HEAD..origin/main | head -10 | while IFS= read -r l; do dim "$l"; done
+    }
+    return 0
+  fi
+
+  title "Обновление"
+  [ -n "$(git status --porcelain 2>/dev/null)" ] && warn "в рабочем дереве есть правки — они сохранятся, но обновление может не влиться"
+  mkdir -p data && git rev-parse HEAD > "$STAMP" 2>/dev/null || true
+
+  git pull --ff-only || die "не влилось. Разберитесь с git и повторите"
+
+  if [ "${BENDER_TAG:-local}" = local ]; then
+    dc up -d --build
+  else
+    dc pull --quiet && dc up -d --no-build
+  fi
+  restart_frontends   # nginx фронтендов держит старый IP бэкенда — иначе 502
+  ok "образы обновлены, контейнеры перезапущены"
+
+  wait_healthy 120 && ok "бэкенд отвечает" || warn "бэкенд молчит — ./bender logs backend"
+  say
+  cmd_version
+}
+
+cmd_rollback() {
+  [ -f "$STAMP" ] || die "не с чего откатываться: $STAMP пуст"
+  local sha; sha=$(cat "$STAMP")
+  title "Откат на $sha"
+  git checkout -q "$sha" || die "git не отпускает — сначала разберитесь с правками"
+  dc up -d --build      # старому коду готовых образов может и не быть — собираем
+  restart_frontends
+  wait_healthy 120 && ok "откатились" || warn "бэкенд молчит — ./bender logs backend"
+  dim "вернуться к свежей версии: git checkout main && ./bender update"
+}
+
+cmd_pair() {
+  if [ "${1:-}" = "--reset" ]; then
+    rm -f data/telegram.json
+    dc restart backend >/dev/null   # код привязки заводится при старте бэкенда
+    ok "привязки сброшены"
+  fi
+  [ -n "${TELEGRAM_BOT_TOKEN:-}" ] || die "бот не настроен: впишите TELEGRAM_BOT_TOKEN в .env"
+  local code; code=$(pair_code 20 || true)
+  if [ -n "$code" ]; then
+    title "Код привязки: $code"
+    say "Отправьте его своему боту в Telegram."
+  else
+    ok "чат уже привязан (сбросить: ./bender pair --reset)"
+  fi
+}
+
+cmd_token() {
+  title "Новый токен Claude"
+  say "Токен живёт год и не зависит от OAuth-сессии — то, что нужно серверу без браузера."
+  if have claude; then claude setup-token || true; else dc run --rm backend claude setup-token || true; fi
+  CLAUDE_CODE_OAUTH_TOKEN=$(ask_secret "Вставьте выданный токен" "")
+  [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ] || die "пусто — ничего не меняю"
+  env_save .env WIKI_PASSWORD CLAUDE_MODEL CLAUDE_CODE_OAUTH_TOKEN TELEGRAM_BOT_TOKEN \
+    TELEGRAM_ALLOWED_IDS TZ WIKI_PORT TASKS_PORT BOOKS_PORT BENDER_TAG
+  dc up -d backend >/dev/null
+  restart_frontends
+  wait_healthy 60 >/dev/null || true
+  check_auth && ok "агент авторизован" || bad "всё ещё не авторизован — проверьте токен"
+}
+
+case "${1:-}" in
+  doctor)   shift; cmd_doctor "$@" ;;
+  update)   shift; cmd_update "$@" ;;
+  rollback) shift; cmd_rollback "$@" ;;
+  pair)     shift; cmd_pair "$@" ;;
+  token)    shift; cmd_token "$@" ;;
+  logs)     shift; dc logs -f --tail 200 "$@" ;;
+  up)       dc up -d; restart_frontends; ok "поднято" ;;
+  down)     dc down; ok "остановлено" ;;
+  restart)  dc restart; ok "перезапущено" ;;
+  version)  cmd_version ;;
+  ""|help|--help|-h) usage ;;
+  *) usage; die "неизвестная команда: $1" ;;
+esac

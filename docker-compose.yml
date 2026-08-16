@@ -1,5 +1,9 @@
+# BENDER_TAG выбирает, откуда берутся образы: `local` — сборка из исходников
+# (`up -d --build`), любой другой тег — готовые образы из GHCR (`pull` + `up -d --no-build`).
+# Переключает и то и другое ./bender update, руками лезть сюда не нужно.
 services:
   backend:
+    image: ghcr.io/0717376/bender-backend:${BENDER_TAG:-local}
     build: ./backend
     expose:
       - "8000"
@@ -13,7 +17,7 @@ services:
       - ${CLAUDE_JSON:-~/.claude.json}:/seed/.claude.json:ro  # конфиг-seed (копируется в HOME при старте)
     environment:
       - WIKI_PASSWORD=${WIKI_PASSWORD}
-      - CLAUDE_MODEL=${CLAUDE_MODEL:-opus}
+      - CLAUDE_MODEL=${CLAUDE_MODEL:-sonnet}
       # Долгоживущий токен из `claude setup-token` (год). Задан — CLI авторизуется им и не
       # зависит от OAuth-сессии в ~/.claude: на headless-хосте она однажды не обновляется
       # и умирает молча, а агент начинает отвечать «Failed to authenticate».
@@ -46,6 +50,7 @@ services:
 
   # Контекст — корень репо: фронтендам нужен общий design/tokens.css
   frontend-wiki:
+    image: ghcr.io/0717376/bender-wiki:${BENDER_TAG:-local}
     build:
       context: .
       dockerfile: frontend-wiki/Dockerfile
@@ -56,6 +61,7 @@ services:
     restart: unless-stopped
 
   frontend-tasks:
+    image: ghcr.io/0717376/bender-tasks:${BENDER_TAG:-local}
     build:
       context: .
       dockerfile: frontend-tasks/Dockerfile
@@ -66,6 +72,7 @@ services:
     restart: unless-stopped
 
   frontend-books:
+    image: ghcr.io/0717376/bender-books:${BENDER_TAG:-local}
     build:
       context: .
       dockerfile: frontend-books/Dockerfile

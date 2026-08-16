@@ -5,7 +5,11 @@ data
 files
 tg-bot-api
 docs
+books
 backups
+install.sh
+bender
+scripts
 **/node_modules
 **/dist
 *.log

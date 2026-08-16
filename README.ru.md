@@ -37,72 +37,42 @@ backend/          FastAPI + claude-agent-sdk (один процесс)
 frontend-wiki/    React: три панели, markdown, чат
 frontend-tasks/   React: задачи, dnd-kit, темы и палитры, чат
 frontend-books/   читалка epub: полка, выделения, агент по книге (PWA, без фреймворка)
+install.sh        мастер установки: вопросы, .env, образы, проверка
+bender            эксплуатация: doctor / update / rollback / pair / token / logs
 ```
 
 Хранилище — файлы и SQLite на volume: `content/` (markdown-вики), `data/` (задачи, cron, память, навыки, сессия), `files/` (файловое хранилище) и `books/` (библиотека читалки: epub, обложки, текст глав). Ничего из этого в репозитории нет — это личные данные.
 
 ## Быстрый старт
 
-Понадобится Docker и авторизованный [Claude CLI](https://docs.anthropic.com/en/docs/claude-code) (агент работает через его OAuth-креды из `~/.claude`).
-
-На сервере без браузера надёжнее не полагаться на смонтированную сессию, а выдать долгоживущий токен: `claude setup-token` (годный год) и полученную строку — в `.env` как `CLAUDE_CODE_OAUTH_TOKEN`. Обычная OAuth-сессия рано или поздно перестаёт обновляться, и агент начинает отвечать «Failed to authenticate».
+Понадобится Docker. Больше ничего.
 
 ```bash
 git clone https://github.com/0717376/bender && cd bender
-
-cat > .env <<'ENV'
-WIKI_PASSWORD=придумайте-пароль
-CLAUDE_MODEL=sonnet
-# Telegram (необязательно): токен бота и ваш chat id
-TELEGRAM_BOT_TOKEN=
-TELEGRAM_ALLOWED_IDS=
-ENV
-
-docker compose up -d --build
+./install.sh
 ```
+
+Установщик задаст несколько вопросов (пароль от веба, модель, таймзона, бот в Telegram —
+по желанию), разберётся с авторизацией в Claude, скачает образы, поднимет стенд и
+проверит его по-настоящему: отвечает ли бэкенд, авторизован ли агент, на связи ли бот.
+В конце напечатает адреса:
 
 - Задачи: http://localhost:8851
 - Вики: http://localhost:8842
 - Книги: http://localhost:8899 (полку наполняете сами — книги живут в `books/`, в репозитории их нет)
 
-Первое сообщение боту в Telegram подскажет ваш ID — впишите его в `TELEGRAM_ALLOWED_IDS` и перезапустите backend.
+Telegram привязывается шестизначным кодом, который печатает установщик: отправьте код
+своему боту — и чат привязан, без правки конфига и перезапуска.
 
-### Большие файлы в Telegram (опционально)
+Дальше:
 
-Облачный Bot API режет файлы: 20 МБ на приём, 50 МБ на отправку. Сервис `tgapi` из compose (официальный self-hosted [telegram-bot-api](https://github.com/tdlib/telegram-bot-api)) поднимает оба лимита до 2 ГБ. Включение:
+```bash
+./bender doctor   # контейнеры, авторизация, бот, порты, диск — по строке на проверку
+./bender update   # git pull, свежие образы, перезапуск, проверка
+```
 
-1. Получите `api_id` / `api_hash` на [my.telegram.org](https://my.telegram.org) → API development tools (имя приложения любое; эти ключи идентифицируют «приложение» и не дают доступа к аккаунту).
-2. Добавьте в `.env`:
-   ```
-   TELEGRAM_API_ID=...
-   TELEGRAM_API_HASH=...
-   TG_API_BASE=http://tgapi:8081
-   ```
-3. Разово разлогиньте бота из облака (обратимо): `curl https://api.telegram.org/bot<TOKEN>/logOut`
-4. `docker compose up -d --build tgapi backend`
-
-Backend определяет локальный сервер по `TG_API_BASE` и читает входящие файлы прямо с общего volume `tg-bot-api/`, не перекачивая их по HTTP. Если переменные не заданы — всё работает через облако, как раньше.
-
-### Переменные окружения
-
-| Переменная | По умолчанию | Что делает |
-|---|---|---|
-| `WIKI_PASSWORD` | — | пароль веб-интерфейсов (обязателен) |
-| `CLAUDE_MODEL` | `sonnet` | модель агента (`sonnet`/`opus`/`haiku`) |
-| `TELEGRAM_BOT_TOKEN` | — | токен бота; пусто — бот выключен |
-| `TELEGRAM_ALLOWED_IDS` | — | список chat id через запятую |
-| `TG_API_BASE` | `https://api.telegram.org` | адрес локального bot-api сервера (см. выше) |
-| `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` | — | ключи my.telegram.org для сервиса `tgapi` |
-| `FILES_MAX_UPLOAD` | `524288000` | лимит веб-загрузки, байт |
-| `ASR_UPSTREAM` | — | URL сервиса распознавания речи для голосовых |
-| `ASR_MODEL` | `gigaam-rnnt` | model_id, который передаётся ASR-сервису |
-| `SESSION_FRESH_HOURS` | `6` | простой, после которого сессия начинается заново |
-| `REVIEWER_ENABLED` / `REVIEWER_MODEL` | `1` / `sonnet` | фоновый ревьюер памяти и навыков |
-| `CURATOR_ENABLED` / `CURATOR_INTERVAL_HOURS` | `1` / `168` | куратор библиотеки навыков |
-| `CLAUDE_DIR` / `CLAUDE_JSON` | `~/.claude` / `~/.claude.json` | креды Claude CLI, монтируются в контейнер |
-| `CLAUDE_CODE_OAUTH_TOKEN` | — | долгоживущий токен `claude setup-token`; задан — используется вместо OAuth-сессии из `~/.claude` |
-| `WIKI_PORT` / `TASKS_PORT` / `BOOKS_PORT` | `8842` / `8851` / `8899` | порты фронтендов |
-| `TZ` | `Europe/Moscow` | часовой пояс (важен для cron) |
+Авторизация на сервере без браузера, свой bot-api для файлов до 2 ГБ, все переменные
+окружения, установка руками: [docs/configuration.ru.md](docs/configuration.ru.md).
 
 ## Лицензия
 

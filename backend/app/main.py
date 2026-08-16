@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from starlette.routing import Route
 
-from . import books_store, config, cron_store, mcp_server, session_log, skill_store, tasks_store
+from . import books_store, config, cron_store, mcp_server, pairing, seed, session_log, skill_store, tasks_store
 from .asr import router as asr_router
 from .auth import require_auth
 from .books_api import init as books_init
@@ -41,6 +41,7 @@ async def lifespan(_app: FastAPI):
     storage_init()
     books_store.init()
     books_init()
+    seed.init()  # первый запуск: страница «Начало работы» и задачи-примеры
     # Папки заводит не только интерфейс (агент через Bash, бэкапы) — выдаём им
     # страницы, иначе в дереве всплывёт «папка», которой в модели вики нет.
     for path, how in normalize_pages():
@@ -49,7 +50,8 @@ async def lifespan(_app: FastAPI):
     tasks: list[asyncio.Task] = []
     if config.TELEGRAM_BOT_TOKEN:
         tasks.append(asyncio.create_task(telegram_poller()))
-        logger.info("Telegram bot enabled")
+        code = pairing.code()
+        logger.info("Telegram bot enabled%s", f"; код привязки {code}" if code else "")
     else:
         logger.info("Telegram bot disabled (no TELEGRAM_BOT_TOKEN)")
     tasks.append(asyncio.create_task(scheduler_loop()))
