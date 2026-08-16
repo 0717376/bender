@@ -5,7 +5,7 @@ requires-python = ">=3.12"
 dependencies = [
     # Два движка — два SDK. В каждом лежит бинарник своего CLI, поэтому образ
     # везёт обе подписки сразу: переключение движка не требует пересборки.
-    "claude-agent-sdk>=0.2.131",
+    "claude-agent-sdk>=0.2.137",
     "openai-codex>=0.144.4",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.34",
