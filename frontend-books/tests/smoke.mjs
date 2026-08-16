@@ -155,7 +155,8 @@ const booksRoute = async r => {
 }
 
 const browser = await webkit.launch()
-const ctx = await browser.newContext({ ...devices['iPhone 13'], hasTouch: false })
+/* Язык интерфейса берётся из браузера — проверки написаны по-русски, поэтому его задаём явно. */
+const ctx = await browser.newContext({ ...devices['iPhone 13'], hasTouch: false, locale: 'ru-RU' })
 await ctx.route('**/auth/login', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{"token":"T"}' }))
 await ctx.route('**/auth/me', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' }))
 await ctx.route('**/books', booksRoute)
@@ -692,7 +693,7 @@ await page.evaluate(() => closeBook())
 await page.waitForSelector('#shelf.on')
 
 // 8. Большой экран — второе «устройство»: подхватывает позицию и выписки телефона
-const dctx = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+const dctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'ru-RU' })
 await dctx.route('**/auth/**', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{"token":"T","ok":true}' }))
 await dctx.route('**/books', booksRoute)
 await dctx.route('**/books/**', booksRoute)
@@ -855,7 +856,7 @@ check('PWA: манифест отдаётся', man === 200)
 // 10. Тап пальцем по выписке — отдельный контекст с настоящим тачем.
 // На тач-экране epub.js отдаёт попадание по метке ещё на touchstart: шторка встаёт
 // под палец, и click, прилетающий после отпускания, попадает уже в затемнение.
-const tctx = await browser.newContext({ ...devices['iPhone 13'], hasTouch: true })
+const tctx = await browser.newContext({ ...devices['iPhone 13'], hasTouch: true, locale: 'ru-RU' })
 await tctx.route('**/auth/**', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{"token":"T","ok":true}' }))
 await tctx.route('**/books', booksRoute)
 await tctx.route('**/books/**', booksRoute)
@@ -1227,6 +1228,70 @@ const pBack = await tpage.evaluate(() => ({
 check('pdf: после переоткрытия — та же страница', pBack.page === 5, pBack.info)
 await tpage.screenshot({ path: shot('pdf') })
 await tpage.evaluate(() => closeBook())
+
+// 12. Английский интерфейс: язык берётся из браузера, а вместе с ним и язык вопросов агенту
+const ectx = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'en-US' })
+await ectx.route('**/auth/**', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{"token":"T","ok":true}' }))
+await ectx.route('**/books', booksRoute)
+await ectx.route('**/books/**', booksRoute)
+await ectx.addInitScript(STUB)
+const epage = await ectx.newPage()
+epage.on('pageerror', e => console.log('  [pageerror en]', e.message))
+await epage.goto(URL_)
+await epage.waitForSelector('#auth.on')
+await expose(epage)
+const eAuth = await epage.evaluate(() => ({
+  title: document.title,
+  lang: document.documentElement.lang,
+  btn: document.querySelector('#authGo').textContent,
+  ph: document.querySelector('#authPass').placeholder,
+  manifest: (document.querySelector('link[rel=manifest]') || {}).getAttribute('href'),
+}))
+check('язык: вход по-английски', eAuth.btn === 'Sign in' && eAuth.ph === 'Password'
+  && eAuth.title === 'Books' && eAuth.lang === 'en', JSON.stringify(eAuth))
+check('язык: манифест английский', /manifest\.en\.webmanifest$/.test(eAuth.manifest || ''), eAuth.manifest)
+await epage.fill('#authPass', 'secret'); await epage.click('#authGo')
+await epage.waitForSelector('#shelf.on')
+const eShelf = await epage.evaluate(() => ({
+  h1: document.querySelector('#shelf h1').textContent,
+  sub: document.querySelector('#shelfSub').textContent,
+}))
+check('язык: полка по-английски', eShelf.h1 === 'Books' && /on the shelf$/.test(eShelf.sub),
+  `${eShelf.h1} · ${eShelf.sub}`)
+// На полке уже две книги, и порядок в ней — по последнему открытию: берём epub по названию.
+await epage.locator('.card', { hasText: FIXTURE.title }).first().click()
+await epage.waitForSelector('#reader.on')
+await epage.waitForFunction(() => !!document.querySelector('#viewer iframe'), null, { timeout: 30000 })
+await epage.waitForTimeout(1200)
+check('язык: счётчик страниц без русского «из»',
+  / of /.test(await epage.locator('#pageInfo').textContent()),
+  await epage.locator('#pageInfo').textContent())
+const ePicked = await selectByDrag(epage)
+check('язык: выделение работает и в английской сборке', !!ePicked, ePicked || '')
+const eActs = await epage.locator('#selActs .act').allTextContents()
+check('язык: действия над выделением по-английски',
+  eActs.join('|') === 'Translate|Explain|Ask', eActs.join('|'))
+await epage.locator('#selActs .act', { hasText: 'Explain' }).click()
+await epage.waitForTimeout(700)
+const eAsked = await epage.evaluate(() => (window.__sent[window.__sent.length - 1] || {}).text || '')
+check('язык: агента просят отвечать по-английски',
+  eAsked.includes('Answer in English') && eAsked.includes('I am reading'), eAsked.slice(0, 60))
+const eTitle = await epage.locator('#sheetTitle').textContent()
+check('язык: шторка подписана по-английски', eTitle === 'Explanation', eTitle)
+await epage.evaluate(() => closeSheet())
+// Переключатель в настройках закрепляет язык поверх браузерного.
+await epage.evaluate(() => closeBook())
+await epage.waitForSelector('#shelf.on')
+await epage.click('#btnPrefs')
+await epage.waitForSelector('#drawer.on')
+const eRows = await epage.locator('#drawerBody .setrow .lbl').allTextContents()
+check('язык: в настройках есть строка языка', eRows.includes('Language'), eRows.join(' · '))
+await epage.locator('#drawerBody .seg button', { hasText: 'Русский' }).click()
+await epage.waitForSelector('#shelf.on', { timeout: 30000 })
+await epage.waitForTimeout(400)
+check('язык: выбор в настройках сильнее языка браузера',
+  await epage.locator('#shelf h1').textContent() === 'Книги',
+  await epage.locator('#shelf h1').textContent())
 
 console.log('\nOK:')
 ok.forEach(x => console.log('  +', x))

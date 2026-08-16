@@ -3,6 +3,7 @@ import { paint } from './highlights.js'
 import { caretAt, commitSel, sel, wordAt } from './selection.js'
 import { auth, showAuth } from './auth.js'
 import { $, state } from './core.js'
+import { applyDom, t } from './i18n.js'
 import { allToWiki, closeDrawer, drawerFind, drawerHighlights, drawerPrefs, drawerSettings, drawerToc, openDrawer } from './drawers.js'
 import { applyTheme, closeBook, epubSurface, openBook, wireGlobal, wireScrub } from './reader.js'
 import { bubbleMe, closeSheet, contextAround, followUp, openHighlight, promptFor, send, wireScrim, wireSheetKeyboard } from './sheet.js'
@@ -15,16 +16,16 @@ import { closeStats, openStats, wireReadingBeat } from './stats.js'
 
 function wireUI() {
   $('#btnBack').onclick = closeBook;
-  $('#btnFind').onclick = () => openDrawer('Поиск', drawerFind);
-  $('#btnToc').onclick = () => openDrawer('Оглавление', drawerToc);
-  $('#btnHl').onclick = () => openDrawer('Выписки', drawerHighlights,
-    { icon: 'i-wiki', title: 'Собрать всё в вики', run: allToWiki });
-  $('#btnSet').onclick = () => openDrawer('Вид', drawerSettings);
+  $('#btnFind').onclick = () => openDrawer(t('searchTitle'), drawerFind);
+  $('#btnToc').onclick = () => openDrawer(t('tocTitle'), drawerToc);
+  $('#btnHl').onclick = () => openDrawer(t('highlightsTitle'), drawerHighlights,
+    { icon: 'i-wiki', title: t('allToWikiTitle'), run: allToWiki });
+  $('#btnSet').onclick = () => openDrawer(t('viewTitle'), drawerSettings);
   $('#btnAdd').onclick = pickFile;
   wireShelfDrop();
   $('#btnStats').onclick = openStats;
   $('#statsClose').onclick = closeStats;
-  $('#btnPrefs').onclick = () => openDrawer('Настройки', drawerPrefs);
+  $('#btnPrefs').onclick = () => openDrawer(t('settings'), drawerPrefs);
   $('#drawerClose').onclick = closeDrawer;
   $('#sheetClose').onclick = closeSheet;
   wireScrim();
@@ -57,7 +58,7 @@ async function doLogin() {
     $('#authPass').value = '';
     start();
   } catch (e) {
-    $('#authErr').textContent = e.message || 'Не вышло';
+    $('#authErr').textContent = e.message || t('loginFailed');
   } finally {
     $('#authGo').disabled = false;
   }
@@ -77,6 +78,7 @@ export async function start() {
 let shelfTimer = null;
 
 async function boot() {
+  applyDom();          // статические подписи — до первого кадра приложения
   wireGlobal();
   wireUI();
   wireScrub();

@@ -1,5 +1,6 @@
 import { auth, showAuth } from './auth.js'
 import { API } from './core.js'
+import { t } from './i18n.js'
 
 /* ── Агент ── */
 
@@ -15,13 +16,13 @@ export const agent = {
           : (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
         ws = new WebSocket(base + '/chat/ws?token=' + encodeURIComponent(auth.token) + '&surface=books');
       } catch (e) { this.pending = null; return rej(e); }
-      const t = setTimeout(() => { try { ws.close(); } catch {} ; this.pending = null; rej(new Error('Агент не отвечает')); }, 15000);
+      const t = setTimeout(() => { try { ws.close(); } catch {} ; this.pending = null; rej(new Error(t('agentSilent'))); }, 15000);
       ws.onopen = () => { clearTimeout(t); this.ws = ws; this.pending = null; res(ws); };
-      ws.onerror = () => { clearTimeout(t); this.pending = null; rej(new Error('Нет связи с агентом')); };
+      ws.onerror = () => { clearTimeout(t); this.pending = null; rej(new Error(t('agentNoLink'))); };
       ws.onclose = e => {
         this.ws = null;
-        if (e.code === 4001) { auth.forget(); showAuth('Сессия истекла, войди заново'); }
-        else if (this.busy) { this.fire({ t: 'error', text: 'Связь оборвалась' }); this.fire({ t: 'done' }); }
+        if (e.code === 4001) { auth.forget(); showAuth(t('sessionExpired')); }
+        else if (this.busy) { this.fire({ t: 'error', text: t('linkLost') }); this.fire({ t: 'done' }); }
       };
       ws.onmessage = m => { try { this.fire(JSON.parse(m.data)); } catch {} };
     });

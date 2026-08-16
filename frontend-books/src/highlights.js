@@ -1,4 +1,5 @@
-import { $, COLORS, colorOf, el, ls, state, toast } from './core.js'
+import { $, COLORS, colorName, colorOf, el, ls, state, toast } from './core.js'
+import { t } from './i18n.js'
 import { clearSel, sel } from './selection.js'
 import { askAgent } from './sheet.js'
 import { live, markDirty, sync } from './sync.js'
@@ -6,9 +7,9 @@ import { live, markDirty, sync } from './sync.js'
 /* ── Панель над выделением ── */
 
 export const ACTS = [
-  { kind: 'translate', label: 'Перевести', icon: 'i-lang' },
-  { kind: 'explain', label: 'Объяснить', icon: 'i-bulb' },
-  { kind: 'ask', label: 'Спросить', icon: 'i-ask' },
+  { kind: 'translate', key: 'translate', icon: 'i-lang' },
+  { kind: 'explain', key: 'explain', icon: 'i-bulb' },
+  { kind: 'ask', key: 'ask', icon: 'i-ask' },
 ];
 
 export function showSelbar(rect) {
@@ -18,7 +19,7 @@ export function showSelbar(rect) {
   colors.innerHTML = ''; acts.innerHTML = '';
   const cur = (state.pending || {}).color;
   COLORS.forEach(c => {
-    const d = el('button', 'dot' + (c.id === cur ? ' sel' : '')); d.style.background = c.hex; d.title = c.name;
+    const d = el('button', 'dot' + (c.id === cur ? ' sel' : '')); d.style.background = c.hex; d.title = colorName(c.id);
     d.onclick = () => paint(c.id);
     colors.appendChild(d);
   });
@@ -27,14 +28,14 @@ export function showSelbar(rect) {
   copy.onclick = () => {
     const t = (state.pending || {}).text || '';
     (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(
-      () => toast('Скопировано'), () => toast('Скопировать не вышло'));
+      () => toast(t('copied')), () => toast(t('copyFailed')));
     clearSel();
   };
   colors.appendChild(copy);
 
   ACTS.forEach((a, i) => {
     const b = el('button', 'act' + (i === 0 ? ' primary' : ''));
-    b.innerHTML = `<svg class="icon"><use href="#${a.icon}"/></svg>${a.label}`;
+    b.innerHTML = `<svg class="icon"><use href="#${a.icon}"/></svg>${t(a.key)}`;
     b.onclick = () => askAgent(a.kind);
     acts.appendChild(b);
   });
@@ -74,7 +75,7 @@ export function paint(colorId) {
   }
   save();
   clearSel();
-  toast(colorOf(colorId).name);
+  toast(colorName(colorId));
 }
 
 /* Метки epub рисует сам движок по cfi, в pdf их кладём мы поверх страницы — но зовётся

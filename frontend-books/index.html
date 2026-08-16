@@ -40,16 +40,16 @@
   <symbol id="i-tool" viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 01-5.4 5.4L4 17v3h3l5.3-5.3a4 4 0 015.4-5.4l-2.6 2.6-1.4-1.4z"/></symbol>
 </svg>
 
-<div id="splash">открываю…</div>
+<div id="splash" data-t="opening">открываю…</div>
 
 <div id="auth">
   <div class="auth-box">
     <div class="mark"><svg class="icon"><use href="#i-book"/></svg></div>
-    <h1>Книги</h1>
-    <p>Читалка с агентом. Пароль тот же, что у вики.</p>
+    <h1 data-t="books">Книги</h1>
+    <p data-t="authTagline">Читалка с агентом. Пароль тот же, что у вики.</p>
     <div class="field">
-      <input id="authPass" type="password" placeholder="Пароль" autocomplete="current-password">
-      <button class="btn" id="authGo">Войти</button>
+      <input id="authPass" type="password" placeholder="Пароль" data-t-ph="password" autocomplete="current-password">
+      <button class="btn" id="authGo" data-t="signIn">Войти</button>
     </div>
     <div class="auth-err" id="authErr"></div>
   </div>
@@ -59,13 +59,13 @@
   <div class="wrap">
     <div class="shelf-head">
       <div>
-        <h1>Книги</h1>
+        <h1 data-t="books">Книги</h1>
         <div class="sub" id="shelfSub"></div>
       </div>
       <div class="head-acts">
-        <button class="tb" id="btnStats" title="Статистика чтения"><svg class="icon"><use href="#i-chart"/></svg></button>
-        <button class="tb" id="btnAdd" title="Добавить книгу"><svg class="icon"><use href="#i-plus"/></svg></button>
-        <button class="tb" id="btnPrefs" title="Настройки"><svg class="icon"><use href="#i-gear"/></svg></button>
+        <button class="tb" id="btnStats" title="Статистика чтения" data-t-title="statsTitle"><svg class="icon"><use href="#i-chart"/></svg></button>
+        <button class="tb" id="btnAdd" title="Добавить книгу" data-t-title="addBook"><svg class="icon"><use href="#i-plus"/></svg></button>
+        <button class="tb" id="btnPrefs" title="Настройки" data-t-title="settings"><svg class="icon"><use href="#i-gear"/></svg></button>
       </div>
     </div>
     <div id="heroSlot"></div>
@@ -77,8 +77,8 @@
   <div class="wrap">
     <div class="shelf-head">
       <div>
-        <h1>Чтение</h1>
-        <div class="sub">сколько и когда</div>
+        <h1 data-t="statsHead">Чтение</h1>
+        <div class="sub" data-t="statsSub">сколько и когда</div>
       </div>
       <div class="head-acts">
         <button class="tb" id="statsClose"><svg class="icon"><use href="#i-x"/></svg></button>
@@ -92,14 +92,14 @@
   <div class="chrome" id="topbar">
     <button class="tb" id="btnBack"><svg class="icon"><use href="#i-back"/></svg></button>
     <div id="bookTitle"></div>
-    <button class="tb" id="btnFind" title="Искать в книге"><svg class="icon"><use href="#i-find"/></svg></button>
+    <button class="tb" id="btnFind" title="Искать в книге" data-t-title="findInBook"><svg class="icon"><use href="#i-find"/></svg></button>
     <button class="tb" id="btnToc"><svg class="icon"><use href="#i-list"/></svg></button>
     <button class="tb" id="btnHl"><svg class="icon"><use href="#i-mark"/></svg></button>
     <button class="tb" id="btnSet"><svg class="icon"><use href="#i-type"/></svg></button>
   </div>
   <div id="viewer"></div>
   <div class="chrome" id="botbar">
-    <input type="range" id="scrub" min="0" max="1000" value="0" step="1" disabled aria-label="Прогресс книги">
+    <input type="range" id="scrub" min="0" max="1000" value="0" step="1" disabled aria-label="Прогресс книги" data-t-aria="bookProgress">
     <div class="botline">
       <span id="chapLabel"></span><span class="mid" id="pageInfo"></span><span id="pct"></span>
     </div>
@@ -113,15 +113,15 @@
 <div class="sheet" id="sheet">
   <div class="grab"></div>
   <div class="sheet-head">
-    <div class="h" id="sheetTitle">Агент</div>
+    <div class="h" id="sheetTitle" data-t="agent">Агент</div>
     <button class="tb" id="sheetClose"><svg class="icon"><use href="#i-x"/></svg></button>
   </div>
   <div class="quote" id="sheetQuote"></div>
-  <textarea id="sheetNote" class="note" rows="1" placeholder="Своя заметка…" autocomplete="off"></textarea>
+  <textarea id="sheetNote" class="note" rows="1" placeholder="Своя заметка…" data-t-ph="ownNote" autocomplete="off"></textarea>
   <div id="sheetBody"></div>
   <div class="chips" id="sheetChips"></div>
   <div class="sheet-foot">
-    <input id="sheetInput" placeholder="Уточнить…" autocomplete="off">
+    <input id="sheetInput" placeholder="Уточнить…" data-t-ph="refine" autocomplete="off">
     <button class="send" id="sheetSend"><svg class="icon"><use href="#i-send"/></svg></button>
   </div>
 </div>
