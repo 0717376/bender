@@ -1,20 +1,24 @@
 'use strict';
 
+import { locale, plural, t } from './i18n.js'
+
 /* Книги — читалка epub с агентом.
    Бэкенд один на все приложения: авторизация и чат живут на вики. */
 /* Бэкенд — тот же, что у вики и задач: nginx приложения проксирует /auth, /books и /chat
    на него же, поэтому обращаемся по своему адресу и без CORS. */
 export const API = '';
 
-/* Цвет = смысл, а не украшение: по нему потом фильтруют выписки. */
+/* Цвет = смысл, а не украшение: по нему потом фильтруют выписки. Имя цвета —
+   ключ в словаре: смысл один, а слово зависит от языка интерфейса. */
 export const COLORS = [
-  { id: 'imp',  hex: '#F5C64A', name: 'Важное' },
-  { id: 'no',   hex: '#E4707A', name: 'Не согласен' },
-  { id: 'q',    hex: '#6FA8FF', name: 'Вопрос' },
-  { id: 'wiki', hex: '#7DBE8A', name: 'В вики' },
-  { id: 'nice', hex: '#A98FE3', name: 'Красиво сказано' },
+  { id: 'imp',  hex: '#F5C64A', key: 'colorImp' },
+  { id: 'no',   hex: '#E4707A', key: 'colorNo' },
+  { id: 'q',    hex: '#6FA8FF', key: 'colorQ' },
+  { id: 'wiki', hex: '#7DBE8A', key: 'colorWiki' },
+  { id: 'nice', hex: '#A98FE3', key: 'colorNice' },
 ];
 export const colorOf = id => (COLORS.find(c => c.id === id) || COLORS[0]);
+export const colorName = id => t(colorOf(id).key);
 
 export const $ = s => document.querySelector(s);
 export const el = (t, cls, html) => { const n = document.createElement(t); if (cls) n.className = cls; if (html != null) n.innerHTML = html; return n; };
@@ -24,14 +28,12 @@ export const ls = {
   del: k => { try { localStorage.removeItem(k); } catch {} },
 };
 export const escapeHtml = s => { const d = el('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
-export const plural = (n, a, b, c) => { const m = n % 100, k = n % 10;
-  return n + ' ' + (m > 10 && m < 20 ? c : k === 1 ? a : k > 1 && k < 5 ? b : c); };
 export function when(ts) {
   const s = Math.round((Date.now() - ts) / 1000);
-  if (s < 90) return 'только что';
-  if (s < 5400) return plural(Math.round(s / 60), 'минуту', 'минуты', 'минут') + ' назад';
-  if (s < 86400) return plural(Math.round(s / 3600), 'час', 'часа', 'часов') + ' назад';
-  return new Date(ts).toLocaleDateString('ru-RU');
+  if (s < 90) return t('justNow');
+  if (s < 5400) return t('ago', plural(Math.round(s / 60), 'minutesAgo'));
+  if (s < 86400) return t('ago', plural(Math.round(s / 3600), 'hoursAgo'));
+  return new Date(ts).toLocaleDateString(locale);
 }
 
 export let toastT;

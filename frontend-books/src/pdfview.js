@@ -3,6 +3,7 @@ import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { agent } from './agent.js'
 import { auth, showAuth } from './auth.js'
 import { $, colorOf, el, API, ls, state, toast } from './core.js'
+import { t } from './i18n.js'
 import { bookBytes } from './library.js'
 import { scrubbing, syncChrome } from './reader.js'
 import { clearSel, sel, wireSelection, wordAround } from './selection.js'
@@ -21,7 +22,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
 
 export async function openPdf(entry) {
   $('#splash').classList.remove('off');
-  $('#splash').textContent = 'открываю книгу…';
+  $('#splash').textContent = t('openingBook');
   hideMenu();
   $('#scrub').disabled = true; $('#scrub').value = 0;
   wireViewer();
@@ -57,8 +58,8 @@ export async function openPdf(entry) {
   } catch (e) {
     console.warn(e);
     $('#splash').classList.add('off');
-    if (/\b401\b/.test(e.message || '')) { auth.forget(); showAuth('Сессия истекла, войди заново'); }
-    else toast('Книга не открылась');
+    if (/\b401\b/.test(e.message || '')) { auth.forget(); showAuth(t('sessionExpired')); }
+    else toast(t('bookNotOpened'));
   }
 }
 
@@ -164,7 +165,7 @@ function onPage() {
   ls.set('chap:' + id, chap);
   noteProgress(pct);
   $('#chapLabel').textContent = chap;
-  $('#pageInfo').textContent = `${v.page} из ${v.pages}`;
+  $('#pageInfo').textContent = t('pageOf', v.page, v.pages);
   $('#pct').textContent = Math.round(pct * 100) + '%';
   if (!scrubbing) $('#scrub').value = Math.round(pct * 1000);
 }

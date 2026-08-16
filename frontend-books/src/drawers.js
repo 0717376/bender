@@ -1,5 +1,6 @@
 import { auth, showAuth } from './auth.js'
-import { $, COLORS, colorOf, el, escapeHtml, ls, plural, state, toast, when } from './core.js'
+import { $, COLORS, colorName, colorOf, el, escapeHtml, ls, state, toast, when } from './core.js'
+import { PROMPT, lang, plural, setLang, t } from './i18n.js'
 import { redrawHighlights } from './highlights.js'
 import { applyTheme, findInBook, fitLines, flashFind, jumpTo, relayoutNow, reopen, windowSig } from './reader.js'
 import { chips, inline, openHighlight, openSheet, resetScrim, send, sheet, sheetHead } from './sheet.js'
@@ -7,6 +8,9 @@ import { buildShelf } from './shelf.js'
 import { live, sync } from './sync.js'
 
 /* ── Ящики ── */
+
+const THEMES = () => [['auto', t('themeAuto')], ['light', t('themeLight')],
+                      ['sepia', t('themeSepia')], ['dark', t('themeDark')]];
 
 export function openDrawer(title, build, action) {
   $('#drawerTitle').textContent = title;
@@ -38,11 +42,11 @@ export function drawerToc(body) {
     const here = $('#chapLabel').textContent.trim();
     (state.pdf.outline || []).forEach(i => {
       const b = el('button', 'item' + (i.title === here ? ' cur' : ''));
-      b.innerHTML = `<div class="s ${i.lvl ? 'toc-l2' : 'toc-l1'}">${escapeHtml(i.title)}</div><div class="m">стр. ${i.page}</div>`;
+      b.innerHTML = `<div class="s ${i.lvl ? 'toc-l2' : 'toc-l1'}">${escapeHtml(i.title)}</div><div class="m">${escapeHtml(t('pageNo', i.page))}</div>`;
       b.onclick = () => { state.pdf.goto(i.page); closeDrawer(); };
       body.appendChild(b);
     });
-    if (!(state.pdf.outline || []).length) body.appendChild(el('div', 'empty', 'В книге нет оглавления'));
+    if (!(state.pdf.outline || []).length) body.appendChild(el('div', 'empty', t('noToc')));
     return;
   }
   const toc = (state.book.navigation && state.book.navigation.toc) || [];
@@ -56,13 +60,13 @@ export function drawerToc(body) {
     if (i.subitems && i.subitems.length) add(i.subitems, lvl + 1);
   });
   add(toc, 0);
-  if (!toc.length) body.appendChild(el('div', 'empty', 'В книге нет оглавления'));
+  if (!toc.length) body.appendChild(el('div', 'empty', t('noToc')));
 }
 
 export function drawerFind(body) {
   const box = el('div', 'findbox');
   const input = el('input');
-  input.type = 'search'; input.placeholder = 'Искать в книге'; input.autocomplete = 'off';
+  input.type = 'search'; input.placeholder = t('findInBook'); input.autocomplete = 'off';
   box.appendChild(input);
   body.appendChild(box);
   const out = el('div');
@@ -73,22 +77,22 @@ export function drawerFind(body) {
     const mine = ++gen;
     out.innerHTML = '';
     if (q.length < 3) {
-      if (q) out.appendChild(el('div', 'empty', 'Хотя бы три буквы'));
+      if (q) out.appendChild(el('div', 'empty', t('atLeastThree')));
       return;
     }
-    out.appendChild(el('div', 'empty', 'Ищу по книге…'));
+    out.appendChild(el('div', 'empty', t('searching')));
     const pdf = state.kind === 'pdf';
     const hits = pdf ? await state.pdf.search(q, () => gen !== mine)
       : await findInBook(q, () => gen !== mine);
     if (gen !== mine) return;                    // пока искали, запрос сменился
     out.innerHTML = '';
-    if (!hits.length) { out.appendChild(el('div', 'empty', 'Ничего не нашлось')); return; }
-    out.appendChild(el('div', 'empty', plural(hits.length, 'находка', 'находки', 'находок')));
+    if (!hits.length) { out.appendChild(el('div', 'empty', t('nothingFound'))); return; }
+    out.appendChild(el('div', 'empty', plural(hits.length, 'finds')));
     hits.forEach(h => {
       const b = el('button', 'item');
       const text = (h.excerpt || '').trim();
       const at = text.toLowerCase().indexOf(q.toLowerCase());
-      const where = pdf ? ['стр. ' + h.page, state.pdf.labelAt(h.page)].filter(Boolean).join(' · ')
+      const where = pdf ? [t('pageNo', h.page), state.pdf.labelAt(h.page)].filter(Boolean).join(' · ')
         : h.chapter || '';
       b.innerHTML = `<div class="s">${at < 0 ? escapeHtml(text)
         : escapeHtml(text.slice(0, at)) + '<mark>' + escapeHtml(text.slice(at, at + q.length))
@@ -111,7 +115,7 @@ export function drawerFind(body) {
 
 export function drawerHighlights(body) {
   if (!live().length) {
-    body.appendChild(el('div', 'empty', 'Пока пусто.<br>Выдели фрагмент в тексте и выбери цвет.'));
+    body.appendChild(el('div', 'empty', t('noHighlightsYet')));
     return;
   }
   const filter = el('div', 'chips');
@@ -123,15 +127,15 @@ export function drawerHighlights(body) {
       const talk = (h.thread || []).filter(t => t.role === 'ai').length;
       b.innerHTML = `<div class="s">${escapeHtml(h.text.slice(0, 200))}${h.text.length > 200 ? '…' : ''}</div>
         ${h.note ? `<div class="note-line"><svg class="icon"><use href="#i-note"/></svg>${escapeHtml(h.note)}</div>` : ''}
-        <div class="m"><i style="background:${colorOf(h.color).hex}"></i>${escapeHtml(colorOf(h.color).name)}
-        ${h.chapter ? ' · ' + escapeHtml(h.chapter) : ''}${talk ? ' · ' + plural(talk, 'ответ', 'ответа', 'ответов') + ' агента' : ''}</div>`;
+        <div class="m"><i style="background:${colorOf(h.color).hex}"></i>${escapeHtml(colorName(h.color))}
+        ${h.chapter ? ' · ' + escapeHtml(h.chapter) : ''}${talk ? ' · ' + escapeHtml(t('agentReplies', plural(talk, 'replies'))) : ''}</div>`;
       b.onclick = () => { jumpTo(h.cfi); closeDrawer(); setTimeout(() => openHighlight(h), 400); };
       body.appendChild(b);
     });
   };
   COLORS.forEach(c => {
     const chip = el('button', 'chip');
-    chip.innerHTML = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c.hex}"></span>${c.name}`;
+    chip.innerHTML = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c.hex}"></span>${escapeHtml(t(c.key))}`;
     chip.onclick = () => { active = active === c.id ? null : c.id; render(); };
     filter.appendChild(chip);
   });
@@ -140,28 +144,25 @@ export function drawerHighlights(body) {
 }
 
 export function allToWiki() {
-  if (!live().length) return toast('Выписок пока нет');
-  if (!auth.token) return showAuth('Войди, чтобы отправить в вики');
+  if (!live().length) return toast(t('noHighlights'));
+  if (!auth.token) return showAuth(t('signInToWiki'));
   const m = state.meta || {};
   const lines = live().slice().sort((a, b) => a.ts - b.ts).map(h => {
-    const talk = (h.thread || []).map(t => (t.role === 'me' ? 'Я: ' : 'Агент: ') + t.text).join('\n');
-    return `— ${colorOf(h.color).name}${h.chapter ? ', ' + h.chapter : ''}\n«${h.text}»`
-      + (h.note ? `\nМоя заметка: ${h.note}` : '') + (talk ? '\n' + talk : '');
+    const talk = (h.thread || []).map(m => (m.role === 'me' ? PROMPT.me : PROMPT.agentSaid) + m.text).join('\n');
+    return `— ${colorName(h.color)}${h.chapter ? ', ' + h.chapter : ''}\n«${h.text}»`
+      + (h.note ? '\n' + PROMPT.myNoteInline(h.note) : '') + (talk ? '\n' + talk : '');
   }).join('\n\n');
   closeDrawer();
-  const h = { text: 'Все выписки из книги', chapter: '', thread: [] };
+  const h = { text: PROMPT.allHighlights, chapter: '', thread: [] };
   state.active = h; sheet.kind = 'wiki';
   sheetHead('wiki', h);
-  $('#sheetQuote').textContent = plural(live().length, 'выписка', 'выписки', 'выписок') + ' из книги';
+  $('#sheetQuote').textContent = PROMPT.fromBook(plural(live().length, 'highlights'));
   $('#sheetBody').innerHTML = '';
   chips([]);
   openSheet();
   send([
-    `Собери страницу в вики по книге «${m.title || state.entry.title || ''}»`
-      + (m.creator ? ` (${m.creator})` : '') + '.',
-    '', 'Мои выписки:', lines, '',
-    'Сгруппируй по смыслу, а не по цвету, добавь короткое вступление своими словами и '
-      + 'ответь одной строкой — куда положил.',
+    PROMPT.collectPage(m.title || state.entry.title || '', m.creator || ''),
+    '', PROMPT.myHighlights, lines, '', PROMPT.groupThem,
   ].join('\n'));
 }
 
@@ -177,15 +178,13 @@ export function drawerSettings(body) {
     opts.forEach(([v, t]) => { const b = el('button', v === cur ? 'on' : '', t); b.onclick = () => on(v); s.appendChild(b); });
     return s;
   };
-  row('Тема', null, seg([['auto', 'Как в системе'], ['light', 'Светлая'], ['sepia', 'Сепия'], ['dark', 'Тёмная']],
-    state.theme, v => {
-      state.theme = v; ls.set('set:theme', v); applyTheme();
-      closeDrawer(); openDrawer('Вид', drawerSettings);
-    }));
+  row(t('theme'), null, seg(THEMES(), state.theme, v => {
+    state.theme = v; ls.set('set:theme', v); applyTheme();
+    closeDrawer(); openDrawer(t('viewTitle'), drawerSettings);
+  }));
   // PDF свёрстан навсегда: кегль, поля и разметку задаёт сам файл, крутить нечего.
   if (state.kind === 'pdf') {
-    body.appendChild(el('div', 'empty',
-      'Вёрстка PDF зашита в файл — страница просто подгоняется под экран.'));
+    body.appendChild(el('div', 'empty', t('pdfFixed')));
     return;
   }
   const sizes = el('div', 'seg');
@@ -201,19 +200,20 @@ export function drawerSettings(body) {
     };
     sizes.appendChild(b);
   });
-  row('Кегль', null, sizes);
+  row(t('fontSize'), null, sizes);
   const cur = body.lastElementChild.querySelector('.lbl');
-  cur.innerHTML = 'Кегль <span id="fsz" style="color:var(--text-3)">' + state.fontSize + '%</span>';
-  row('Поля', 'шире поля — короче строка, легче глазу',
-    seg([['narrow', 'Узкие'], ['normal', 'Обычные'], ['wide', 'Широкие']], state.margin, v => {
+  cur.innerHTML = escapeHtml(t('fontSize'))
+    + ' <span id="fsz" style="color:var(--text-3)">' + state.fontSize + '%</span>';
+  row(t('margins'), t('marginsHint'),
+    seg([['narrow', t('marginNarrow')], ['normal', t('marginNormal')], ['wide', t('marginWide')]], state.margin, v => {
       state.margin = v; ls.set('set:margin', v); closeDrawer(); reopen();
     }));
-  row('Разметка', 'страницами — как в бумажной книге; лентой — как в вебе',
-    seg([['paginated', 'Страницы'], ['scrolled', 'Лента']], state.flow, v => {
+  row(t('layout'), t('layoutHint'),
+    seg([['paginated', t('layoutPaged')], ['scrolled', t('layoutScrolled')]], state.flow, v => {
       state.flow = v; ls.set('set:flow', v); closeDrawer(); reopen();
     }));
-  row('Разворот', 'на широком экране — две страницы',
-    seg([['auto', 'Авто'], ['single', 'Одна']], state.spread, v => {
+  row(t('spread'), t('spreadHint'),
+    seg([['auto', t('spreadAuto')], ['single', t('spreadSingle')]], state.spread, v => {
       state.spread = v; ls.set('set:spread', v); closeDrawer(); reopen();
     }));
 }
@@ -230,28 +230,30 @@ export function drawerPrefs(body) {
     opts.forEach(([v, t]) => { const b = el('button', v === cur ? 'on' : '', t); b.onclick = () => on(v); s.appendChild(b); });
     return s;
   };
-  row('Тема', null, seg([['auto', 'Как в системе'], ['light', 'Светлая'], ['sepia', 'Сепия'], ['dark', 'Тёмная']],
-    state.theme, v => {
-      state.theme = v; ls.set('set:theme', v); applyTheme();
-      closeDrawer(); openDrawer('Настройки', drawerPrefs);
-    }));
+  row(t('theme'), null, seg(THEMES(), state.theme, v => {
+    state.theme = v; ls.set('set:theme', v); applyTheme();
+    closeDrawer(); openDrawer(t('settings'), drawerPrefs);
+  }));
+  // Язык интерфейса: по умолчанию берётся из браузера, здесь его можно закрепить.
+  row(t('language'), null, seg([['ru', 'Русский'], ['en', 'English']], lang, v => {
+    if (v !== lang) setLang(v);
+  }));
   const now = el('button', 'chip');
-  now.textContent = 'Синхронизировать';
+  now.textContent = t('syncNow');
   now.onclick = async () => {
-    now.textContent = 'Синхронизирую…';
+    now.textContent = t('syncing');
     const ok = await sync.run({ force: true });
-    now.textContent = 'Синхронизировать';
-    toast(ok ? 'Прогресс сведён' : 'Не вышло — нет связи');
+    now.textContent = t('syncNow');
+    toast(ok ? t('syncOk') : t('syncFailed'));
     if (ok) { buildShelf(); closeDrawer(); }
   };
-  row('Прогресс', sync.last ? 'сведён ' + when(sync.last) : 'пока не сводился', now);
+  row(t('progress'), sync.last ? t('syncedAt', when(sync.last)) : t('neverSynced'), now);
 
   const out = el('button', 'chip');
-  out.innerHTML = '<svg class="icon"><use href="#i-out"/></svg>Выйти';
+  out.innerHTML = '<svg class="icon"><use href="#i-out"/></svg>' + escapeHtml(t('signOut'));
   out.onclick = () => { auth.forget(); location.reload(); };
-  row('Агент', auth.token ? 'вошли, вопросы к агенту работают' : 'не вошли — агент недоступен', out);
+  row(t('agent'), auth.token ? t('signedIn') : t('signedOut'), out);
   const info = el('div', 'empty');
-  info.innerHTML = 'Файлы книг лежат на этом устройстве.<br>'
-    + 'Позиция и выписки сводятся через сервер — на всех устройствах одно место в книге.';
+  info.innerHTML = t('storageNote');
   body.appendChild(info);
 }

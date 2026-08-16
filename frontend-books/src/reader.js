@@ -2,6 +2,7 @@ import ePub, { EpubCFI } from 'epubjs'
 import { agent } from './agent.js'
 import { auth, showAuth } from './auth.js'
 import { $, ls, state, toast } from './core.js'
+import { t } from './i18n.js'
 import { closeDrawer } from './drawers.js'
 import { drawHighlight, hideSelbar, touch } from './highlights.js'
 import { caretAt, clearSel, onSelected, sel, wireSelection, wordAt } from './selection.js'
@@ -18,16 +19,16 @@ export async function openBook(entry) {
   // PDF — другой движок: свой рендер, своя навигация. Модуль ленивый, epub за него не платит.
   if ((entry.kind || '') === 'pdf') {
     $('#splash').classList.remove('off');
-    $('#splash').textContent = 'открываю книгу…';
+    $('#splash').textContent = t('openingBook');
     try { return await (await import('./pdfview.js')).openPdf(entry); }
     catch (e) {
       console.warn(e);
       $('#splash').classList.add('off');
-      return toast('Книга не открылась');
+      return toast(t('bookNotOpened'));
     }
   }
   $('#splash').classList.remove('off');
-  $('#splash').textContent = 'открываю книгу…';
+  $('#splash').textContent = t('openingBook');
   hideMenu();
   $('#scrub').disabled = true; $('#scrub').value = 0;
   try {
@@ -57,8 +58,8 @@ export async function openBook(entry) {
     console.warn(e);
     $('#splash').classList.add('off');
     // Пароль сменили или сессия протухла — «книга не открылась» тут только запутает.
-    if (/\b401\b/.test(e.message || '')) { auth.forget(); showAuth('Сессия истекла, войди заново'); }
-    else toast('Книга не открылась');
+    if (/\b401\b/.test(e.message || '')) { auth.forget(); showAuth(t('sessionExpired')); }
+    else toast(t('bookNotOpened'));
   }
 }
 
@@ -200,7 +201,7 @@ export async function jumpTo(target) {
   }
   noteJump();
   pin = typeof target === 'string' && target.startsWith('epubcfi(') ? target : null;
-  try { await state.rendition.display(target); } catch { toast('Не нашёл это место в книге'); }
+  try { await state.rendition.display(target); } catch { toast(t('placeNotFound')); }
 }
 
 /** Создать rendition и навесить всё, что к нему прилагается. Общее для открытия и пересборки. */
@@ -253,7 +254,7 @@ export async function mountRendition(at) {
     ls.set('chap:' + id, chap);
     $('#chapLabel').textContent = chap;
     const d = loc.start.displayed;
-    $('#pageInfo').textContent = state.flow === 'paginated' && d && d.total ? `${d.page} из ${d.total}` : '';
+    $('#pageInfo').textContent = state.flow === 'paginated' && d && d.total ? t('pageOf', d.page, d.total) : '';
     if (state.book.locations.length()) {
       const p = state.book.locations.percentageFromCfi(pin) || 0;
       ls.set('pct:' + id, p);
@@ -381,7 +382,7 @@ export function wireScrub() {
     if (state.kind === 'pdf') {
       const page = pdfPage();
       $('#chapLabel').textContent = state.pdf.labelAt(page) || '';
-      $('#pageInfo').textContent = `${page} из ${state.pdf.pages}`;
+      $('#pageInfo').textContent = t('pageOf', page, state.pdf.pages);
       return;
     }
     const cfi = state.book.locations.cfiFromPercentage(p);

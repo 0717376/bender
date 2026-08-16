@@ -1,4 +1,5 @@
 import { $, API, ls } from './core.js'
+import { t } from './i18n.js'
 
 /* ── Авторизация ── */
 
@@ -10,7 +11,7 @@ export const auth = {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password: pass }),
     });
-    if (!r.ok) throw new Error(r.status === 401 ? 'Неверный пароль' : 'Сервер ответил ' + r.status);
+    if (!r.ok) throw new Error(r.status === 401 ? t('wrongPassword') : t('serverSaid', r.status));
     const d = await r.json();
     this.token = d.token;
     return d.token;
