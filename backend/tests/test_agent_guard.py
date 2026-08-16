@@ -55,6 +55,33 @@ def test_allowed(cmd):
     assert codex_decision(cmd) is None
 
 
+def patch_decision(tool, command):
+    from app.codex_hook import decide
+
+    out = decide({"hook_event_name": "PreToolUse", "tool_name": tool,
+                  "tool_input": {"command": command}})
+    return out.get("hookSpecificOutput", {}).get("permissionDecision")
+
+
+def test_патчем_в_книги_не_пишут():
+    """У Claude библиотеку закрывает хук на Write/Edit; у Codex правки приезжают
+    патчем — правило должно действовать и там."""
+    from app import config
+
+    assert patch_decision("apply_patch",
+                          f"*** Begin Patch\n*** Update File: {config.BOOKS_DIR}/a/meta.json\n") == "deny"
+    assert patch_decision("apply_patch",
+                          f"*** Begin Patch\n*** Update File: {config.WIKI_DIR}/note.md\n") is None
+
+
+def test_патчем_не_удаляют():
+    """`*** Delete File:` — то же стирание мимо корзины, что и rm."""
+    from app import config
+
+    assert patch_decision("apply_patch",
+                          f"*** Begin Patch\n*** Delete File: {config.WIKI_DIR}/note.md\n") == "deny"
+
+
 def test_codex_видит_команду_списком():
     """Шелл у Codex приезжает и массивом аргументов — разбирать надо и такое."""
     from app.codex_hook import decide

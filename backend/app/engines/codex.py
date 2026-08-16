@@ -3,12 +3,11 @@
 Отличий от Claude три, всё остальное — общее:
 - инструменты Codex не умеет держать внутри процесса, поэтому забирает те же самые
   по HTTP у нас же (mcp_internal);
-- запреты живут не в коде, а в хуке ($CODEX_HOME/hooks.json → codex_hook.py);
+- запреты живут не в коде, а в хуке (/etc/codex/managed_config.toml → codex_hook.py);
 - нить разговора зовётся thread, и её id мы храним там же, где id сессии Claude.
 """
 
 import asyncio
-import json
 import logging
 import os
 import sys
@@ -24,30 +23,34 @@ logger = logging.getLogger("wiki.agent.codex")
 HOOK_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                            "codex_hook.py")
 MCP_TOKEN_ENV = "BENDER_MCP_TOKEN"
+# Конфиг администратора. Хуки оттуда Codex считает управляемыми и выполняет сразу;
+# те же хуки в конфиге пользователя ($CODEX_HOME/hooks.json) он молча игнорирует,
+# пока человек не подтвердит их руками в интерфейсе, а подтверждать здесь некому.
+MANAGED_CONFIG = "/etc/codex/managed_config.toml"
 
 _client: AsyncCodex | None = None
 _client_lock = asyncio.Lock()
 
 
-def _hooks_config() -> dict:
-    """Запрет на rm. Кладём в $CODEX_HOME — это конфиг пользователя, он доверенный;
-    хук, переданный на лету вместе с ходом, Codex сначала попросит подтвердить руками,
-    а подтверждать в контейнере некому."""
-    return {
-        "hooks": {
-            "PreToolUse": [
-                {
-                    "matcher": "shell",
-                    "hooks": [{
-                        "type": "command",
-                        "command": f"{sys.executable} {HOOK_SCRIPT}",
-                        "timeout": 15,
-                        "statusMessage": "проверяю команду",
-                    }],
-                }
-            ]
-        }
-    }
+def _managed_config() -> str:
+    """Единственный настоящий запрет на этом движке: песочница Codex внутри докера не
+    работает (см. _opts), поэтому вся защита вики и библиотеки держится на этом хуке.
+
+    Матчер `.*`, а не список имён инструментов: переименуют шелл — и запрет отвалится
+    молча, а так лишний вызов скрипта стоит десятки миллисекунд и решает сам скрипт.
+    """
+    command = f"{sys.executable} {HOOK_SCRIPT}"
+    return (
+        "# Файл заводит Bender при старте: правки перетрёт.\n"
+        "[[hooks.PreToolUse]]\n"
+        'matcher = ".*"\n'
+        "\n"
+        "[[hooks.PreToolUse.hooks]]\n"
+        'type = "command"\n'
+        f'command = "{command}"\n'
+        "timeout = 15\n"
+        'statusMessage = "проверяю команду"\n'
+    )
 
 
 def _sync_skills() -> None:
@@ -84,16 +87,49 @@ def _sync_skills() -> None:
 
 def _ensure_home() -> None:
     os.makedirs(config.CODEX_HOME, exist_ok=True)
-    path = os.path.join(config.CODEX_HOME, "hooks.json")
-    body = json.dumps(_hooks_config(), ensure_ascii=False, indent=2)
+    body = _managed_config()
     try:
-        with open(path) as f:
-            if f.read() == body:
-                return
-    except OSError:
-        pass
-    with open(path, "w") as f:
-        f.write(body)
+        os.makedirs(os.path.dirname(MANAGED_CONFIG), exist_ok=True)
+        try:
+            with open(MANAGED_CONFIG) as f:
+                if f.read() == body:
+                    return
+        except OSError:
+            pass
+        with open(MANAGED_CONFIG, "w") as f:
+            f.write(body)
+    except OSError as e:
+        # Без этого файла агент останется без запретов и сотрёт страницу вики мимо
+        # корзины. Молчать об этом нельзя; доктор проверяет то же самое.
+        logger.error("Codex: не записать %s (%s) — запреты не действуют!", MANAGED_CONFIG, e)
+
+
+def _approval(method: str, params: dict | None) -> dict:
+    """Ответ на запросы согласования от Codex.
+
+    Перед каждым вызовом MCP-инструмента Codex спрашивает разрешения (элицитацией),
+    а SDK по умолчанию на этот вопрос отвечает пустотой — то есть отказом. Спрашивать
+    в нашем случае некого: инструменты свои собственные (задачи, вики, книги, память),
+    без них ассистента нет. Соглашаемся — но только за свой сервер.
+    """
+    params = params or {}
+    if method == "mcpServer/elicitation/request":
+        if params.get("serverName") == config.CODEX_MCP_NAME:
+            # persist: always — иначе он спрашивает про каждый вызов заново
+            return {"action": "accept", "content": {}, "_meta": {"persist": "always"}}
+        logger.warning("Codex: отказал чужому MCP-серверу %s", params.get("serverName"))
+        return {"action": "decline", "content": {}}
+    # Просьба выйти за пределы песочницы (запись мимо рабочих каталогов, сеть из шелла).
+    # При нашем режиме согласований такие вопросы не приходят вовсе, а если придут —
+    # ответ «нет»: песочница и есть та граница, на которую мы полагаемся.
+    return {}
+
+
+def prepare() -> None:
+    """Разложить всё, что движку нужно до первого хода: запреты и навыки. Зовётся при
+    старте бэкенда — чтобы окна без хука не было и чтобы доктор мог его проверить."""
+    _ensure_home()
+    _sync_skills()
 
 
 async def client() -> AsyncCodex:
@@ -105,6 +141,16 @@ async def client() -> AsyncCodex:
             env["CODEX_HOME"] = config.CODEX_HOME
             env[MCP_TOKEN_ENV] = mcp_internal.get_token()
             _client = AsyncCodex(CodexConfig(env=env, cwd=config.WIKI_DIR))
+            # Обработчик согласований публичного входа не имеет: у AsyncCodex его в
+            # конструкторе нет, поэтому ставим на внутренний синхронный клиент. Если SDK
+            # это переименует — не падаем, но громко жалуемся: без него не работают
+            # никакие инструменты, и понять это по симптомам трудно.
+            sync = getattr(getattr(_client, "_client", None), "_sync", None)
+            if sync is not None and hasattr(sync, "_approval_handler"):
+                sync._approval_handler = _approval
+            else:
+                logger.error("Codex SDK: не нашёл обработчик согласований — "
+                             "вызовы инструментов будут отклоняться")
         return _client
 
 
@@ -117,12 +163,6 @@ def _thread_config(variant: str) -> dict:
                 "bearer_token_env_var": MCP_TOKEN_ENV,
             }
         },
-        # Писать можно в вики (рабочая директория) и в файловое хранилище. Библиотека
-        # книг остаётся только на чтение — там правит человек в читалке.
-        "sandbox_workspace_write": {
-            "writable_roots": [config.FILES_DIR],
-            "network_access": True,
-        },
         "tools": {"web_search": True},
     }
 
@@ -130,9 +170,13 @@ def _thread_config(variant: str) -> dict:
 def _opts(variant: str, instructions: str) -> dict:
     return {
         "cwd": config.WIKI_DIR,
-        "sandbox": Sandbox.workspace_write,
-        # Спрашивать разрешение не у кого: подтверждать эскалации в контейнере некому,
-        # поэтому всё, что не разрешено песочницей, просто не делается.
+        # Своя песочница Codex внутри докера не поднимается: bubblewrap'у нужны
+        # user namespaces, а docker их по умолчанию запрещает — в этом режиме падала
+        # каждая команда шелла («No permissions to create a new namespace»). Границей
+        # служит сам контейнер, ровно как на движке Claude, а вики и библиотеку
+        # стережёт хук (см. _managed_config).
+        "sandbox": Sandbox.full_access,
+        # Спрашивать разрешение не у кого: подтверждать эскалации в контейнере некому.
         "approval_mode": ApprovalMode.deny_all,
         "developer_instructions": instructions,
         "config": _thread_config(variant),
@@ -226,6 +270,8 @@ async def review(prompt: str, instructions: str) -> None:
     codex = await client()
     thread = await codex.thread_start(
         cwd=config.DATA_DIR,
+        # Ревьюеру нужны только память и навыки (они приезжают MCP-сервером), а шелл
+        # ему ни к чему: в этом режиме песочница его и не пустит.
         sandbox=Sandbox.read_only,
         approval_mode=ApprovalMode.deny_all,
         developer_instructions=instructions,
@@ -249,10 +295,16 @@ async def account() -> dict:
     acc = getattr(resp, "account", None)
     if acc is None:
         return {}
-    return {k: v for k, v in {
-        "email": getattr(acc, "email", ""),
-        "plan": getattr(acc, "plan_type", "") or getattr(acc, "plan", ""),
-    }.items() if v}
+    # Сам аккаунт лежит внутри обёртки-union'а; поля могут поехать вместе с версией SDK,
+    # поэтому «авторизованы» решаем по наличию аккаунта, а не по тому, что удалось прочесть.
+    inner = getattr(acc, "root", acc)
+    out = {"аккаунт": "есть"}
+    for key, attr in (("почта", "email"), ("тариф", "plan_type")):
+        value = getattr(inner, attr, None)
+        value = getattr(value, "value", value)   # plan_type приезжает перечислением
+        if value:
+            out[key] = str(value)
+    return out
 
 
 async def login(on_code) -> bool:

@@ -44,6 +44,7 @@ How they differ:
 | sign-in | long-lived token (`./bender token`) | device code (`./bender login`) |
 | agent tools | in-process MCP servers | the same ones, over HTTP inside the container |
 | editing files | Read/Write/Edit/Bash | shell and apply_patch |
+| guardrails | Agent SDK hooks | a hook in `/etc/codex/managed_config.toml` |
 | web | WebSearch + WebFetch | built-in web search |
 | subagents | researcher and librarian via Task | none (in this first version) |
 | conversation thread | Claude Code session | Codex thread |
@@ -51,6 +52,24 @@ How they differ:
 Worth knowing up front: Codex is a coding harness — drier in tone, keener to reach for
 the shell — and ChatGPT subscription limits are metered differently from Max, which shows
 with cron, the reviewer and the curator all running.
+
+### About the sandbox and the guardrails
+
+Codex's own sandbox does not work inside Docker: bubblewrap needs user namespaces and
+Docker denies them by default, so every shell command fails in that mode. The engine
+therefore runs without it — the container is the boundary, exactly as on the Claude
+engine — and the wiki and the book library are guarded by `app/codex_hook.py`, which
+denies `rm` past the trash, deletion by patch, and writes into the library.
+
+The hook lives in `/etc/codex/managed_config.toml`, the admin-level config, which Codex
+runs straight away. The same hook in the user config (`$CODEX_HOME/hooks.json`) is
+silently ignored until a human reviews and trusts it in the UI, and there is no human in
+a container. The backend writes the file at startup; `./bender doctor` checks the hook's
+actual decisions rather than the file's existence, on its own line.
+
+One more quirk: before every MCP tool call Codex asks for permission, and the SDK answers
+that question with silence — which counts as a refusal. We answer it ourselves, but only
+for our own tool server; anyone else's is declined.
 
 ## Authentication
 
