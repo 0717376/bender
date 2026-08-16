@@ -15,7 +15,7 @@ import sys
 from openai_codex import ApprovalMode, AsyncCodex, CodexConfig, Sandbox
 from openai_codex import models as codex_models
 
-from .. import config, mcp_internal
+from .. import config, guards, mcp_internal
 from . import Emit, Outcome, StaleSession
 
 logger = logging.getLogger("wiki.agent.codex")
@@ -253,7 +253,10 @@ def _tool_event(thread_item) -> dict | None:
     item = thread_item.root
     kind = getattr(item, "type", "")
     if kind == "commandExecution":
-        return {"t": "tool", "name": "Bash", "pattern": (item.command or "")[:80], "file": ""}
+        # Codex заворачивает команду в `/bin/bash -lc "…"`; в чипе интерфейса нужна
+        # сама команда — так же, как её показывает движок Claude.
+        return {"t": "tool", "name": "Bash",
+                "pattern": guards.unwrap(item.command or "")[:80], "file": ""}
     if kind == "mcpToolCall":
         return {"t": "tool", "name": f"mcp__{item.server}__{item.tool}", "pattern": "", "file": ""}
     if kind == "webSearch":
