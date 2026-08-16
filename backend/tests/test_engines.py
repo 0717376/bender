@@ -89,6 +89,11 @@ def test_события_инструментов_переводятся_в_яз�
     shell = codex._tool_event(_Item(type="commandExecution", command="ls -la"))
     assert shell["name"] == "Bash" and shell["pattern"] == "ls -la"
 
+    # Обёртку оболочкой показывать человеку незачем — в чипе нужна сама команда
+    wrapped = codex._tool_event(_Item(type="commandExecution",
+                                      command='/bin/bash -lc "rg --files -g \'*.md\'"'))
+    assert wrapped["pattern"] == "rg --files -g '*.md'"
+
     tool = codex._tool_event(_Item(type="mcpToolCall", server="bender", tool="tasks_create_task"))
     assert tool["name"] == "mcp__bender__tasks_create_task"
 
