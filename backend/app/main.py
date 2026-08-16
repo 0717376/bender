@@ -1,13 +1,14 @@
 import asyncio
 import logging
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from starlette.routing import Route
 
-from . import books_store, config, cron_store, mcp_server, pairing, seed, session_log, skill_store, tasks_store
+from . import (books_store, config, cron_store, mcp_internal, mcp_server, pairing, seed,
+               session_log, skill_store, tasks_store)
 from .asr import router as asr_router
 from .auth import require_auth
 from .books_api import init as books_init
@@ -57,9 +58,12 @@ async def lifespan(_app: FastAPI):
     tasks.append(asyncio.create_task(scheduler_loop()))
     tasks.append(asyncio.create_task(files_watch_loop()))
     try:
-        # Примонтированный на /mcp sub-app не получает свой lifespan от FastAPI —
-        # менеджер сессий MCP запускаем здесь.
-        async with mcp_server.mcp.session_manager.run():
+        # Примонтированные sub-app'ы не получают свой lifespan от FastAPI —
+        # менеджеры сессий MCP запускаем здесь: внешний (/mcp) и внутренний,
+        # через который ходит за инструментами Codex.
+        async with AsyncExitStack() as stack:
+            await stack.enter_async_context(mcp_server.mcp.session_manager.run())
+            await mcp_internal.run(stack)
             yield
     finally:
         for t in tasks:
@@ -111,3 +115,7 @@ app.include_router(mcp_router)
 # Route, а не Mount: Mount("/mcp") отвечает 307-редиректом на /mcp/,
 # который MCP-клиенты не обязаны следовать за POST.
 app.router.routes.append(Route("/mcp", endpoint=mcp_server.asgi_app))
+# Инструменты для Codex: тот же набор, что у Claude, но по HTTP. Наружу не выведен —
+# nginx фронтендов проксирует только известные ему префиксы API.
+for _variant, _app in mcp_internal.apps.items():
+    app.router.routes.append(Route(f"/mcp-internal/{_variant}", endpoint=_app))

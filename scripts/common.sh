@@ -106,6 +106,19 @@ env_save() {
 
 dc() { docker compose "$@"; }
 
+# Ключи, которые пишет установщик. Один список на install.sh и ./bender: разъедутся —
+# и половина ответов человека потеряется при следующей же правке .env.
+ENV_KEYS="ENGINE WIKI_PASSWORD CLAUDE_MODEL CODEX_MODEL CLAUDE_CODE_OAUTH_TOKEN \
+TELEGRAM_BOT_TOKEN TELEGRAM_ALLOWED_IDS TZ WIKI_PORT TASKS_PORT BOOKS_PORT BENDER_TAG"
+
+engine() { printf '%s' "${ENGINE:-claude}"; }
+
+# Команды Codex живут внутри контейнера — там же, где его логин и бинарник. Зовём
+# питон венва напрямую: `uv run` на ходу досинхронизирует зависимости, а лезть за ними
+# в сеть посреди проверки авторизации незачем.
+BACKEND_PY=/app/.venv/bin/python
+codex_cmd() { dc exec -T backend "$BACKEND_PY" -m app.codex_cli "$@"; }
+
 # Ограничение по времени: `timeout` есть не везде (в macOS его нет вовсе).
 run_timeout() {
   local secs="$1"; shift
@@ -128,10 +141,21 @@ wait_healthy() {
   return 1
 }
 
-# Настоящая проверка авторизации: один короткий ход через тот же CLI, которым
-# ходит агент. Наличие токена в .env ничего не доказывает — он мог протухнуть.
+# Настоящая проверка авторизации: один короткий ход через тот же движок, которым
+# ходит агент. Наличие токена в .env ничего не доказывает — он мог протухнуть,
+# а подписка — кончиться.
 check_auth() {
-  run_timeout 120 dc exec -T backend claude -p 'Ответь одним словом: ok' >/dev/null 2>&1
+  if [ "$(engine)" = codex ]; then
+    run_timeout 180 codex_cmd ping >/dev/null 2>&1
+  else
+    run_timeout 120 dc exec -T backend claude -p 'Ответь одним словом: ok' >/dev/null 2>&1
+  fi
+}
+
+# Что делать человеку, если авторизации нет.
+auth_hint() {
+  [ "$(engine)" = codex ] && printf 'войдите в ChatGPT: ./bender login' \
+                          || printf 'выпустите токен: ./bender token'
 }
 
 # Код привязки Telegram кладёт бэкенд при старте; ждём его появления.

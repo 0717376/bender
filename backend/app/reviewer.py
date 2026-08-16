@@ -10,13 +10,7 @@ memory + skills only, so the reviewer can't touch the wiki or schedule jobs.
 import asyncio
 import logging
 
-from claude_agent_sdk import ClaudeAgentOptions, query
-
-from . import config, memory_store, skill_store
-from .memory_tools import TOOL_NAMES as MEMORY_TOOL_NAMES
-from .memory_tools import server as memory_server
-from .skill_tools import TOOL_NAMES as SKILL_TOOL_NAMES
-from .skill_tools import server as skills_server
+from . import config, engines, memory_store, skill_store
 
 logger = logging.getLogger("wiki.reviewer")
 
@@ -24,20 +18,20 @@ _busy = False
 _turns_since = 0
 _seen_write_seq = 0
 
-_RULES = (
+_RULES_TEMPLATE = (
     "Ты — фоновый ревьюер личного ассистента. Тебе дают последние обмены репликами "
     "(сообщения пользователя и ответы ассистента). Реши, нужно ли что-то сохранить НАВСЕГДА, "
     "и если да — сохрани инструментами. Чаще всего сохранять НЕЧЕГО: тогда ответь «ничего» "
     "и не зови инструменты.\n\n"
-    "СОХРАНЯЙ (mcp__memory__remember):\n"
+    "СОХРАНЯЙ ({t[memory.remember]}):\n"
     "- новый стабильный факт о пользователе (profile) или устойчивый контекст (note);\n"
     "- предпочтение, КАК работать с пользователем (pref) — особенно если он поправил "
     "ассистента или выразил раздражение («не повторяйся», «короче», «без списков»). "
     "Формулируй декларативно («предпочитает…»), не как команду («всегда делай…»).\n"
     "Если новое — уточнение уже существующей записи, НЕ добавляй новую: обнови старую "
-    "через mcp__memory__update_memory. Память ограничена по объёму; при переполнении "
-    "сначала слей пересекающиеся записи и удали устаревшие (mcp__memory__forget).\n"
-    "СОХРАНЯЙ (mcp__skills__save): нетривиальную повторяемую процедуру, которую ассистент "
+    "через {t[memory.update_memory]}. Память ограничена по объёму; при переполнении "
+    "сначала слей пересекающиеся записи и удали устаревшие ({t[memory.forget]}).\n"
+    "СОХРАНЯЙ ({t[skills.save]}): нетривиальную повторяемую процедуру, которую ассистент "
     "успешно выполнил и которая пригодится снова (имя kebab-case латиницей).\n\n"
     "НЕ СОХРАНЯЙ:\n"
     "- то, что уже есть в памяти или навыках (список ниже) — дубликаты запрещены;\n"
@@ -54,23 +48,15 @@ _RULES = (
 )
 
 
+def rules() -> str:
+    """Имена инструментов зависят от движка — подставляем их так же, как в общем промпте."""
+    return config.render(_RULES_TEMPLATE)
+
+
 def _context() -> str:
     mem = memory_store.as_prompt() or "(память пуста)"
     skills = ", ".join(s["slug"] for s in skill_store.list_skills()) or "(нет)"
     return f"{mem}\n\nСуществующие навыки: {skills}"
-
-
-def _options() -> ClaudeAgentOptions:
-    return ClaudeAgentOptions(
-        model=config.REVIEWER_MODEL,
-        system_prompt=_RULES + "\n" + _context(),
-        allowed_tools=MEMORY_TOOL_NAMES + SKILL_TOOL_NAMES,
-        mcp_servers={"memory": memory_server, "skills": skills_server},
-        cwd=config.DATA_DIR,
-        resume=None,
-        max_turns=6,
-        setting_sources=None,
-    )
 
 
 _buffer: list[tuple[str, str]] = []
@@ -82,8 +68,7 @@ async def _review(exchanges: list[tuple[str, str]]) -> None:
         parts = ["Обмены для ревью (от старых к новым)."]
         for user_text, reply_text in exchanges:
             parts.append(f"ПОЛЬЗОВАТЕЛЬ:\n{user_text[:1500]}\n\nАССИСТЕНТ:\n{reply_text[:1500]}")
-        async for _ in query(prompt="\n\n---\n\n".join(parts), options=_options()):
-            pass
+        await engines.get().review("\n\n---\n\n".join(parts), rules() + "\n" + _context())
         logger.info("background review done (%d exchanges)", len(exchanges))
     except Exception as e:  # noqa: BLE001 — background best-effort
         logger.warning("background review failed: %s", e)

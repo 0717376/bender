@@ -2,7 +2,7 @@
 
 **English** | [Русский](README.ru.md)
 
-A self-hosted personal AI agent: a markdown wiki, a Things-style task manager, and a universal assistant in Telegram — all driven by a single agent built on the [Claude Agent SDK](https://docs.anthropic.com/en/api/agent-sdk/overview). Runs on your Claude subscription (OAuth via Claude CLI), no API keys required.
+A self-hosted personal AI agent: a markdown wiki, a Things-style task manager, and a universal assistant in Telegram — all driven by a single agent. Runs **on a subscription, not on API keys**: either Claude Max via the [Claude Agent SDK](https://docs.anthropic.com/en/api/agent-sdk/overview) or ChatGPT Plus/Pro via the [Codex SDK](https://developers.openai.com/codex/sdk). You pick the engine at install time and switch it with one line in `.env`.
 
 ![Tasks — Today](docs/screenshots/tasks-today.png)
 
@@ -15,7 +15,8 @@ A self-hosted personal AI agent: a markdown wiki, a Things-style task manager, a
 - **Assistant everywhere** — web chat in both UIs plus a Telegram bot sharing one session: whatever you discussed on the web, it remembers in Telegram. The reader keeps a thread per book, so working through a chapter doesn't crowd out the main conversation. Voice messages via ASR. Replies stream in Telegram through the native `sendMessageDraft`.
 - **Scheduling** — "remind me in 20 minutes", "send my tasks every weekday at 8:30": the agent creates cron jobs itself. Every run sees the outputs of previous runs (no repeating itself), stays quiet when there is nothing new (`[SILENT]`), and stops the job once the tracked event is over (`[FINAL]`).
 - **Memory & self-improvement** — long-term memory about the user (survives session resets), self-authored skills, a background reviewer after every turn (decides what to persist), a weekly skill-library curator, and a session freshness window.
-- **Subagents** — researcher (web research) and librarian (wiki reorganization) via Task.
+- **Subagents** — researcher (web research) and librarian (wiki reorganization) via Task (Claude engine).
+- **Two subscriptions to choose from** — Claude Max or ChatGPT Plus/Pro. Wiki, tasks, books, memory, cron, skills and guardrails are identical on both: the tools are described once, and each engine gets them its own way.
 
 | Dark theme & palettes | Project with logbook |
 |---|---|
@@ -26,8 +27,11 @@ A self-hosted personal AI agent: a markdown wiki, a Things-style task manager, a
 ## Architecture
 
 ```
-backend/          FastAPI + claude-agent-sdk (single process)
+backend/          FastAPI + the agent engine (single process)
   app/agent.py      sessions, streaming, memory snapshot, freshness window
+  app/engines/      claude.py and codex.py: one turn, one shared event stream
+  app/tool_registry.py  the single list of domain tools, shared by both engines
+  app/mcp_internal.py   the same tools over HTTP — how Codex sees them
   app/scheduler.py  cron ticker (60s), [SILENT]/[FINAL], run history
   app/reviewer.py   background post-turn reviewer (memory/skills)
   app/telegram.py   bot: long polling, draft streaming, /status
@@ -38,7 +42,7 @@ frontend-wiki/    React: three panes, markdown, chat
 frontend-tasks/   React: tasks, dnd-kit, themes & palettes, chat
 frontend-books/   epub reader: shelf, highlights, agent on the book (PWA, no framework)
 install.sh        setup wizard: questions, .env, images, verification
-bender            day-to-day: doctor / update / rollback / pair / token / logs
+bender            day-to-day: doctor / update / rollback / pair / login / token / logs
 ```
 
 Storage is files and SQLite on a volume: `content/` (markdown wiki), `data/` (tasks, cron, memory, skills, session) and `files/` (personal file storage). None of it is in the repository — that's personal data.
@@ -52,9 +56,11 @@ git clone https://github.com/0717376/bender && cd bender
 ./install.sh
 ```
 
-The installer asks a handful of questions (web password, model, timezone, Telegram bot —
-optional), sorts out the Claude credentials, pulls the images, brings the stand up and
-then checks it for real: backend answering, agent actually authenticated, bot reachable.
+The installer asks which subscription to run on (Claude Max or ChatGPT), then a handful of
+questions (web password, model, timezone, Telegram bot — optional), sorts out the
+credentials, pulls the images, brings the stand up and then checks it for real: backend
+answering, agent actually authenticated, bot reachable. Codex signs in by device code —
+any browser will do, just not one on this machine, so a bare VM over ssh works fine.
 At the end it prints the addresses:
 
 - Tasks: http://localhost:8851
@@ -69,6 +75,7 @@ Afterwards:
 ```bash
 ./bender doctor   # containers, auth, bot, ports, disk — one line per check
 ./bender update   # git pull, fresh images, restart, health check
+./bender login    # sign in to ChatGPT by device code (codex engine)
 ```
 
 Authentication on a headless server, self-hosted bot-api for 2 GB files, every environment
