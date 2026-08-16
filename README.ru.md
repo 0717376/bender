@@ -25,6 +25,10 @@
 
 ![Вики](docs/screenshots/ru/wiki.png)
 
+| Полка: обложки, прогресс, выписки | Чтение: выделение цветом и агент по книге |
+|---|---|
+| ![Полка](docs/screenshots/ru/books-shelf.png) | ![Чтение](docs/screenshots/ru/books-reading.png) |
+
 ## Архитектура
 
 ```
