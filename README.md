@@ -25,6 +25,10 @@ A self-hosted personal AI agent: a markdown wiki, a Things-style task manager, a
 
 ![Wiki](docs/screenshots/wiki.png)
 
+| Shelf: covers, progress, highlights | Reading: color highlights and the in-book agent |
+|---|---|
+| ![Shelf](docs/screenshots/books-shelf.png) | ![Reading](docs/screenshots/books-reading.png) |
+
 ## Architecture
 
 ```
