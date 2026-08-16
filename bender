@@ -67,13 +67,21 @@ cmd_doctor() {
 
   if check_auth; then
     if [ "$(engine)" = codex ]; then
-      local who; who=$(codex_cmd check 2>/dev/null | tr -d '\r')
+      # Не `who=$(…)` без страховки: под set -e ненулевой код подстановки убил бы доктора
+      local who; who=$(codex_cmd check 2>/dev/null | tr -d '\r') || true
       ok "агент авторизован в ChatGPT${who:+ · $who}"
     else
       ok "агент авторизован в Claude"
     fi
   else
     bad "агент не авторизован — $(auth_hint)"; fails=$((fails + 1))
+  fi
+
+  if [ "$(engine)" = codex ]; then
+    # На этом движке вики и библиотеку стережёт хук, и больше ничего: если он не
+    # на месте, агент сотрёт страницу мимо корзины, и узнаем мы об этом поздно.
+    if codex_cmd guard >/dev/null 2>&1; then ok "запреты на месте"
+    else bad "запреты не действуют — ./bender logs backend"; fails=$((fails + 1)); fi
   fi
 
   if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then

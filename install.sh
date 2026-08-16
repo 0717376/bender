@@ -59,7 +59,11 @@ else
   esac
 fi
 
-WIKI_PASSWORD=$(ask_secret "Пароль для веб-интерфейсов" "${WIKI_PASSWORD:-$(rand_pass)}")
+if [ -n "${WIKI_PASSWORD:-}" ]; then
+  WIKI_PASSWORD=$(ask_secret "Пароль для веб-интерфейсов" "$WIKI_PASSWORD")
+else
+  WIKI_PASSWORD=$(ask_secret "Пароль для веб-интерфейсов" "$(rand_pass)" "придумаю сам")
+fi
 if [ "$ENGINE" = codex ]; then
   # Пустая строка — модель по умолчанию: список моделей у OpenAI меняется чаще,
   # чем выходят наши релизы, и подсказывать устаревшее имя вреднее, чем молчать.

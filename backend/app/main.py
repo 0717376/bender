@@ -7,8 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from starlette.routing import Route
 
-from . import (books_store, config, cron_store, mcp_internal, mcp_server, pairing, seed,
-               session_log, skill_store, tasks_store)
+from . import (books_store, config, cron_store, engines, mcp_internal, mcp_server, pairing,
+               seed, session_log, skill_store, tasks_store)
 from .asr import router as asr_router
 from .auth import require_auth
 from .books_api import init as books_init
@@ -43,6 +43,11 @@ async def lifespan(_app: FastAPI):
     books_store.init()
     books_init()
     seed.init()  # первый запуск: страница «Начало работы» и задачи-примеры
+    # Движку может понадобиться разложить своё до первого хода (у Codex — файл с
+    # запретами и ссылки на навыки). У Claude готовить нечего.
+    prepare = getattr(engines.get(), "prepare", None)
+    if prepare:
+        prepare()
     # Папки заводит не только интерфейс (агент через Bash, бэкапы) — выдаём им
     # страницы, иначе в дереве всплывёт «папка», которой в модели вики нет.
     for path, how in normalize_pages():

@@ -32,9 +32,9 @@ ask() {
 # То же, но ввод не эхоится: пароли и токены не должны оставаться на экране
 # и в скроллбеке. Пустой ввод — значение по умолчанию.
 ask_secret() {
-  local q="$1" def="${2-}" a=""
+  local q="$1" def="${2-}" hint="${3-оставить прежний}" a=""
   if [ "${YES:-0}" = 1 ] || [ ! -e /dev/tty ]; then printf '%s' "$def"; return; fi
-  if [ -n "$def" ]; then _prompt "$q [оставить прежний]: "; else _prompt "$q: "; fi
+  if [ -n "$def" ]; then _prompt "$q [$hint]: "; else _prompt "$q: "; fi
   read -rs a < /dev/tty; printf '\n' > /dev/tty
   printf '%s' "${a:-$def}"
 }
@@ -62,8 +62,11 @@ host_tz() {
 # Адрес, по которому интерфейсы откроются у того, кто ставит: на сервере по ssh
 # «localhost» бесполезен, там нужен адрес самого сервера.
 host_addr() {
-  if [ -n "${SSH_CONNECTION:-}" ]; then printf '%s' "$(echo "$SSH_CONNECTION" | awk '{print $3}')"
-  else printf 'localhost'; fi
+  local addr=""
+  [ -n "${SSH_CONNECTION:-}" ] && addr=$(echo "$SSH_CONNECTION" | awk '{print $3}')
+  # Петлевой адрес в качестве «адреса сервера» бесполезен — это тот же localhost.
+  case "$addr" in ""|localhost|::1|127.*) printf 'localhost'; return 0 ;; esac
+  case "$addr" in *:*) printf '[%s]' "$addr" ;; *) printf '%s' "$addr" ;; esac  # IPv6 — в скобках
 }
 
 # Читает KEY=VALUE из .env в одноимённые переменные. Не исполняет файл: там
