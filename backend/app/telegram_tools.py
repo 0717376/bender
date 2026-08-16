@@ -11,7 +11,7 @@ import os
 import httpx
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
-from . import config
+from . import config, pairing
 
 # Cloud Bot API caps sendDocument at 50 MB; a local bot-api server lifts it to 2 GB.
 TG_FILE_CAP = (2000 * 1024 * 1024) if config.TG_LOCAL else (50 * 1024 * 1024)
@@ -42,7 +42,8 @@ def _text(obj) -> dict:
     },
 )
 async def send_file(args):
-    if not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_ALLOWED_IDS:
+    targets = pairing.allowed_ids()
+    if not config.TELEGRAM_BOT_TOKEN or not targets:
         return _text({"error": "Telegram-бот не настроен"})
     abs_path = _resolve(args["path"])
     if not abs_path or not os.path.isfile(abs_path):
@@ -53,7 +54,7 @@ async def send_file(args):
         return _text({"error": f"файл больше лимита Telegram ({cap}): {size} байт"})
     sent = 0
     async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
-        for chat_id in config.TELEGRAM_ALLOWED_IDS:
+        for chat_id in targets:
             with open(abs_path, "rb") as f:
                 data = {"chat_id": str(chat_id)}
                 if args.get("caption"):
