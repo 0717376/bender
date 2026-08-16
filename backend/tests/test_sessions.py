@@ -102,7 +102,7 @@ def test_обзор_нитей_для_статуса(sessions):
 @pytest.fixture
 def engine(tmp_path, monkeypatch):
     """Ход агента с подменённым движком: наружу отдаём собранный системный промпт."""
-    from app import agent, config, cron_outbox, memory_store, reviewer, session_log, skill_store
+    from app import agent, config, cron_outbox, engines, memory_store, reviewer, session_log, skill_store
 
     monkeypatch.setattr(config, "DATA_DIR", str(tmp_path))
     monkeypatch.setattr(config, "SESSION_FILE", str(tmp_path / "session.json"))
@@ -114,17 +114,16 @@ def engine(tmp_path, monkeypatch):
 
     seen: dict = {}
 
-    def fake_query(prompt, options):
-        seen["prompt"] = prompt
-        seen["append"] = options.system_prompt["append"]
+    class FakeEngine:
+        """Движок-пустышка: запоминает, что ему передали, и молча заканчивает ход."""
 
-        async def nothing():
-            return
-            yield  # pragma: no cover — генератор без единого элемента
+        @staticmethod
+        async def run(prompt, *, resume, surface, instructions, emit, interactive=True):
+            seen["prompt"] = prompt
+            seen["append"] = instructions
+            return engines.Outcome(session_id="sess-1", reply="ok")
 
-        return nothing()
-
-    monkeypatch.setattr(agent, "query", fake_query)
+    monkeypatch.setattr(engines, "get", lambda name="": FakeEngine)
     return agent, cron_outbox, seen
 
 

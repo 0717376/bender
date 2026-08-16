@@ -44,10 +44,14 @@ def rotate_token() -> str:
 
 
 class TokenGate:
-    """ASGI-обёртка: токен в заголовке Authorization: Bearer или в ?token=."""
+    """ASGI-обёртка: токен в заголовке Authorization: Bearer или в ?token=.
 
-    def __init__(self, app):
+    token_getter отдаёт ожидаемый токен: у внешнего сервера он свой (пользователь
+    раздаёт его сторонним клиентам), у внутреннего — свой (см. mcp_internal)."""
+
+    def __init__(self, app, token_getter=None):
         self.app = app
+        self.token_getter = token_getter or get_token
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
@@ -62,7 +66,7 @@ class TokenGate:
         if not token:
             qs = parse_qs(scope.get("query_string", b"").decode())
             token = (qs.get("token") or [""])[0]
-        if not token or not secrets.compare_digest(token, get_token()):
+        if not token or not secrets.compare_digest(token, self.token_getter()):
             resp = JSONResponse({"error": "unauthorized"}, status_code=401)
             return await resp(scope, receive, send)
         return await self.app(scope, receive, send)

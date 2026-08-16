@@ -16,6 +16,7 @@ usage() {
   update [--check]  обновить: git pull, свежие образы, рестарт (--check — только посмотреть)
   rollback          вернуться на версию, что была до последнего update
   pair [--reset]    код привязки Telegram (--reset — отвязать все чаты)
+  login             войти в ChatGPT по коду устройства (движок codex)
   token             выпустить новый долгоживущий токен Claude и записать в .env
   logs [сервис]     логи (по умолчанию все, Ctrl-C — выход)
   up | down | restart
@@ -27,7 +28,13 @@ cmd_version() {
   local sha; sha=$(git rev-parse --short HEAD 2>/dev/null || echo "не git")
   say "версия:  $sha ($(git log -1 --format=%cd --date=short 2>/dev/null || echo '?'))"
   say "образы:  ${BENDER_TAG:-local}$([ "${BENDER_TAG:-local}" = local ] && echo ' (сборка из исходников)' || echo ' (готовые из GHCR)')"
-  say "модель:  ${CLAUDE_MODEL:-sonnet}"
+  if [ "$(engine)" = codex ]; then
+    say "движок:  codex (подписка ChatGPT)"
+    say "модель:  ${CODEX_MODEL:-по умолчанию}"
+  else
+    say "движок:  claude (подписка Max)"
+    say "модель:  ${CLAUDE_MODEL:-sonnet}"
+  fi
 }
 
 behind() {  # сколько коммитов мы отстаём от origin/main
@@ -59,9 +66,14 @@ cmd_doctor() {
   done
 
   if check_auth; then
-    ok "агент авторизован в Claude"
+    if [ "$(engine)" = codex ]; then
+      local who; who=$(codex_cmd check 2>/dev/null | tr -d '\r')
+      ok "агент авторизован в ChatGPT${who:+ · $who}"
+    else
+      ok "агент авторизован в Claude"
+    fi
   else
-    bad "агент не авторизован — выпустите токен: ./bender token"; fails=$((fails + 1))
+    bad "агент не авторизован — $(auth_hint)"; fails=$((fails + 1))
   fi
 
   if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
@@ -150,14 +162,23 @@ cmd_pair() {
   fi
 }
 
+cmd_login() {
+  [ "$(engine)" = codex ] || die "движок сейчас claude — вход в ChatGPT не нужен (см. ./bender token)"
+  title "Вход в ChatGPT"
+  say "Подтверждать будете на телефоне или ноутбуке — на этой машине браузер не нужен."
+  dc exec backend "$BACKEND_PY" -m app.codex_cli login || die "войти не удалось"
+  check_auth && ok "агент авторизован" || warn "вход есть, а ход не прошёл — ./bender logs backend"
+}
+
 cmd_token() {
+  # Не `[ … ] && die`: под set -e ложное условие само по себе завершило бы команду
+  if [ "$(engine)" = codex ]; then die "движок сейчас codex — токен Claude не нужен (см. ./bender login)"; fi
   title "Новый токен Claude"
   say "Токен живёт год и не зависит от OAuth-сессии — то, что нужно серверу без браузера."
   if have claude; then claude setup-token || true; else dc run --rm backend claude setup-token || true; fi
   CLAUDE_CODE_OAUTH_TOKEN=$(ask_secret "Вставьте выданный токен" "")
   [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ] || die "пусто — ничего не меняю"
-  env_save .env WIKI_PASSWORD CLAUDE_MODEL CLAUDE_CODE_OAUTH_TOKEN TELEGRAM_BOT_TOKEN \
-    TELEGRAM_ALLOWED_IDS TZ WIKI_PORT TASKS_PORT BOOKS_PORT BENDER_TAG
+  env_save .env $ENV_KEYS
   dc up -d backend >/dev/null
   restart_frontends
   wait_healthy 60 >/dev/null || true
@@ -169,6 +190,7 @@ case "${1:-}" in
   update)   shift; cmd_update "$@" ;;
   rollback) shift; cmd_rollback "$@" ;;
   pair)     shift; cmd_pair "$@" ;;
+  login)    shift; cmd_login "$@" ;;
   token)    shift; cmd_token "$@" ;;
   logs)     shift; dc logs -f --tail 200 "$@" ;;
   up)       dc up -d; restart_frontends; ok "поднято" ;;

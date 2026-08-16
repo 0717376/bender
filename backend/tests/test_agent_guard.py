@@ -1,4 +1,8 @@
-"""Запрет на rm: у Bash рабочая директория — корень вики, и стирание идёт мимо корзины."""
+"""Запрет на rm: у шелла рабочая директория — корень вики, и стирание идёт мимо корзины.
+
+Правило одно на оба движка, поэтому и проверяем оба: хук Claude SDK и скрипт-хук Codex.
+Разъедутся — и на одной подписке вики защищена, а на другой нет.
+"""
 
 import asyncio
 import os
@@ -10,9 +14,16 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def decision(cmd: str):
-    from app.agent import _no_rm_hook
+    from app.engines.claude import _no_rm_hook
 
     out = asyncio.run(_no_rm_hook({"tool_input": {"command": cmd}}, None, None))
+    return out.get("hookSpecificOutput", {}).get("permissionDecision")
+
+
+def codex_decision(cmd, event="PreToolUse"):
+    from app.codex_hook import decide
+
+    out = decide({"hook_event_name": event, "tool_name": "shell", "tool_input": {"command": cmd}})
     return out.get("hookSpecificOutput", {}).get("permissionDecision")
 
 
@@ -22,9 +33,13 @@ def decision(cmd: str):
     "cd content && rm -f note.md",
     "find . -name '*.tmp' -exec rm {} +",
     "sudo rm -rf /app/content",
+    # Обёртка оболочкой — самый простой способ обойти запрет, если его не разворачивать
+    'bash -lc "rm -rf infra"',
+    "sh -c 'cd content && rm note.md'",
 ])
 def test_denied(cmd):
     assert decision(cmd) == "deny"
+    assert codex_decision(cmd) == "deny"
 
 
 @pytest.mark.parametrize("cmd", [
@@ -37,13 +52,23 @@ def test_denied(cmd):
 ])
 def test_allowed(cmd):
     assert decision(cmd) is None
+    assert codex_decision(cmd) is None
+
+
+def test_codex_видит_команду_списком():
+    """Шелл у Codex приезжает и массивом аргументов — разбирать надо и такое."""
+    from app.codex_hook import decide
+
+    out = decide({"hook_event_name": "PreToolUse",
+                  "tool_input": {"command": ["bash", "-lc", "rm -rf infra"]}})
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
 # ── Библиотека книг: читать можно, писать нельзя ──
 
 
 def write_decision(path: str):
-    from app.agent import _books_ro_hook
+    from app.engines.claude import _books_ro_hook
 
     out = asyncio.run(_books_ro_hook({"tool_input": {"file_path": path}}, None, None))
     return out.get("hookSpecificOutput", {}).get("permissionDecision")

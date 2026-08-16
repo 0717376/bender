@@ -17,7 +17,13 @@ services:
       - ${CLAUDE_JSON:-~/.claude.json}:/seed/.claude.json:ro  # конфиг-seed (копируется в HOME при старте)
     environment:
       - WIKI_PASSWORD=${WIKI_PASSWORD}
+      # На чём ходит агент: claude (подписка Max) или codex (подписка ChatGPT).
+      # Всё остальное — вики, задачи, книги, крон, память, навыки — общее.
+      - ENGINE=${ENGINE:-claude}
       - CLAUDE_MODEL=${CLAUDE_MODEL:-sonnet}
+      # Пусто — модель, которую Codex выберет сам. Логин лежит в data/codex (том),
+      # заводится командой ./bender login и переживает обновления.
+      - CODEX_MODEL=${CODEX_MODEL:-}
       # Долгоживущий токен из `claude setup-token` (год). Задан — CLI авторизуется им и не
       # зависит от OAuth-сессии в ~/.claude: на headless-хосте она однажды не обновляется
       # и умирает молча, а агент начинает отвечать «Failed to authenticate».

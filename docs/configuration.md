@@ -14,6 +14,7 @@ for running the thing afterwards.
 ./bender update --check    only look whether something new has landed
 ./bender rollback          go back to the version that ran before the last update
 ./bender pair [--reset]    Telegram pairing code
+./bender login             sign in to ChatGPT by device code (codex engine)
 ./bender token             issue a new long-lived Claude token and store it in .env
 ./bender logs [service]    follow logs
 ./bender up | down | restart | version
@@ -23,7 +24,52 @@ for running the thing afterwards.
 container IP once, at startup, and caches it: recreate the backend without restarting
 them and every page answers 502.
 
+## Engine: Claude or Codex
+
+`ENGINE=claude` runs on an Anthropic Max subscription, `ENGINE=codex` on an OpenAI
+ChatGPT one (Plus/Pro). Both SDKs ship inside the image, so switching is a line in `.env`
+plus `./bender restart` — nothing to rebuild. The data is shared: wiki, tasks, books,
+memory, skills and the session journal don't care which engine wrote them.
+
+What is identical on both: the set of domain tools (tasks, cron, memory, skills, books,
+session journal, sending files to Telegram), the ban on deleting past the trash, the
+read-only book library, domain and learned skills, the persona, the session freshness
+window, the background reviewer and the curator.
+
+How they differ:
+
+| | Claude | Codex |
+|---|---|---|
+| subscription | Max | ChatGPT Plus/Pro |
+| sign-in | long-lived token (`./bender token`) | device code (`./bender login`) |
+| agent tools | in-process MCP servers | the same ones, over HTTP inside the container |
+| editing files | Read/Write/Edit/Bash | shell and apply_patch |
+| web | WebSearch + WebFetch | built-in web search |
+| subagents | researcher and librarian via Task | none (in this first version) |
+| conversation thread | Claude Code session | Codex thread |
+
+Worth knowing up front: Codex is a coding harness — drier in tone, keener to reach for
+the shell — and ChatGPT subscription limits are metered differently from Max, which shows
+with cron, the reviewer and the curator all running.
+
 ## Authentication
+
+### Codex (ChatGPT subscription)
+
+```bash
+./bender login
+```
+
+It prints a URL and a six-character code: open the URL on your phone or laptop, type the
+code, done. No browser needed on the machine itself, so this works on a bare server over
+ssh. The token lands in `data/codex/` — a volume, so the sign-in survives updates and
+container rebuilds. Note it for backups: `data/` now holds credentials too.
+
+If device-code sign-in is disabled in your ChatGPT security settings (personal account)
+or by a workspace admin, enable it there — otherwise signing in on a headless machine
+is impossible.
+
+### Claude (Max subscription)
 
 The agent talks to Claude on your subscription, through the Claude CLI, and there are
 two ways to give it credentials:
@@ -85,6 +131,9 @@ settings → Change visibility), otherwise `docker compose pull` asks for a logi
 | Variable | Default | Purpose |
 |---|---|---|
 | `WIKI_PASSWORD` | — | web UI password (required) |
+| `ENGINE` | `claude` | `claude` (Max subscription) or `codex` (ChatGPT subscription) |
+| `CODEX_MODEL` | — | model for the codex engine; empty — whatever Codex picks itself |
+| `CODEX_HOME` | `data/codex` | Codex state: sign-in, threads, caches |
 | `CLAUDE_MODEL` | `sonnet` | agent model (`sonnet`/`opus`/`haiku` or a full id) |
 | `CLAUDE_CODE_OAUTH_TOKEN` | — | long-lived token from `claude setup-token`; when set, used instead of the OAuth session in `~/.claude` |
 | `CLAUDE_DIR` / `CLAUDE_JSON` | `~/.claude` / `~/.claude.json` | Claude CLI credentials mounted into the container |

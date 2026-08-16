@@ -46,8 +46,27 @@ ok "каталоги данных готовы"
 # --- Шаг 3. Ответы ------------------------------------------------------------
 env_load .env
 
+say
+say "Агент работает по подписке — либо Claude (Max), либо ChatGPT (Codex)."
+say "  1) Claude — подписка Anthropic Max"
+say "  2) Codex  — подписка OpenAI ChatGPT (Plus/Pro)"
+if [ "$YES" = 1 ]; then
+  ENGINE=${ENGINE:-claude}
+else
+  case "$(ask "Выбор" "$([ "${ENGINE:-claude}" = codex ] && echo 2 || echo 1)")" in
+    2|codex|Codex) ENGINE=codex ;;
+    *) ENGINE=claude ;;
+  esac
+fi
+
 WIKI_PASSWORD=$(ask_secret "Пароль для веб-интерфейсов" "${WIKI_PASSWORD:-$(rand_pass)}")
-CLAUDE_MODEL=$(ask "Модель агента (sonnet/opus/haiku или полный id)" "${CLAUDE_MODEL:-sonnet}")
+if [ "$ENGINE" = codex ]; then
+  # Пустая строка — модель по умолчанию: список моделей у OpenAI меняется чаще,
+  # чем выходят наши релизы, и подсказывать устаревшее имя вреднее, чем молчать.
+  CODEX_MODEL=$(ask "Модель агента (пусто — та, что Codex выберет сам)" "${CODEX_MODEL:-}")
+else
+  CLAUDE_MODEL=$(ask "Модель агента (sonnet/opus/haiku или полный id)" "${CLAUDE_MODEL:-sonnet}")
+fi
 TZ=$(ask "Таймзона (по ней срабатывают напоминания)" "${TZ:-$(host_tz)}")
 
 WIKI_PORT=$(ask_port "Порт вики" "${WIKI_PORT:-8842}")
@@ -60,11 +79,15 @@ say "Токен берётся у @BotFather за минуту; пустая с�
 TELEGRAM_BOT_TOKEN=$(ask "Токен бота" "${TELEGRAM_BOT_TOKEN:-}")
 
 # --- Шаг 4. Авторизация -------------------------------------------------------
-# Агент ходит в Claude по подписке, а не по API-ключу. На сервере без браузера
-# живёт только долгоживущий токен: OAuth-сессия в ~/.claude однажды перестаёт
+# Агент ходит по подписке, а не по API-ключу. У Codex вход по коду устройства — его
+# делаем после подъёма стенда (нужен работающий контейнер). У Claude на сервере без
+# браузера живёт только долгоживущий токен: OAuth-сессия в ~/.claude однажды перестаёт
 # обновляться, и агент начинает отвечать «Failed to authenticate».
 say
-if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+if [ "$ENGINE" = codex ]; then
+  AUTH=codex
+  say "Вход в ChatGPT сделаем сразу после запуска — браузер понадобится любой, но не здешний."
+elif [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
   ok "токен Claude уже есть в .env — оставляю"
   AUTH=token
 elif [ "$YES" = 1 ]; then
@@ -104,9 +127,7 @@ if [ -z "$MODE" ]; then
 fi
 BENDER_TAG=$([ "$MODE" = local ] && echo local || echo main)
 
-env_save .env \
-  WIKI_PASSWORD CLAUDE_MODEL CLAUDE_CODE_OAUTH_TOKEN TELEGRAM_BOT_TOKEN \
-  TELEGRAM_ALLOWED_IDS TZ WIKI_PORT TASKS_PORT BOOKS_PORT BENDER_TAG
+env_save .env $ENV_KEYS
 ok ".env записан (права 600)"
 
 # --- Шаг 6. Подъём ------------------------------------------------------------
@@ -126,8 +147,7 @@ if [ "$AUTH" = token ] && [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && ! have claude
   dc run --rm backend claude setup-token || warn "не получилось: повторите позже через ./bender token"
   CLAUDE_CODE_OAUTH_TOKEN=$(ask_secret "Токен (sk-ant-oat…), пусто — пропустить" "")
   if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
-    env_save .env WIKI_PASSWORD CLAUDE_MODEL CLAUDE_CODE_OAUTH_TOKEN TELEGRAM_BOT_TOKEN \
-      TELEGRAM_ALLOWED_IDS TZ WIKI_PORT TASKS_PORT BOOKS_PORT BENDER_TAG
+    env_save .env $ENV_KEYS
     dc up -d backend
   fi
 fi
@@ -136,12 +156,20 @@ wait_healthy 120 || die "бэкенд не поднялся. Логи: ./bender 
 ok "бэкенд отвечает"
 
 # --- Шаг 7. Проверки ----------------------------------------------------------
+if [ "$AUTH" = codex ] && [ "$YES" != 1 ]; then
+  say
+  title "Вход в ChatGPT"
+  say "Откройте показанный адрес на телефоне или ноутбуке и введите код."
+  dc exec backend "$BACKEND_PY" -m app.codex_cli login || \
+    warn "войти не удалось — повторите позже: ./bender login"
+fi
+
 say
 say "Проверяю авторизацию агента — это занимает несколько секунд."
 if check_auth; then
   ok "агент авторизован"
 else
-  warn "агент не авторизовался. Выпустите токен: ./bender token"
+  warn "агент не авторизовался. Дальше: $(auth_hint)"
 fi
 
 if [ -n "$TELEGRAM_BOT_TOKEN" ]; then
@@ -163,5 +191,6 @@ say "  Задачи:  http://$host:$TASKS_PORT"
 say "  Вики:    http://$host:$WIKI_PORT"
 say "  Книги:   http://$host:$BOOKS_PORT"
 say "  Пароль:  $WIKI_PASSWORD"
+say "  Движок:  $ENGINE"
 say
 say "Дальше: ./bender doctor — проверка стенда, ./bender update — обновление."
