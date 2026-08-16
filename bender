@@ -76,7 +76,9 @@ cmd_doctor() {
   fi
 
   if [ -n "${ASR_UPSTREAM:-}" ]; then
-    if dc exec -T backend curl -fsS -m 5 -o /dev/null "$ASR_UPSTREAM" 2>/dev/null; then ok "распознавание речи отвечает"
+    # Без -f: ручка транскрипции на GET отвечает 405, и это тоже признак жизни. Проверяем,
+    # что сервис вообще отзывается, а не что он согласен на GET — иначе доктор врёт.
+    if dc exec -T backend curl -s -o /dev/null -m 5 "$ASR_UPSTREAM" 2>/dev/null; then ok "распознавание речи отвечает"
     else warn "сервис распознавания речи ($ASR_UPSTREAM) не отвечает"; fi
   fi
 
