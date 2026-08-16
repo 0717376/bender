@@ -19,9 +19,10 @@ RUNNERS = ("sudo", "env", "time", "nohup", "xargs")
 SHELLS = ("sh", "bash", "zsh", "dash", "ash")
 
 
-def _unwrap(cmd: str, depth: int = 0) -> str:
+def unwrap(cmd: str, depth: int = 0) -> str:
     """Развернуть `bash -lc "…"` до самой команды: иначе запрет обходится одной обёрткой.
-    Codex и вовсе присылает шелл списком аргументов — там это единственный вид команды."""
+    Codex и вовсе присылает шелл списком аргументов — там это единственный вид команды.
+    Тем же пользуется интерфейс: показывать человеку обёртку незачем."""
     if depth > 3:
         return cmd
     try:
@@ -38,7 +39,7 @@ def _unwrap(cmd: str, depth: int = 0) -> str:
             rest = tokens[i + 1:]
             if not rest:
                 return cmd
-            return _unwrap(rest[0] if len(rest) == 1 else " ".join(rest), depth + 1)
+            return unwrap(rest[0] if len(rest) == 1 else " ".join(rest), depth + 1)
     return cmd
 
 RM_DENIED = (
@@ -52,7 +53,7 @@ def rm_args(cmd: str) -> list[str] | None:
     """Что именно стирает команда. None — rm в ней нет (например, это аргумент grep)."""
     args: list[str] = []
     found = False
-    for segment in re.split(r"[;&|\n]+", _unwrap(cmd or "")):
+    for segment in re.split(r"[;&|\n]+", unwrap(cmd or "")):
         try:
             tokens = shlex.split(segment)
         except ValueError:
