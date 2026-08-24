@@ -6,6 +6,7 @@
 
 import logging
 import os
+import re
 
 from claude_agent_sdk import (
     AgentDefinition,
@@ -20,7 +21,7 @@ from claude_agent_sdk import (
 )
 
 from .. import config, guards, skill_store, tool_registry
-from . import Emit, Outcome, StaleSession
+from . import Emit, Outcome, Overloaded, StaleSession, looks_overloaded
 
 logger = logging.getLogger("wiki.agent.claude")
 
@@ -140,10 +141,21 @@ def build_options(resume: str | None, surface: str, instructions: str,
     )
 
 
+# Перегрузка на той стороне: CLI сам ретраит несколько минут, а сдавшись — пишет ход одним
+# сообщением «API Error: 529 Overloaded» и выходит ненулевым кодом. SDK превращает это в
+# исключение «returned an error result: success», где о причине уже ничего не сказано, —
+# поэтому причину ловим из самого сообщения, пока оно идёт потоком.
+API_ERROR = re.compile(r"^\s*API Error:", re.I)
+OVERLOAD_STATUS = {502, 503, 529}
+OVERLOAD_TEXT = "Claude сейчас перегружен и не ответил. Попробуйте ещё раз через пару минут."
+
+
 def _error_text(m: ResultMessage) -> str:
     blob = " ".join(str(x) for x in (m.result, m.errors, m.api_error_status) if x).lower()
     if "context" in blob or "too long" in blob or "max tokens" in blob:
         return "Контекст сессии переполнен. Начните новую: /new в боте или «Очистить» в чате."
+    if m.api_error_status in OVERLOAD_STATUS or looks_overloaded(blob):
+        return OVERLOAD_TEXT
     return "Ошибка Claude. Попробуйте начать новую сессию (/new)."
 
 
@@ -157,6 +169,8 @@ async def run(prompt: str, *, resume: str | None, surface: str, instructions: st
     out = Outcome(session_id=resume)
     texts: list[str] = []
     msg_id = ""
+    produced = False        # показали ли хоть кусок ответа: переигрывать ход можно только до
+    fail = ""               # извещение CLI о сбое — не ответ, а причина, по которой хода нет
     try:
         async for m in query(prompt=prompt, options=options):
             if isinstance(m, StreamEvent):
@@ -175,9 +189,14 @@ async def run(prompt: str, *, resume: str | None, surface: str, instructions: st
                 msg_id = m.message_id or msg_id
                 for block in m.content:
                     if isinstance(block, TextBlock) and block.text:
+                        if API_ERROR.match(block.text):
+                            fail = block.text     # это не ответ, показывать такое незачем
+                            continue
                         texts.append(block.text)
+                        produced = True
                         await emit({"t": "text", "id": msg_id, "text": block.text})
                     elif isinstance(block, ToolUseBlock):
+                        produced = True
                         inp = block.input or {}
                         await emit({
                             "t": "tool",
@@ -189,12 +208,17 @@ async def run(prompt: str, *, resume: str | None, surface: str, instructions: st
             elif isinstance(m, ResultMessage):
                 out.session_id = m.session_id or resume
                 if m.is_error:
+                    if m.api_error_status in OVERLOAD_STATUS:
+                        fail = fail or str(m.api_error_status)
                     out.error = _error_text(m)
                 elif m.result:
                     out.reply = m.result
     except Exception as e:
         if is_stale(e):
             raise StaleSession from e
+        # Ход не состоялся из-за перегрузки — значит, его можно переиграть целиком.
+        if not produced and looks_overloaded(fail):
+            raise Overloaded(OVERLOAD_TEXT) from e
         raise
     if not out.reply:
         out.reply = "\n\n".join(texts)

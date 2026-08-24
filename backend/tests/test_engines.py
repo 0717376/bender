@@ -177,3 +177,116 @@ def test_протухшая_сессия_переигрывается_с_чис�
 
     assert seen == ["старая", None]
     assert agent.load_session() == "новая"
+
+
+# ── Перегрузка на той стороне ──
+
+def test_перегрузка_распознаётся_а_лимит_подписки_нет():
+    """529/503 лечатся повтором, 429 — нет: это исчерпанная подписка, и повтор её не вернёт."""
+    from app import engines
+
+    assert engines.looks_overloaded("API Error: 529 Overloaded")
+    assert engines.looks_overloaded("503 Service Temporarily Unavailable")
+    assert not engines.looks_overloaded("API Error: 429 rate limit exceeded")
+    assert not engines.looks_overloaded("")
+
+
+def test_ход_переигрывается_после_перегрузки(tmp_path, monkeypatch):
+    """529 приходит до первого куска ответа — значит, терять нечего и ход можно повторить."""
+    from app import agent, cron_outbox, engines, memory_store, reviewer, session_log
+
+    monkeypatch.setattr(config, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(config, "SESSION_FILE", str(tmp_path / "session.json"))
+    monkeypatch.setattr(config, "WIKI_DIR", str(tmp_path / "wiki"))
+    monkeypatch.setattr(memory_store, "as_prompt", lambda: "")
+    monkeypatch.setattr(reviewer, "spawn", lambda *_a: None)
+    monkeypatch.setattr(session_log, "log_turn", lambda *_a: None)
+    monkeypatch.setattr(cron_outbox, "pending", lambda: ("", []))
+    monkeypatch.setattr(agent, "OVERLOAD_PAUSE", 0)      # тест не должен спать
+
+    calls = []
+
+    class FakeEngine:
+        @staticmethod
+        async def run(prompt, *, resume, surface, instructions, emit, interactive=True):
+            calls.append(resume)
+            if len(calls) == 1:
+                raise engines.Overloaded("Claude сейчас перегружен и не ответил.")
+            return engines.Outcome(session_id="s1", reply="ответ")
+
+    monkeypatch.setattr(engines, "get", lambda name="": FakeEngine)
+
+    events = []
+
+    async def emit(ev):
+        events.append(ev)
+
+    asyncio.run(agent.run_ws(emit, "привет", "wiki"))
+
+    assert len(calls) == 2                                    # повторили тот же ход
+    assert not [e for e in events if e["t"] == "error"]        # и человек ошибки не увидел
+    assert events[-1] == {"t": "done", "sid": "s1"}
+
+
+def test_упорная_перегрузка_объясняется_человеку(tmp_path, monkeypatch):
+    """Если и повтор не прошёл — говорим, что именно случилось, а не «что-то пошло не так»."""
+    from app import agent, cron_outbox, engines, memory_store, reviewer, session_log
+
+    monkeypatch.setattr(config, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(config, "SESSION_FILE", str(tmp_path / "session.json"))
+    monkeypatch.setattr(config, "WIKI_DIR", str(tmp_path / "wiki"))
+    monkeypatch.setattr(memory_store, "as_prompt", lambda: "")
+    monkeypatch.setattr(reviewer, "spawn", lambda *_a: None)
+    monkeypatch.setattr(session_log, "log_turn", lambda *_a: None)
+    monkeypatch.setattr(cron_outbox, "pending", lambda: ("", []))
+    monkeypatch.setattr(agent, "OVERLOAD_PAUSE", 0)
+
+    class FakeEngine:
+        @staticmethod
+        async def run(prompt, *, resume, surface, instructions, emit, interactive=True):
+            raise engines.Overloaded("Claude сейчас перегружен и не ответил.")
+
+    monkeypatch.setattr(engines, "get", lambda name="": FakeEngine)
+
+    reply = asyncio.run(agent.run_collect("привет"))
+    assert "перегружен" in reply
+
+    events = []
+
+    async def emit(ev):
+        events.append(ev)
+
+    asyncio.run(agent.run_ws(emit, "привет", "wiki"))
+    assert [e for e in events if e["t"] == "error"][-1]["text"].startswith("Claude сейчас")
+    assert events[-1]["t"] == "done"
+
+
+def test_529_превращается_в_повторяемую_ошибку(monkeypatch):
+    """Как это выглядит на самом деле: CLI отдаёт ход одним «API Error: 529» и выходит
+    с ненулевым кодом, а SDK превращает выход в невнятное «error result: success»."""
+    claude = pytest.importorskip("app.engines.claude")
+    from claude_agent_sdk import AssistantMessage, TextBlock
+
+    from app import engines
+
+    async def fake_query(*, prompt, options):    # noqa: ARG001 — подпись SDK
+        yield AssistantMessage(
+            content=[TextBlock(text="API Error: 529 Overloaded. This is a server-side issue")],
+            model="claude", message_id="m1")
+        raise Exception("Claude Code returned an error result: success")
+
+    monkeypatch.setattr(claude, "build_options", lambda *_a, **_kw: None)
+    monkeypatch.setattr(claude, "query", fake_query)
+
+    events = []
+
+    async def emit(ev):
+        events.append(ev)
+
+    async def go():
+        return await claude.run("привет", resume=None, surface="wiki",
+                                instructions="", emit=emit)
+
+    with pytest.raises(engines.Overloaded):
+        asyncio.run(go())
+    assert not events        # «API Error» — это не ответ, человеку его не показываем
