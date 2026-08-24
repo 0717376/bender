@@ -232,6 +232,11 @@ class _Text:
         self.id, self.buf = "", ""
 
 
+# Перегрузка на той стороне — единственный сбой, который лечится ожиданием: движок уже
+# ретраил внутри себя несколько минут, так что пауза скорее символическая — дать той
+# стороне выдохнуть — а работу делает сам повтор хода.
+OVERLOAD_PAUSE = 15
+
 EXPIRED_NOTE = (
     "[Прошлая сессия закрыта по неактивности — это начало нового разговора. Долговременная "
     "память ниже актуальна; историю прошлых бесед не выдумывай.]\n"
@@ -263,12 +268,22 @@ async def run_ws(emit: Emit, message: str, surface: str = "wiki", thread: str = 
     async with agent_lock:
         raw = message
         message, keys = _preamble(message, thread)
-        try:
-            await _run_ws(emit, message, surface, raw, thread, keys)
-        except engines.StaleSession:
-            logger.warning("stale session in run_ws; cleared, retrying fresh")
-            clear_session(thread)
-            await _run_ws(emit, message, surface, raw, thread, keys)
+        for attempt in (1, 2):      # вторая попытка — только после паузы на перегрузку
+            try:
+                try:
+                    await _run_ws(emit, message, surface, raw, thread, keys)
+                except engines.StaleSession:
+                    logger.warning("stale session in run_ws; cleared, retrying fresh")
+                    clear_session(thread)
+                    await _run_ws(emit, message, surface, raw, thread, keys)
+                return
+            except engines.Overloaded as e:
+                if attempt == 1:
+                    logger.warning("engine overloaded in run_ws; retrying in %ss", OVERLOAD_PAUSE)
+                    await asyncio.sleep(OVERLOAD_PAUSE)
+                    continue
+                await emit({"t": "error", "text": str(e)})
+                await emit({"t": "done", "sid": load_session(thread)})
 
 
 async def _run_ws(emit: Emit, message: str, surface: str, raw: str,
@@ -317,6 +332,8 @@ async def _run_ws(emit: Emit, message: str, surface: str, raw: str,
             await emit({"t": "done", "sid": load_session(thread)})
             return
         raise
+    except engines.Overloaded:
+        raise                   # ход не начался — повторит run_ws, здесь показывать нечего
     except Exception as e:  # noqa: BLE001 — surface any engine failure to the client
         logger.exception("run_ws failed")
         await emit({"t": "error", "text": str(e)})
@@ -360,7 +377,7 @@ async def run_collect(message: str, on_tool: Callable[[str, str], Awaitable[None
     async with agent_lock:
         raw = message
         message, keys = _preamble(message, thread)
-        for attempt in (1, 2):  # attempt 2 only runs after a stale-session reset
+        for attempt in (1, 2):  # attempt 2 only runs after a stale-session reset or a pause
             sid, expired = load_session_state(thread)
             prompt = (EXPIRED_NOTE + message) if expired else message
             texts: list[str] = []
@@ -376,6 +393,13 @@ async def run_collect(message: str, on_tool: Callable[[str, str], Awaitable[None
                     clear_session(thread)
                     continue
                 return "Что-то пошло не так при обработке запроса."
+            except engines.Overloaded as e:
+                if attempt == 1:
+                    logger.warning("engine overloaded in run_collect; retrying in %ss",
+                                   OVERLOAD_PAUSE)
+                    await asyncio.sleep(OVERLOAD_PAUSE)
+                    continue
+                return str(e)
             except Exception:
                 logger.exception("run_collect failed")
                 return "Что-то пошло не так при обработке запроса."
@@ -393,11 +417,22 @@ async def run_cron(prompt: str, surface: str = "telegram") -> str:
     async def sink(_ev: dict) -> None:
         pass
 
-    try:
-        out = await engines.get().run(
-            prompt, resume=None, surface=surface,
-            instructions=_compose_prompt(surface, None), emit=sink, interactive=False)
-    except Exception:
-        logger.exception("run_cron failed")
-        return ""
-    return out.reply.strip()
+    for attempt in (1, 2):
+        try:
+            out = await engines.get().run(
+                prompt, resume=None, surface=surface,
+                instructions=_compose_prompt(surface, None), emit=sink, interactive=False)
+        except engines.Overloaded:
+            # Крон никто не ждёт у экрана: молча подождать и повторить дешевле, чем
+            # пропустить утреннюю сводку из-за минутной перегрузки.
+            if attempt == 1:
+                logger.warning("engine overloaded in run_cron; retrying in %ss", OVERLOAD_PAUSE)
+                await asyncio.sleep(OVERLOAD_PAUSE)
+                continue
+            logger.warning("run_cron: движок перегружен, ход пропущен")
+            return ""
+        except Exception:
+            logger.exception("run_cron failed")
+            return ""
+        return out.reply.strip()
+    return ""

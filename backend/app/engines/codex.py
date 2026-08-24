@@ -16,7 +16,7 @@ from openai_codex import ApprovalMode, AsyncCodex, CodexConfig, Sandbox
 from openai_codex import models as codex_models
 
 from .. import config, guards, mcp_internal
-from . import Emit, Outcome, StaleSession
+from . import Emit, Outcome, Overloaded, StaleSession, looks_overloaded
 
 logger = logging.getLogger("wiki.agent.codex")
 
@@ -189,13 +189,25 @@ def is_stale(exc: Exception) -> bool:
     return "not found" in text and "thread" in text
 
 
+OVERLOAD_TEXT = "Codex сейчас перегружен и не ответил. Попробуйте ещё раз через пару минут."
+
+
 def _error_text(message: str) -> str:
     blob = (message or "").lower()
     if "context" in blob or "too long" in blob or "token" in blob and "limit" in blob:
         return "Контекст сессии переполнен. Начните новую: /new в боте или «Очистить» в чате."
     if "rate limit" in blob or "quota" in blob or "usage limit" in blob:
         return "Лимит подписки ChatGPT исчерпан — попробуйте позже."
+    if looks_overloaded(blob):
+        return OVERLOAD_TEXT
     return "Ошибка Codex. Попробуйте начать новую сессию (/new)."
+
+
+def _fail(message: str, texts: list[str]) -> None:
+    """Ход не состоялся из-за перегрузки на той стороне — значит, его можно переиграть
+    целиком. Если часть ответа уже показана, повтор только раздвоит её: тогда молчим."""
+    if not texts and looks_overloaded(message):
+        raise Overloaded(OVERLOAD_TEXT)
 
 
 async def run(prompt: str, *, resume: str | None, surface: str, instructions: str,
@@ -233,8 +245,10 @@ async def run(prompt: str, *, resume: str | None, surface: str, instructions: st
                 await emit({"t": "text", "id": item.id, "text": item.text})
         elif isinstance(p, codex_models.TurnCompletedNotification):
             if p.turn.error:
+                _fail(p.turn.error.message, texts)
                 out.error = _error_text(p.turn.error.message)
         elif isinstance(p, codex_models.ErrorNotification) and not p.will_retry:
+            _fail(p.error.message, texts)
             out.error = _error_text(p.error.message)
         elif isinstance(p, codex_models.ConfigWarningNotification):
             # Незнакомый ключ конфига Codex глотает молча — и агент остаётся без

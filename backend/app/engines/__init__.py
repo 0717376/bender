@@ -14,6 +14,7 @@
 """
 
 import importlib
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
@@ -33,6 +34,21 @@ class Outcome:
 class StaleSession(Exception):
     """resume сослался на сессию, которой у движка уже нет (переезд хоста, чистка
     кэша). Лечится сбросом указателя и повтором с чистого листа."""
+
+
+class Overloaded(Exception):
+    """Провайдер модели ответил «перегружен» — ход не начался, ответа нет.
+    Сессию сбрасывать не надо: лечится паузой и повтором того же хода. Текст
+    исключения — то, что показываем человеку, если и повтор не помог."""
+
+
+# 529 (и 502/503 у прокси) — временная перегрузка на той стороне. 429 сюда не берём:
+# это исчерпанный лимит подписки, повтором через минуту он не лечится.
+_OVERLOAD = re.compile(r"overload|\b(502|503|529)\b|temporarily unavailable", re.I)
+
+
+def looks_overloaded(text: str) -> bool:
+    return bool(_OVERLOAD.search(text or ""))
 
 
 def get(name: str = ""):
