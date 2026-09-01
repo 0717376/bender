@@ -58,7 +58,11 @@ export default function ChatPane({
           const r = await storageUpload(ATTACH_DIR, f, { parse: true });
           if (r.parse_prompt) send(r.parse_prompt);
         } catch (e) {
-          send(`⚠️ ${f.name}: ${(e as Error).message}`);
+          // В WS писать нельзя: если он не подключён, useChat.send() покажет
+          // «связь с ассистентом потеряна» — это выглядит как поломка чата,
+          // хотя упал upload. Логируем в консоль + системный alert.
+          console.error("attach upload failed", f.name, e);
+          alert(`Не вышло прикрепить ${f.name}: ${(e as Error).message}`);
         }
       }
     } finally {
