@@ -104,7 +104,16 @@ async def download(path: str, token: str = ""):
 
 
 @router.post("/upload")
-async def upload(file: UploadFile, dir: str = "", _: bool = Depends(require_auth)):
+async def upload(file: UploadFile, dir: str = "", parse: int = 0,
+                 _: bool = Depends(require_auth)):
+    """Загрузить файл в FILES_DIR/<dir>.
+
+    parse=1 — вернуть готовый `parse_prompt` с абсолютным путём внутри контейнера.
+    Фронт отправляет эту строку в чат обычным сообщением; агент по подсказке
+    открывает файл через Read (FILES_DIR смонтирован в add_dirs Claude-движка).
+    Сам агент здесь не дёргается: /storage/upload — REST-ручка, а разбор идёт по
+    той же WebSocket-нити, что и любой запрос от пользователя.
+    """
     abs_dir = safe_path(dir)
     os.makedirs(abs_dir, exist_ok=True)
     name = clean_name(os.path.basename(file.filename or "файл"))
@@ -126,7 +135,15 @@ async def upload(file: UploadFile, dir: str = "", _: bool = Depends(require_auth
         if os.path.exists(tmp):
             os.remove(tmp)
     rel = os.path.relpath(dest, config.FILES_DIR)
-    return {"ok": True, "path": rel, "size": size}
+    result: dict = {"ok": True, "path": rel, "size": size}
+    if parse:
+        result["parse_prompt"] = (
+            f"[Пользователь загрузил файл в «Файлы»: {dest}. "
+            "Открой его через Read и коротко разбери: что это, ключевые данные, "
+            "что с этим можно сделать. Если это заметки/задачи/чек-лист — предложи "
+            "разложить в вики или задачи.]"
+        )
+    return result
 
 
 @router.post("/mkdir")

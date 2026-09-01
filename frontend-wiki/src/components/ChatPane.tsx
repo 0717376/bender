@@ -101,6 +101,17 @@ export function ChatPane({ onAssistantDone, onLogout, currentPath, currentTitle,
     onClearSelection()
   }, [send, getContext, onClearSelection, pageOff])
 
+  // Мост от «Файлы» (StorageView.dispatchChat) до чата: не тащить пропы через
+  // WikiApp и не заводить глобальный стор ради одного edge-case'а с загрузкой.
+  useEffect(() => {
+    const listener = (e: Event) => {
+      const detail = (e as CustomEvent<{ text: string }>).detail
+      if (detail?.text) handleSend(detail.text)
+    }
+    window.addEventListener('bender:chat-send', listener)
+    return () => window.removeEventListener('bender:chat-send', listener)
+  }, [handleSend])
+
   if (collapsed) {
     return (
       <button className={styles.rail} onClick={onToggle} aria-label={t('openAssistant')} title={t('openAssistant')}>

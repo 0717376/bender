@@ -1,11 +1,32 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronLeft, Download, ExternalLink, File as FileIcon, FileQuestion, FileText, Folder, HardDrive, Upload } from 'lucide-react'
+import { ChevronLeft, Download, ExternalLink, File as FileIcon, FileQuestion, FileText, Folder, HardDrive, Sparkles, Upload } from 'lucide-react'
 import type { FileNode } from '../lib/types'
 import { storageFileUrl, storageUpload } from '../lib/api'
 import { fileIcon } from '../lib/fileIcons'
 import { useUi } from './Ui'
 import styles from './StorageView.module.css'
 import { t, lang, formatDay } from '../lib/i18n'
+
+// Мост «Файлы → Чат»: StorageView не знает про ChatPane и наоборот. Слушатель в
+// ChatPane сам возьмёт detail и отправит через свой useWebSocket.send. Один канал
+// для двух путей запуска: чекбокс «разобрать после загрузки» и кнопка «разобрать»
+// на карточке файла.
+const CHAT_SEND_EVENT = 'bender:chat-send'
+function dispatchChat(text: string) {
+  window.dispatchEvent(new CustomEvent(CHAT_SEND_EVENT, { detail: { text } }))
+}
+
+// Полный путь к файлу внутри контейнера, который поймёт Read (FILES_DIR у claude-
+// движка в add_dirs). Дублирует backend-константу — но она не меняется годами и
+// класть её в /api-ответ ради этого лишний трафик.
+const FILES_ROOT = '/app/files'
+function parsePrompt(relPath: string): string {
+  return (
+    `[Пользователь просит разобрать файл: ${FILES_ROOT}/${relPath}. ` +
+    'Открой его через Read и коротко расскажи: что это, ключевые данные, ' +
+    'что можно с этим делать дальше.]'
+  )
+}
 
 interface StorageViewProps {
   path: string | null
@@ -153,6 +174,13 @@ export function StorageView({ path, node, entries, onSelect, onChanged, onMissin
         <Crumbs path={path} onSelect={onSelect} />
         <div className={styles.barActions}>
           {size != null && <span className={styles.meta}>{formatSize(size)}</span>}
+          <button
+            className={styles.uploadBtn}
+            onClick={() => dispatchChat(parsePrompt(path!))}
+            title={t('parseWithAgent')}
+          >
+            <Sparkles size={13} /> {t('parseWithAgent')}
+          </button>
           <a href={url} target="_blank" rel="noopener noreferrer" title={t('openInTab')}><ExternalLink size={14} /></a>
           <a href={url} download={name} title={t('download')}><Download size={14} /></a>
         </div>
@@ -187,11 +215,22 @@ function FolderView({ path, entries, onSelect, onChanged, onBack }: {
   const { notify } = useUi()
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragOver, setDragOver] = useState(false)
+  // Настройка сохраняется в localStorage: перепроставлять каждый раз, если человек
+  // всегда хочет разбор, — раздражало бы. Ключ пространством `bender_`, чтобы не
+  // столкнуться с чужими localStorage-полями на том же origin.
+  const [parseOnUpload, setParseOnUpload] = useState(
+    () => localStorage.getItem('bender_parse_on_upload') === '1',
+  )
+  useEffect(() => {
+    localStorage.setItem('bender_parse_on_upload', parseOnUpload ? '1' : '0')
+  }, [parseOnUpload])
 
   const upload = async (files: FileList | File[]) => {
-    for (const f of Array.from(files)) {
+    const arr = Array.from(files)
+    for (const f of arr) {
       try {
-        await storageUpload(path ?? '', f)
+        const r = await storageUpload(path ?? '', f, { parse: parseOnUpload })
+        if (parseOnUpload && r.parse_prompt) dispatchChat(r.parse_prompt)
       } catch (e) {
         notify(`${f.name}: ${(e as Error).message}`, 'error')
       }
@@ -222,6 +261,14 @@ function FolderView({ path, entries, onSelect, onChanged, onBack }: {
         <BackBtn onBack={onBack} />
         <Crumbs path={path} onSelect={onSelect} />
         <div className={styles.barActions}>
+          <label className={styles.parseToggle} title={t('parseOnUploadHint')}>
+            <input
+              type="checkbox"
+              checked={parseOnUpload}
+              onChange={(e) => setParseOnUpload(e.target.checked)}
+            />
+            <Sparkles size={12} /> {t('parseOnUpload')}
+          </label>
           <button className={styles.uploadBtn} onClick={() => inputRef.current?.click()}>
             <Upload size={13} /> {t('upload')}
           </button>

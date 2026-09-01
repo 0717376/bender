@@ -129,10 +129,12 @@ def build_options(resume: str | None, surface: str, instructions: str,
         skills=allowed_skills,
         hooks=hooks,
         cwd=config.WIKI_DIR,
-        # Библиотека лежит вне рабочей директории, а Read по ней нужен: только так агент
-        # видит рисунок из книги (пути выдают chapter_images/page_image). Запись закрыта
-        # хуком выше.
-        add_dirs=[config.BOOKS_DIR],
+        # Библиотека и файловое хранилище лежат вне рабочей директории, а Read по ним
+        # нужен: только так агент видит рисунок из книги (пути выдают chapter_images/
+        # page_image) и разбирает файл, который пользователь загрузил в «Файлы»
+        # (POST /storage/upload?parse=1 отдаёт полный путь в parse_prompt). Запись в
+        # BOOKS_DIR закрыта хуком выше; FILES_DIR открыт полностью.
+        add_dirs=[config.BOOKS_DIR, config.FILES_DIR],
         include_partial_messages=True,
         resume=resume,
         # Don't inherit host ~/.claude project/user settings — keep the agent self-contained.
