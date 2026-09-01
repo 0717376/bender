@@ -29,6 +29,32 @@ export async function login(password: string): Promise<string> {
   return token;
 }
 
+/** Загрузка файла в общее хранилище /storage. С parse=1 бэкенд отдаёт готовый
+ *  parse_prompt со свежим путём внутри контейнера — эту строку кладём в чат,
+ *  агент откроет файл через Read и разберёт. */
+export interface StorageUploadResult {
+  ok: boolean;
+  path: string;
+  size: number;
+  parse_prompt?: string;
+}
+
+export async function storageUpload(
+  dir: string, file: File, opts: { parse?: boolean } = {},
+): Promise<StorageUploadResult> {
+  const fd = new FormData();
+  fd.append("file", file, file.name);
+  const qs = new URLSearchParams({ dir });
+  if (opts.parse) qs.set("parse", "1");
+  const res = await fetch("/storage/upload?" + qs.toString(), {
+    method: "POST",
+    headers: getToken() ? { authorization: `Bearer ${getToken()}` } : {},
+    body: fd,
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? res.statusText);
+  return res.json();
+}
+
 /** Speech-to-text via the shared backend ASR endpoint (same as the wiki uses). */
 export async function transcribeAudio(blob: Blob): Promise<string | null> {
   const fd = new FormData();

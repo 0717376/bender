@@ -1,8 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowUp, ChevronRight, Sparkles, TriangleAlert, Wrench } from "lucide-react";
+import { ArrowUp, ChevronRight, Loader2, Paperclip, Sparkles, TriangleAlert, Wrench } from "lucide-react";
 import MicButton from "./MicButton";
 import { t } from "./i18n";
 import { useChat } from "./useChat";
+import { storageUpload } from "./api";
+
+// Скрепка кладёт файл в общий inbox — ту же папку, куда падает всё, что пришло
+// боту в Telegram. Один поток входящих на всё приложение.
+const ATTACH_DIR = "Входящие";
 
 export default function ChatPane({
   onActivity,
@@ -15,8 +20,10 @@ export default function ChatPane({
 }) {
   const { messages, streaming, busy, send } = useChat(onActivity);
   const [input, setInput] = useState("");
+  const [uploading, setUploading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -40,6 +47,24 @@ export default function ChatPane({
   const onTranscription = (text: string) => {
     setInput((v) => (v ? v.trimEnd() + " " + text : text));
     taRef.current?.focus();
+  };
+
+  const onAttach = async (files: FileList | null) => {
+    if (!files?.length || uploading || busy) return;
+    setUploading(true);
+    try {
+      for (const f of Array.from(files)) {
+        try {
+          const r = await storageUpload(ATTACH_DIR, f, { parse: true });
+          if (r.parse_prompt) send(r.parse_prompt);
+        } catch (e) {
+          send(`⚠️ ${f.name}: ${(e as Error).message}`);
+        }
+      }
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
   };
 
   if (collapsed) {
@@ -83,6 +108,23 @@ export default function ChatPane({
 
       <div className="chat-foot">
         <div className="chat-inputrow">
+          <input
+            ref={fileRef}
+            type="file"
+            multiple
+            hidden
+            onChange={(e) => onAttach(e.target.files)}
+          />
+          <button
+            className="chat-attach"
+            type="button"
+            disabled={busy || uploading}
+            onClick={() => fileRef.current?.click()}
+            aria-label={t("attach_file")}
+            title={t("attach_file")}
+          >
+            {uploading ? <Loader2 size={16} className="spin" /> : <Paperclip size={16} strokeWidth={2} />}
+          </button>
           <textarea
             ref={taRef}
             rows={1}

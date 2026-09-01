@@ -38,6 +38,7 @@
   <symbol id="i-find" viewBox="0 0 24 24"><path d="M11 19a8 8 0 100-16 8 8 0 000 16zM21 21l-4.35-4.35"/></symbol>
   <symbol id="i-note" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></symbol>
   <symbol id="i-tool" viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 01-5.4 5.4L4 17v3h3l5.3-5.3a4 4 0 015.4-5.4l-2.6 2.6-1.4-1.4z"/></symbol>
+  <symbol id="i-clip" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></symbol>
 </svg>
 
 <div id="splash" data-t="opening">открываю…</div>
@@ -121,6 +122,8 @@
   <div id="sheetBody"></div>
   <div class="chips" id="sheetChips"></div>
   <div class="sheet-foot">
+    <input id="sheetFile" type="file" multiple hidden>
+    <button class="attach" id="sheetAttach" title="Прикрепить файл" data-t-title="attachFile" aria-label="Прикрепить файл"><svg class="icon"><use href="#i-clip"/></svg></button>
     <input id="sheetInput" placeholder="Уточнить…" data-t-ph="refine" autocomplete="off">
     <button class="send" id="sheetSend"><svg class="icon"><use href="#i-send"/></svg></button>
   </div>
