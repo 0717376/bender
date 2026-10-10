@@ -1,39 +1,48 @@
-import ePub, { EpubCFI } from 'epubjs'
 import { agent } from './agent.js'
 import { auth, showAuth } from './auth.js'
-import { $, ls, state, toast } from './core.js'
+import { $, ls, splash, state, toast, unsplash } from './core.js'
 import { t } from './i18n.js'
 import { closeDrawer } from './drawers.js'
 import { drawHighlight, hideSelbar, touch } from './highlights.js'
 import { caretAt, clearSel, onSelected, sel, wireSelection, wordAt } from './selection.js'
 import { closeSheet, openHighlight, sheet } from './sheet.js'
 import { buildShelf, hideMenu } from './shelf.js'
-import { bookBytes } from './library.js'
+import { bookBytes, coverUrl } from './library.js'
 import { lib, saveLib } from './store.js'
 import { live, markDirty, sync } from './sync.js'
 import { noteJump, noteProgress, startReading, stopReading } from './stats.js'
 
 /* ── Читалка ── */
 
+/* Движок epub — отдельным куском сборки: полке он не нужен, а весит как всё остальное
+   приложение. Грузится один раз, при первой книге (main.js подтягивает его заранее). */
+let ePub = null, cfiTool = null;
+
+export async function loadEpub() {
+  if (ePub) return;
+  const m = await import('epubjs');
+  ePub = m.default; cfiTool = new m.EpubCFI();
+}
+
 export async function openBook(entry) {
+  splash(t('openingBook'), entry.cover || entry.thumb ? coverUrl(entry) : '');
   // PDF — другой движок: свой рендер, своя навигация. Модуль ленивый, epub за него не платит.
   if ((entry.kind || '') === 'pdf') {
-    $('#splash').classList.remove('off');
-    $('#splash').textContent = t('openingBook');
     try { return await (await import('./pdfview.js')).openPdf(entry); }
     catch (e) {
       console.warn(e);
-      $('#splash').classList.add('off');
+      unsplash();
       return toast(t('bookNotOpened'));
     }
   }
-  $('#splash').classList.remove('off');
-  $('#splash').textContent = t('openingBook');
   hideMenu();
   $('#scrub').disabled = true; $('#scrub').value = 0;
   try {
-    // Позиция с другого устройства нужна до показа страницы, но ждать сервер бесконечно нельзя.
-    await Promise.race([sync.pull(entry.id).catch(() => false), new Promise(r => setTimeout(r, 3500))]);
+    // Ответ сервера, опоздавший к открытию: догоняем, только если читатель ещё не листал.
+    let ready = false, late = null;
+    const catchUp = () => { if (state.entry === entry && !moved) jumpTo(late.cfi); };
+    await sync.pullFor(entry.id, pos => { late = pos; if (ready) catchUp(); });
+    await loadEpub();
     state.entry = entry;
     state.kind = 'epub';
     state.book = ePub(await bookBytes(entry.id));
@@ -50,13 +59,15 @@ export async function openBook(entry) {
     document.documentElement.classList.add('reading');
 
     await mountRendition(ls.get('pos:' + entry.id, null));
-    $('#splash').classList.add('off');
+    unsplash();
+    ready = true;
+    if (late) catchUp();
     startReading(entry.id, ls.get('pct:' + entry.id, 0));
     buildLocations();
     if (auth.token) agent.connect().catch(() => {});   // прогреваем связь, пока читается первая страница
   } catch (e) {
     console.warn(e);
-    $('#splash').classList.add('off');
+    unsplash();
     // Пароль сменили или сессия протухла — «книга не открылась» тут только запутает.
     if (/\b401\b/.test(e.message || '')) { auth.forget(); showAuth(t('sessionExpired')); }
     else toast(t('bookNotOpened'));
@@ -75,7 +86,7 @@ export function closeBook() {
   $('#reader').classList.remove('pdf');
   document.documentElement.classList.remove('reading');
   $('#viewer').innerHTML = '';
-  if (state.pdf) { try { state.pdf.doc.destroy(); } catch {} }
+  if (state.pdf) { try { state.pdf.free(); state.pdf.doc.destroy(); } catch {} }
   state.pdf = null; state.kind = '';
   state.rendition = null; state.book = null; state.entry = null;
   buildShelf();
@@ -185,7 +196,7 @@ export function syncSpread() {
    ещё страница. Поэтому позицию держит якорь: перекладка его не двигает — двигает только
    перелистывание и переход. */
 let pin = null, lastStart = null;
-const cfiTool = new EpubCFI();
+let moved = false;       // читатель уже ушёл со страницы, на которой книга открылась
 
 const before = (a, b) => { try { return cfiTool.compare(a, b) < 0; } catch { return false; } };
 const onScreen = (loc, at) => !before(at, loc.start.cfi) && !before(loc.end ? loc.end.cfi : loc.start.cfi, at);
@@ -208,6 +219,7 @@ export async function jumpTo(target) {
 export async function mountRendition(at) {
   pin = at || null;
   lastStart = null;
+  moved = false;
   $('#viewer').innerHTML = '';
   syncChrome();
   syncMargin();
@@ -240,6 +252,7 @@ export async function mountRendition(at) {
     // не двигает, а вот перелистывание уводит с прежнего начала, и якорь идёт следом.
     // Назад якорь не ходит никогда, вперёд — идёт за страницей: её читатель и видит.
     const same = lastStart && onScreen(loc, lastStart);
+    if (lastStart && !same) moved = true;
     const stay = state.flow === 'paginated' && pin
       && (onScreen(loc, pin) || (same && !before(pin, loc.start.cfi)));
     if (!stay) pin = loc.start.cfi;
@@ -332,9 +345,14 @@ export function epubSurface(contents) {
   };
 }
 
+/* Пересборка — это три раскладки подряд (показ, подгонка строк, возврат на место).
+   Прячем их за вуалью цвета страницы: текст не прыгает на глазах, а проявляется готовым. */
 export async function reopen() {
   clearSel();
-  await mountRendition(ls.get('pos:' + state.entry.id, null));
+  const v = $('#viewer');
+  v.classList.add('veil');
+  try { await mountRendition(ls.get('pos:' + state.entry.id, null)); }
+  finally { v.classList.remove('veil'); }
 }
 
 /* Локации считаются медленно — раз на книгу, дальше из кэша. */
