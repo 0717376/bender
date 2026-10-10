@@ -73,7 +73,8 @@ export function typeCss() {
   const T = state.type, f = fontOf(T.font);
   const [paper, ink] = PAPER[resolvedTheme()] || PAPER.light;
   const own = T.font !== 'original';
-  const text = 'p, li, blockquote, dd';
+  const text = 'p, li, blockquote, dd, [data-rp]';
+  const para = 'p:not([data-keep]), [data-rp]:not([data-keep])';
   const w = f.w ? Math.max(f.w[0], Math.min(f.w[1], T.weight)) : 400;
   const out = [faces.get(T.font) || ''];
   /* Вертикальные поля страницы: epub.js делает body контейнером колонок, поэтому
@@ -90,27 +91,30 @@ export function typeCss() {
     out.push(`body { font-family: ${stackOf(f)} !important; }`);
     out.push(`body *:not(pre):not(code):not(kbd):not(samp):not(tt):not(pre *) { font-family: inherit !important; }`);
   }
+  out.push(`body { line-height: ${T.lh}; }`);
   out.push(`${text} { line-height: ${T.lh} !important; letter-spacing: ${T.track / 100}em !important;
     -webkit-hyphens: ${T.hyph ? 'auto' : 'manual'} !important; hyphens: ${T.hyph ? 'auto' : 'manual'} !important;
     -webkit-hyphenate-limit-before: 3; -webkit-hyphenate-limit-after: 3; -webkit-hyphenate-limit-lines: 2;
     orphans: 2; widows: 2; }`);
+  // Сноска не должна раздвигать строку: иначе интерлиньяж гуляет от абзаца к абзацу.
+  out.push('sup, sub { line-height: 0 !important; }');
   if (f.w && w !== 400) {
     out.push(`${text} { font-weight: ${w} !important; }`);
     // Жирное должно остаться жирнее основного текста, какой бы плотности он ни был.
     out.push(`b, strong, th, h1, h2, h3, h4, h5, h6, ${text.split(', ').map(s => s + ' b, ' + s + ' strong').join(', ')}
       { font-weight: ${Math.min(900, w + 300)} !important; }`);
   }
-  /* Выключка — без !important: явно выровненное автором (эпиграфы, стихи — обычно
-     через класс) остаётся как задумано. */
-  out.push(T.align === 'justify' ? 'p { text-align: justify; hanging-punctuation: first last; }'
-    : 'p { text-align: left; }');
+  /* Выключку и абзац ставим жёстко — классы книги иначе сильнее. Нарочно выровненное
+     автором (эпиграфы, стихи, подписи по центру) помечено data-keep и остаётся как было. */
+  out.push(T.align === 'justify' ? `${para} { text-align: justify !important; hanging-punctuation: first last; }`
+    : `${para} { text-align: left !important; }`);
   /* Абзац — либо красная строка без отбивки (книга), либо отбивка без красной строки (веб).
      После заголовка красная строка не нужна: абзац и так начат. */
   if (T.para === 'indent') {
-    out.push('p { text-indent: 1.4em !important; margin-top: 0 !important; margin-bottom: 0 !important; }');
-    out.push('h1 + p, h2 + p, h3 + p, h4 + p, h5 + p, h6 + p, hr + p, blockquote p { text-indent: 0 !important; }');
+    out.push(`${para} { text-indent: 1.4em !important; margin-top: 0 !important; margin-bottom: 0 !important; }`);
+    out.push(`:is(h1, h2, h3, h4, h5, h6, hr) + :is(p, [data-rp]), blockquote :is(p, [data-rp]) { text-indent: 0 !important; }`);
   } else if (T.para === 'gap') {
-    out.push('p { text-indent: 0 !important; margin-top: 0 !important; margin-bottom: .8em !important; }');
+    out.push(`${para} { text-indent: 0 !important; margin-top: 0 !important; margin-bottom: .8em !important; }`);
   }
   out.push(`a { color: ${resolvedTheme() === 'light' || resolvedTheme() === 'sepia' ? '#C05A39' : '#DB8456'} !important; }`);
   // Без ограничения по высоте картинка на всю страницу вылезает за экран и режется.
@@ -120,6 +124,27 @@ export function typeCss() {
   return out.join('\n');
 }
 
+/* Разметить главу один раз, до своих правил. Книги верстают абзацы не только в <p>:
+   часто это <div> с текстом — их помечаем data-rp, чтобы набор до них дотянулся.
+   И запоминаем, что автор выровнял сам (по центру, вправо): это выключка не трогает. */
+function markText(doc, st) {
+  const root = doc.documentElement;
+  if (root.dataset.rm) return;
+  root.dataset.rm = '1';
+  if (st) st.disabled = true;           // смотрим на вёрстку книги, а не на свою
+  const win = doc.defaultView;
+  doc.body.querySelectorAll('div').forEach(d => {
+    for (const n of d.childNodes) {
+      if (n.nodeType === 3 && n.nodeValue.trim()) { d.dataset.rp = '1'; break; }
+    }
+  });
+  doc.body.querySelectorAll('p, [data-rp]').forEach(p => {
+    const a = win.getComputedStyle(p).textAlign;
+    if (a === 'center' || a === 'right' || a === 'end' || a === '-webkit-center' || a === '-webkit-right') p.dataset.keep = '1';
+  });
+  if (st) st.disabled = false;
+}
+
 /** Переписать правила набора во всех открытых главах. */
 export function applyType() {
   if (!state.rendition) return;
@@ -127,6 +152,7 @@ export function applyType() {
   state.rendition.getContents().forEach(c => {
     const doc = c.document;
     let st = doc.getElementById('reader-type');
+    markText(doc, st);
     if (!st) { st = doc.createElement('style'); st.id = 'reader-type'; doc.head.appendChild(st); }
     if (st.textContent !== css) st.textContent = css;
   });

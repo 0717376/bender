@@ -880,6 +880,29 @@ check('набор: выбор запоминается', await dpage.evaluate(()
   const s = JSON.parse(localStorage.getItem('set:type'))
   return s.font === 'literata' && s.lh === 1.8 && s.align === 'left' && s.para === 'indent' && s.hyph === false && s.weight === 500
 }))
+// Книги верстают абзацы и в <div>, а выключку задают классом — набор обязан дотянуться и туда,
+// не тронув то, что автор выровнял сам. Тестовая книга свёрстана через <p>, поэтому подменяем на месте.
+const odd = await dpage.evaluate(() => {
+  const doc = document.querySelector('#viewer iframe').contentDocument
+  const css = doc.createElement('style')
+  css.textContent = '.jb { text-align: justify; text-indent: 0; line-height: 1.1; } .mid { text-align: center; }'
+  doc.head.appendChild(css)
+  const ps = [...doc.querySelectorAll('p')].filter(x => x.textContent.length > 120)
+  const div = doc.createElement('div'); div.className = 'jb'; div.textContent = ps[1].textContent
+  ps[1].replaceWith(div)
+  ps[2].className = 'jb'; ps[3].className = 'mid'
+  delete doc.documentElement.dataset.rm
+  ;[...doc.querySelectorAll('[data-keep]')].forEach(x => delete x.dataset.keep)
+  __books.applyType()
+  const cs = x => doc.defaultView.getComputedStyle(x)
+  const of = x => ({ align: cs(x).textAlign, lh: +(parseFloat(cs(x).lineHeight) / parseFloat(cs(x).fontSize)).toFixed(2),
+                     indent: parseFloat(cs(x).textIndent), weight: cs(x).fontWeight })
+  return { div: of(div), cls: of(ps[2]), mid: of(ps[3]) }
+})
+check('набор: дотягивается до абзацев в <div> и перебивает классы книги',
+  odd.div.align === 'left' && odd.div.lh === 1.8 && odd.div.indent > 10 && odd.div.weight === '500'
+  && odd.cls.align === 'left' && odd.cls.lh === 1.8 && odd.cls.indent > 10, JSON.stringify(odd))
+check('набор: выровненное автором по центру остаётся по центру', odd.mid.align === 'center' && odd.mid.indent === 0, JSON.stringify(odd.mid))
 await dpage.click('#drawerBody .paper[data-v="light"]')
 await dpage.click('#viewReset')
 await dpage.waitForTimeout(1200)
