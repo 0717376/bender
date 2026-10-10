@@ -18,7 +18,7 @@ from mcp.server.fastmcp.server import StreamableHTTPASGIApp
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.responses import JSONResponse
 
-from . import books_api, books_tools, config, files, tasks_store
+from . import books_api, books_tools, cards_store, cards_tools, config, files, tasks_store
 
 TOKEN_FILE = os.path.join(config.DATA_DIR, "mcp_token")
 
@@ -78,7 +78,8 @@ mcp = FastMCP(
     "bender",
     instructions=(
         "Личный агент пользователя: вики (база знаний из markdown-страниц), "
-        "задачи (менеджер дел в стиле Things) и книги (читалка epub с выписками). "
+        "задачи (менеджер дел в стиле Things), книги (читалка epub с выписками) и карточки "
+        "(интервальные повторения, как Anki). "
         "Пути вики — относительные, например 'vault/machines/backups.md'. "
         "Даты — ISO YYYY-MM-DD.\n"
         "Вики иерархична: папка с index.md — это одна страница со своими детьми "
@@ -418,6 +419,51 @@ def books_highlights(book_id: str, color: str | None = None) -> list[dict]:
     """Выписки пользователя из книги: цитата, смысл (цвет), глава, дата и разговор о ней.
     color — фильтр: imp | no | q | wiki | nice."""
     return books_tools.highlights(book_id, color)
+
+
+# ── Карточки ──
+
+@mcp.tool()
+def cards_due() -> dict:
+    """Что сегодня к повторению: по видам (доучить, повторить, новые) и по колодам,
+    серия дней, сколько уже повторено."""
+    return cards_tools.due()
+
+
+@mcp.tool()
+def cards_add(notes: list[dict], deck: str | None = None) -> dict:
+    """Добавить карточки пачкой. deck — название или id колоды (новое название заводит
+    колоду). У каждой заметки kind и fields: word {word, meaning, lemma?, ipa?, pos?,
+    example?, example_tr?} — слово, две карточки; basic {front, back} — вопрос и ответ;
+    cloze {text: "… {{c1::скрытое}} …"} — фраза с пропусками."""
+    return cards_tools.add(notes, deck)
+
+
+@mcp.tool()
+def cards_search(q: str = "", deck_id: int | None = None, status: str = "",
+                 leech: bool = False, limit: int = 30) -> list[dict]:
+    """Найти карточки по строке, колоде или состоянию. status: ready | inbox (черновики
+    и незаполнившиеся). leech — те, что не даются."""
+    return [cards_tools.brief(n) for n in cards_store.list_notes(
+        q=q, deck_id=deck_id, status=status, leech=leech, limit=limit)]
+
+
+@mcp.tool()
+def cards_update(id: int, fields: dict | None = None, deck: str | None = None,
+                 tags: list[str] | None = None) -> dict:
+    """Поправить карточку по id заметки: fields — только меняемые поля, deck — перенести,
+    tags — заменить теги. Выученное при правке не теряется."""
+    try:
+        n = cards_store.update_note(id, fields=fields, deck=deck, tags=tags)
+    except ValueError as e:
+        return {"error": str(e)}
+    return cards_tools.brief(n) if n else {"error": "карточка не найдена"}
+
+
+@mcp.tool()
+def cards_delete(id: int) -> dict:
+    """Удалить карточку по id заметки."""
+    return {"ok": True} if cards_store.delete_note(id) else {"error": "карточка не найдена"}
 
 
 # ASGI-хендлер напрямую, минуя внутренний Starlette-роутер FastMCP — он
