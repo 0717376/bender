@@ -183,17 +183,23 @@ export interface StorageUploadResult {
   ok: boolean
   path: string
   size: number
-  parse_prompt?: string
 }
 
-export async function storageUpload(
-  dir: string, file: File, opts: { parse?: boolean } = {},
-): Promise<StorageUploadResult> {
+/** Готовая просьба агенту разобрать файлы: пути внутри контейнера знает только сервер. */
+export async function storageParsePrompt(paths: string[]): Promise<string> {
+  const res = await fetch(API + '/storage/parse-prompt', {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ paths }),
+  })
+  await ok(res, 'parse error')
+  return (await res.json()).prompt
+}
+
+export async function storageUpload(dir: string, file: File): Promise<StorageUploadResult> {
   const formData = new FormData()
   formData.append('file', file, file.name)
-  const qs = new URLSearchParams({ dir })
-  if (opts.parse) qs.set('parse', '1')
-  const res = await fetch(API + '/storage/upload?' + qs.toString(), {
+  const res = await fetch(API + '/storage/upload?' + new URLSearchParams({ dir }), {
     method: 'POST',
     headers: authHeaders(),
     body: formData,

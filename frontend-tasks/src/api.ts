@@ -29,6 +29,23 @@ export async function login(password: string): Promise<string> {
   return token;
 }
 
+/** Файл — в общее хранилище, то же, что «Файлы» в вики. Возвращает путь внутри него. */
+export async function storageUpload(dir: string, file: File): Promise<string> {
+  const fd = new FormData();
+  fd.append("file", file, file.name);
+  const res = await fetch("/storage/upload?" + new URLSearchParams({ dir }), {
+    method: "POST",
+    headers: getToken() ? { authorization: `Bearer ${getToken()}` } : {},
+    body: fd,
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? res.statusText);
+  return (await res.json()).path;
+}
+
+/** Готовая просьба агенту разобрать файлы: пути внутри контейнера знает только сервер. */
+export const storageParsePrompt = async (paths: string[]): Promise<string> =>
+  (await req<{ prompt: string }>("POST", "/storage/parse-prompt", { paths })).prompt;
+
 /** Speech-to-text via the shared backend ASR endpoint (same as the wiki uses). */
 export async function transcribeAudio(blob: Blob): Promise<string | null> {
   const fd = new FormData();

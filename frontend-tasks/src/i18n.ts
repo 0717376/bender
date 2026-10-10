@@ -175,6 +175,7 @@ const RU = {
   clear_context: "Очистить контекст",
   collapse: "Свернуть",
   send: "Отправить",
+  attach_file: "Прикрепить файл",
   ask_assistant: "Спросите ассистента…",
   chat_empty_1: "Спросите ассистента про ваши задачи и планы.",
   chat_empty_2: "Напр.: «что у меня на сегодня?», «перенеси отчёт на пятницу».",
@@ -354,6 +355,7 @@ const EN: Record<keyof typeof RU, string> = {
   clear_context: "Clear context",
   collapse: "Collapse",
   send: "Send",
+  attach_file: "Attach a file",
   ask_assistant: "Ask the assistant…",
   chat_empty_1: "Ask the assistant about your tasks and plans.",
   chat_empty_2: "E.g. “what's on for today?”, “move the report to Friday”.",
@@ -382,6 +384,10 @@ const EN: Record<keyof typeof RU, string> = {
 };
 
 export const t = (k: keyof typeof RU): string => (lang === "ru" ? RU : EN)[k];
+
+/** Подпись сообщения с файлами в ленте чата: «Файл: отчёт.pdf». */
+export const filesLabel = (names: string[]): string =>
+  (lang === "ru" ? (names.length > 1 ? "Файлы: " : "Файл: ") : (names.length > 1 ? "Files: " : "File: ")) + names.join(", ");
 
 /** Month names (nominative, capitalized): calendar header + upcoming group labels. */
 export const MONTHS: string[] = lang === "ru"

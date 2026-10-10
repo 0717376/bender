@@ -2,31 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { ChevronLeft, Download, ExternalLink, File as FileIcon, FileQuestion, FileText, Folder, HardDrive, Sparkles, Upload } from 'lucide-react'
 import type { FileNode } from '../lib/types'
 import { storageFileUrl, storageUpload } from '../lib/api'
+import { parseRequest, sendToChat } from '../lib/chatBridge'
 import { fileIcon } from '../lib/fileIcons'
 import { useUi } from './Ui'
 import styles from './StorageView.module.css'
 import { t, lang, formatDay } from '../lib/i18n'
-
-// Мост «Файлы → Чат»: StorageView не знает про ChatPane и наоборот. Слушатель в
-// ChatPane сам возьмёт detail и отправит через свой useWebSocket.send. Один канал
-// для двух путей запуска: чекбокс «разобрать после загрузки» и кнопка «разобрать»
-// на карточке файла.
-const CHAT_SEND_EVENT = 'bender:chat-send'
-function dispatchChat(text: string) {
-  window.dispatchEvent(new CustomEvent(CHAT_SEND_EVENT, { detail: { text } }))
-}
-
-// Полный путь к файлу внутри контейнера, который поймёт Read (FILES_DIR у claude-
-// движка в add_dirs). Дублирует backend-константу — но она не меняется годами и
-// класть её в /api-ответ ради этого лишний трафик.
-const FILES_ROOT = '/app/files'
-function parsePrompt(relPath: string): string {
-  return (
-    `[Пользователь просит разобрать файл: ${FILES_ROOT}/${relPath}. ` +
-    'Открой его через Read и коротко расскажи: что это, ключевые данные, ' +
-    'что можно с этим делать дальше.]'
-  )
-}
 
 interface StorageViewProps {
   path: string | null
@@ -77,6 +57,7 @@ function Crumbs({ path, onSelect }: { path: string | null; onSelect: (p: string)
 }
 
 export function StorageView({ path, node, entries, onSelect, onChanged, onMissing, onBack }: StorageViewProps) {
+  const { notify } = useUi()
   const [missing, setMissing] = useState(false)
   const [loading, setLoading] = useState(false)
   const [narrow, setNarrow] = useState(() => window.matchMedia('(max-width: 760px)').matches)
@@ -176,7 +157,8 @@ export function StorageView({ path, node, entries, onSelect, onChanged, onMissin
           {size != null && <span className={styles.meta}>{formatSize(size)}</span>}
           <button
             className={styles.uploadBtn}
-            onClick={() => dispatchChat(parsePrompt(path!))}
+            onClick={() => parseRequest([{ path: path!, name }]).then(sendToChat)
+              .catch(e => notify((e as Error).message, 'error'))}
             title={t('parseWithAgent')}
           >
             <Sparkles size={13} /> {t('parseWithAgent')}
@@ -226,14 +208,18 @@ function FolderView({ path, entries, onSelect, onChanged, onBack }: {
   }, [parseOnUpload])
 
   const upload = async (files: FileList | File[]) => {
-    const arr = Array.from(files)
-    for (const f of arr) {
+    const done: { path: string; name: string }[] = []
+    for (const f of Array.from(files)) {
       try {
-        const r = await storageUpload(path ?? '', f, { parse: parseOnUpload })
-        if (parseOnUpload && r.parse_prompt) dispatchChat(r.parse_prompt)
+        const r = await storageUpload(path ?? '', f)
+        done.push({ path: r.path, name: f.name })
       } catch (e) {
         notify(`${f.name}: ${(e as Error).message}`, 'error')
       }
+    }
+    // Разбор — одной просьбой на все файлы и после того, как они все легли на диск.
+    if (parseOnUpload && done.length) {
+      await parseRequest(done).then(sendToChat).catch(e => notify((e as Error).message, 'error'))
     }
     onChanged()
   }

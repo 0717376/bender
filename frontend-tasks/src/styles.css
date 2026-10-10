@@ -458,6 +458,11 @@ button, input, textarea, select { font-family: inherit; -webkit-tap-highlight-co
 .chat-send:hover { filter: brightness(1.06); }
 .chat-send:active { transform: scale(.93); }
 .chat-send:disabled { opacity: .3; box-shadow: none; cursor: default; transform: none; }
+.chat-attach { flex: none; width: 34px; height: 34px; margin-bottom: 3px; border: 0; border-radius: 50%; background: transparent; color: var(--text-3); display: grid; place-items: center; cursor: pointer; transition: background .15s, color .15s; }
+.chat-attach:hover { background: var(--bg-3); color: var(--accent-ink); }
+.chat-attach:disabled { opacity: .4; cursor: default; background: transparent; }
+.chat-attach .spin { animation: chatAttachSpin .8s linear infinite; }
+@keyframes chatAttachSpin { to { transform: rotate(360deg); } }
 
 /* Voice input button (mic / waveform / stop / spinner) */
 .mic-btn { flex: none; width: 34px; height: 34px; margin-bottom: 3px; border: 0; border-radius: 50%; background: transparent; color: var(--text-3); display: grid; place-items: center; cursor: pointer; position: relative; transition: background .2s, color .2s; }
