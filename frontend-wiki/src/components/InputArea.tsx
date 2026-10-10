@@ -2,13 +2,15 @@ import { useRef, useCallback, useState } from 'react'
 import { Paperclip, Loader2 } from 'lucide-react'
 import { MicButton } from './MicButton'
 import { storageUpload } from '../lib/api'
+import { parseRequest } from '../lib/chatBridge'
 import { useUi } from './Ui'
 import styles from './InputArea.module.css'
 import { t } from '../lib/i18n'
 
 interface InputAreaProps {
   busy: boolean
-  onSend: (text: string) => void
+  /** shown — что показать в ленте вместо text (служебную просьбу человеку читать незачем). */
+  onSend: (text: string, shown?: string) => void
 }
 
 // Загрузка через скрепку идёт в inbox — папку, куда уже приземляется всё, что
@@ -54,22 +56,27 @@ export function InputArea({ busy, onSend }: InputAreaProps) {
     el.focus()
   }, [])
 
-  // Скрепка: файл сначала уходит в /storage/upload?parse=1, ответом приходит
-  // готовый parse_prompt со свежим путём внутри контейнера — его и шлём агенту.
-  // Скилл-nudge текущей surface (wiki здесь) сам направит агента в правильный
-  // навык: положить в вики / создать задачу / просто разобрать.
+  // Скрепка: файлы ложатся во «Входящие», затем агенту уходит одна просьба разобрать
+  // их все. Куда разложить — в вики, в задачи — он решит сам по содержимому.
   const handleAttach = useCallback(async (files: FileList | null) => {
     if (!files?.length || uploading || busy) return
     setUploading(true)
+    const done: { path: string; name: string }[] = []
     try {
       for (const f of Array.from(files)) {
         try {
-          const r = await storageUpload(ATTACH_DIR, f, { parse: true })
-          if (r.parse_prompt) onSend(r.parse_prompt)
+          const r = await storageUpload(ATTACH_DIR, f)
+          done.push({ path: r.path, name: f.name })
         } catch (e) {
           notify(`${f.name}: ${(e as Error).message}`, 'error')
         }
       }
+      if (done.length) {
+        const req = await parseRequest(done)
+        onSend(req.text, req.shown)
+      }
+    } catch (e) {
+      notify((e as Error).message, 'error')
     } finally {
       setUploading(false)
       if (fileRef.current) fileRef.current.value = ''

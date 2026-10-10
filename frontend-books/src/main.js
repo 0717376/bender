@@ -18,7 +18,6 @@ import { allToWiki, closeDrawer, drawerFind, drawerHighlights, drawerPrefs, draw
 import { applyTheme, closeBook, epubSurface, loadEpub, openBook, wireGlobal, wireScrub } from './reader.js'
 import { bubbleMe, closeSheet, contextAround, followUp, openHighlight, promptFor, send, wireScrim, wireSheetKeyboard } from './sheet.js'
 import { buildShelf, pickFile, refreshShelf, wireShelfDrop } from './shelf.js'
-import { storageUploadForParse } from './library.js'
 import { lib } from './store.js'
 import { live, sync } from './sync.js'
 import { closeStats, openStats, wireReadingBeat } from './stats.js'
@@ -55,31 +54,6 @@ function wireUI() {
     followUp(v);
   };
   $('#sheetInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('#sheetSend').click(); });
-  // Скрепка: файл — в /storage/Входящие, готовый prompt агенту — в открытый чат
-  // выделения (нужен активный highlight; иначе некуда цеплять thread).
-  $('#sheetAttach').onclick = () => $('#sheetFile').click();
-  $('#sheetFile').addEventListener('change', async e => {
-    const files = e.target.files;
-    if (!files || !files.length) return;
-    const btn = $('#sheetAttach');
-    btn.disabled = true;
-    try {
-      for (const f of Array.from(files)) {
-        try {
-          const r = await storageUploadForParse(f);
-          if (r.parse_prompt) {
-            bubbleMe(`📎 ${f.name}`);
-            send(r.parse_prompt);
-          }
-        } catch (err) {
-          bubbleMe(`⚠️ ${f.name}: ${err.message || err}`);
-        }
-      }
-    } finally {
-      btn.disabled = false;
-      e.target.value = '';
-    }
-  });
   $('#authGo').onclick = doLogin;
   $('#authPass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
 }

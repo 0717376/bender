@@ -29,31 +29,22 @@ export async function login(password: string): Promise<string> {
   return token;
 }
 
-/** Загрузка файла в общее хранилище /storage. С parse=1 бэкенд отдаёт готовый
- *  parse_prompt со свежим путём внутри контейнера — эту строку кладём в чат,
- *  агент откроет файл через Read и разберёт. */
-export interface StorageUploadResult {
-  ok: boolean;
-  path: string;
-  size: number;
-  parse_prompt?: string;
-}
-
-export async function storageUpload(
-  dir: string, file: File, opts: { parse?: boolean } = {},
-): Promise<StorageUploadResult> {
+/** Файл — в общее хранилище, то же, что «Файлы» в вики. Возвращает путь внутри него. */
+export async function storageUpload(dir: string, file: File): Promise<string> {
   const fd = new FormData();
   fd.append("file", file, file.name);
-  const qs = new URLSearchParams({ dir });
-  if (opts.parse) qs.set("parse", "1");
-  const res = await fetch("/storage/upload?" + qs.toString(), {
+  const res = await fetch("/storage/upload?" + new URLSearchParams({ dir }), {
     method: "POST",
     headers: getToken() ? { authorization: `Bearer ${getToken()}` } : {},
     body: fd,
   });
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? res.statusText);
-  return res.json();
+  return (await res.json()).path;
 }
+
+/** Готовая просьба агенту разобрать файлы: пути внутри контейнера знает только сервер. */
+export const storageParsePrompt = async (paths: string[]): Promise<string> =>
+  (await req<{ prompt: string }>("POST", "/storage/parse-prompt", { paths })).prompt;
 
 /** Speech-to-text via the shared backend ASR endpoint (same as the wiki uses). */
 export async function transcribeAudio(blob: Blob): Promise<string | null> {

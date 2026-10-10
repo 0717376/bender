@@ -385,6 +385,10 @@ const EN: Record<keyof typeof RU, string> = {
 
 export const t = (k: keyof typeof RU): string => (lang === "ru" ? RU : EN)[k];
 
+/** Подпись сообщения с файлами в ленте чата: «Файл: отчёт.pdf». */
+export const filesLabel = (names: string[]): string =>
+  (lang === "ru" ? (names.length > 1 ? "Файлы: " : "Файл: ") : (names.length > 1 ? "Files: " : "File: ")) + names.join(", ");
+
 /** Month names (nominative, capitalized): calendar header + upcoming group labels. */
 export const MONTHS: string[] = lang === "ru"
   ? ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]

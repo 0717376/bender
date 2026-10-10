@@ -103,17 +103,37 @@ async def download(path: str, token: str = ""):
     })
 
 
-@router.post("/upload")
-async def upload(file: UploadFile, dir: str = "", parse: int = 0,
-                 _: bool = Depends(require_auth)):
-    """Загрузить файл в FILES_DIR/<dir>.
+class ParseReq(BaseModel):
+    paths: list[str]
 
-    parse=1 — вернуть готовый `parse_prompt` с абсолютным путём внутри контейнера.
-    Фронт отправляет эту строку в чат обычным сообщением; агент по подсказке
-    открывает файл через Read (FILES_DIR смонтирован в add_dirs Claude-движка).
-    Сам агент здесь не дёргается: /storage/upload — REST-ручка, а разбор идёт по
-    той же WebSocket-нити, что и любой запрос от пользователя.
-    """
+
+@router.post("/parse-prompt")
+async def parse_prompt(req: ParseReq, _: bool = Depends(require_auth)):
+    """Просьба агенту разобрать файлы хранилища — готовой строкой для чата.
+
+    Строку собирает сервер: только он знает, где файлы лежат внутри контейнера, и агент
+    открывает их по этому пути через Read (FILES_DIR — в add_dirs движка). Несколько
+    файлов — одна просьба: чат ведёт один ход за раз, второе сообщение упёрлось бы
+    в незаконченный ответ на первое."""
+    files = []
+    for rel in req.paths[:20]:
+        abs_path = safe_path(rel)
+        if not os.path.isfile(abs_path):
+            raise HTTPException(404, f"Файл не найден: {rel}")
+        files.append(abs_path)
+    if not files:
+        raise HTTPException(400, "Не выбрано ни одного файла")
+    what = f"файл: {files[0]}" if len(files) == 1 else "файлы:\n" + "\n".join(f"- {f}" for f in files)
+    return {"prompt": (
+        f"[Пользователь просит разобрать {what}\n"
+        "Открой через Read и коротко расскажи: что это, ключевые данные, что с этим можно "
+        "сделать. Если это заметки, задачи или чек-лист — предложи разложить в вики или задачи.]"
+    )}
+
+
+@router.post("/upload")
+async def upload(file: UploadFile, dir: str = "", _: bool = Depends(require_auth)):
+    """Загрузить файл в FILES_DIR/<dir>."""
     abs_dir = safe_path(dir)
     os.makedirs(abs_dir, exist_ok=True)
     name = clean_name(os.path.basename(file.filename or "файл"))
@@ -135,15 +155,7 @@ async def upload(file: UploadFile, dir: str = "", parse: int = 0,
         if os.path.exists(tmp):
             os.remove(tmp)
     rel = os.path.relpath(dest, config.FILES_DIR)
-    result: dict = {"ok": True, "path": rel, "size": size}
-    if parse:
-        result["parse_prompt"] = (
-            f"[Пользователь загрузил файл в «Файлы»: {dest}. "
-            "Открой его через Read и коротко разбери: что это, ключевые данные, "
-            "что с этим можно сделать. Если это заметки/задачи/чек-лист — предложи "
-            "разложить в вики или задачи.]"
-        )
-    return result
+    return {"ok": True, "path": rel, "size": size}
 
 
 @router.post("/mkdir")

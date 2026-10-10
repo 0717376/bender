@@ -25,6 +25,7 @@ const RU = {
   roleAssistant: 'ассистент',
   roleUser: 'вы',
   sendFailed: 'Не удалось отправить сообщение',
+  waitForAnswer: 'Дождитесь ответа ассистента',
   clearTitle: 'Очистить контекст',
   clear: 'Очистить',
   attachPage: 'Прикрепить страницу',
@@ -128,6 +129,7 @@ const EN: Record<keyof typeof RU, string> = {
   roleAssistant: 'assistant',
   roleUser: 'you',
   sendFailed: 'Failed to send the message',
+  waitForAnswer: 'Wait for the assistant to answer',
   clearTitle: 'Clear context',
   clear: 'Clear',
   attachPage: 'Attach page',
@@ -220,6 +222,12 @@ const EN: Record<keyof typeof RU, string> = {
 }
 
 export const t = (k: keyof typeof RU): string => (ru ? RU : EN)[k]
+
+/** Подпись сообщения с файлами в ленте чата: «Файл: отчёт.pdf». */
+export function filesLabel(names: string[]): string {
+  const many = names.length > 1
+  return (ru ? (many ? 'Файлы: ' : 'Файл: ') : (many ? 'Files: ' : 'File: ')) + names.join(', ')
+}
 
 export function selectedChars(n: number): string {
   return ru ? `выделено ${n}` : `${n} chars selected`

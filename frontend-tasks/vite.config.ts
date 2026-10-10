@@ -16,6 +16,7 @@ export default defineConfig({
       "/auth": BACKEND,
       "/tasks": BACKEND,
       "/files": BACKEND,
+      "/storage": BACKEND,
       "/api": BACKEND,
       "/health": BACKEND,
       "/chat": { target: BACKEND, ws: true },

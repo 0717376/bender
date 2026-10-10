@@ -92,10 +92,11 @@ export function useChat(onActivity?: () => void) {
   }, [onActivity, flush]);
 
   const send = useCallback(
-    async (text: string) => {
+    // shown — что показать в ленте вместо text: служебную просьбу человеку читать незачем.
+    async (text: string, shown?: string) => {
       const t = text.trim();
       if (!t || busy) return;
-      setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "user", text: t }]);
+      setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "user", text: shown ?? t }]);
       if (t !== "/clear") {
         setBusy(true);
         streamRef.current = { id: "", text: "", tools: [] };

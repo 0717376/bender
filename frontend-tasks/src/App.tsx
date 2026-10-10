@@ -441,7 +441,8 @@ function Board() {
       </DndContext>
 
       {!chatCollapsed && <div className="chat-scrim" onClick={toggleChat} />}
-      <ChatPane onActivity={T.reload} collapsed={chatCollapsed} onToggle={toggleChat} />
+      <ChatPane onActivity={T.reload} collapsed={chatCollapsed} onToggle={toggleChat}
+        notify={(text) => pushToast({ id: crypto.randomUUID(), text })} />
 
       {newTaskOpen && (
         <NewTaskModal

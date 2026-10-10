@@ -66,21 +66,6 @@ export async function uploadBook(file) {
   return r.json();
 }
 
-/** Скрепка в чат: файл кладётся в общий /storage/Входящие и бэкенд возвращает
- *  готовую строку-подсказку агенту (parse_prompt). Ту строку и отправляем
- *  в текущий чат — surface=books, агент разберётся в контексте книги. */
-export async function storageUploadForParse(file, dir = 'Входящие') {
-  const body = new FormData();
-  body.append('file', file, file.name || 'file');
-  const qs = new URLSearchParams({ dir, parse: '1' });
-  const r = await fetch(`${API}/storage/upload?${qs.toString()}`, { method: 'POST', headers: head(), body });
-  if (!r.ok) {
-    const detail = await r.json().catch(() => ({}));
-    throw new Error(detail.detail || 'не вышло загрузить файл');
-  }
-  return r.json();          // {ok, path, size, parse_prompt?}
-}
-
 export async function deleteBook(id) {
   const r = await fetch(`${API}/books/${id}`, { method: 'DELETE', headers: head() });
   if (!r.ok) throw new Error('удаление: ' + r.status);

@@ -10,6 +10,8 @@ import { InputArea } from './InputArea'
 import { createToolHtml } from './Message'
 import styles from './ChatPane.module.css'
 import { t, selectedChars } from '../lib/i18n'
+import { CHAT_SEND_EVENT, type ChatSend } from '../lib/chatBridge'
+import { useUi } from './Ui'
 
 interface ChatPaneProps {
   onAssistantDone: () => void
@@ -86,10 +88,11 @@ export function ChatPane({ onAssistantDone, onLogout, currentPath, currentTitle,
     onAssistantDone()
   }, [flushStream, onAssistantDone])
 
+  const { notify } = useUi()
   const { send } = useWebSocket(onText, onTool, onError, onDone, onLogout)
 
-  const handleSend = useCallback((text: string) => {
-    setMessages(m => [...m, { id: uid(), role: 'user', html: text }])
+  const handleSend = useCallback((text: string, shown?: string) => {
+    setMessages(m => [...m, { id: uid(), role: 'user', html: shown ?? text }])
     setBusy(true)
     setWaiting(true)
     const ctx = getContext()
@@ -101,16 +104,18 @@ export function ChatPane({ onAssistantDone, onLogout, currentPath, currentTitle,
     onClearSelection()
   }, [send, getContext, onClearSelection, pageOff])
 
-  // Мост от «Файлы» (StorageView.dispatchChat) до чата: не тащить пропы через
-  // WikiApp и не заводить глобальный стор ради одного edge-case'а с загрузкой.
+  // Просьбы из «Файлов» и от скрепки приходят событием (см. lib/chatBridge).
   useEffect(() => {
     const listener = (e: Event) => {
-      const detail = (e as CustomEvent<{ text: string }>).detail
-      if (detail?.text) handleSend(detail.text)
+      const detail = (e as CustomEvent<ChatSend>).detail
+      // Агент ещё отвечает — второй ход начинать нельзя: пусть человек дождётся.
+      if (!detail?.text) return
+      if (busy) return notify(t('waitForAnswer'), 'error')
+      handleSend(detail.text, detail.shown)
     }
-    window.addEventListener('bender:chat-send', listener)
-    return () => window.removeEventListener('bender:chat-send', listener)
-  }, [handleSend])
+    window.addEventListener(CHAT_SEND_EVENT, listener)
+    return () => window.removeEventListener(CHAT_SEND_EVENT, listener)
+  }, [handleSend, busy, notify])
 
   if (collapsed) {
     return (

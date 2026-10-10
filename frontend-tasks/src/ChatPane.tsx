@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowUp, ChevronRight, Loader2, Paperclip, Sparkles, TriangleAlert, Wrench } from "lucide-react";
 import MicButton from "./MicButton";
-import { t } from "./i18n";
+import { filesLabel, t } from "./i18n";
 import { useChat } from "./useChat";
-import { storageUpload } from "./api";
+import { storageParsePrompt, storageUpload } from "./api";
 
 // Скрепка кладёт файл в общий inbox — ту же папку, куда падает всё, что пришло
 // боту в Telegram. Один поток входящих на всё приложение.
@@ -11,10 +11,12 @@ const ATTACH_DIR = "Входящие";
 
 export default function ChatPane({
   onActivity,
+  notify,
   collapsed,
   onToggle,
 }: {
   onActivity?: () => void;
+  notify: (text: string) => void;
   collapsed: boolean;
   onToggle: () => void;
 }) {
@@ -49,22 +51,24 @@ export default function ChatPane({
     taRef.current?.focus();
   };
 
+  // Файлы ложатся во «Входящие», затем агенту уходит одна просьба разобрать их все:
+  // чат ведёт один ход за раз, второе сообщение упёрлось бы в незаконченный ответ.
   const onAttach = async (files: FileList | null) => {
     if (!files?.length || uploading || busy) return;
     setUploading(true);
+    const paths: string[] = [], names: string[] = [];
     try {
       for (const f of Array.from(files)) {
         try {
-          const r = await storageUpload(ATTACH_DIR, f, { parse: true });
-          if (r.parse_prompt) send(r.parse_prompt);
+          paths.push(await storageUpload(ATTACH_DIR, f));
+          names.push(f.name);
         } catch (e) {
-          // В WS писать нельзя: если он не подключён, useChat.send() покажет
-          // «связь с ассистентом потеряна» — это выглядит как поломка чата,
-          // хотя упал upload. Логируем в консоль + системный alert.
-          console.error("attach upload failed", f.name, e);
-          alert(`Не вышло прикрепить ${f.name}: ${(e as Error).message}`);
+          notify(`${f.name}: ${(e as Error).message}`);
         }
       }
+      if (paths.length) send(await storageParsePrompt(paths), filesLabel(names));
+    } catch (e) {
+      notify((e as Error).message);
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
