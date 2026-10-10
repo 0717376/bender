@@ -172,7 +172,7 @@ export function setPageReserve(px) {
 
 export function lineHeight(contents) {
   const doc = contents.document;
-  const p = [...doc.body.querySelectorAll('p')].find(x => x.textContent.trim().length > 120)
+  const p = [...doc.body.querySelectorAll('p, [data-rp]')].find(x => x.textContent.trim().length > 120)
     || doc.body.querySelector('p, li, div');
   if (!p) return 0;
   const cs = contents.window.getComputedStyle(p);

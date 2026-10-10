@@ -15,7 +15,7 @@ import { $, state } from './core.js'
 import { wireGestures } from './gestures.js'
 import { applyDom, t } from './i18n.js'
 import { allToWiki, closeDrawer, drawerFind, drawerHighlights, drawerPrefs, drawerToc, openDrawer } from './drawers.js'
-import { drawerView } from './typeset.js'
+import { applyType, drawerView } from './typeset.js'
 import { applyTheme, closeBook, epubSurface, loadEpub, openBook, wireGlobal, wireScrub } from './reader.js'
 import { bubbleMe, closeSheet, contextAround, followUp, openHighlight, promptFor, send, wireScrim, wireSheetKeyboard } from './sheet.js'
 import { buildShelf, pickFile, refreshShelf, wireShelfDrop } from './shelf.js'
@@ -110,7 +110,7 @@ async function boot() {
 window.__books = {
   state, sel, sync, lib, live, refreshShelf,
   commitSel, paint, wordAt, caretAt, epubSurface,
-  openBook, closeBook, openHighlight, closeSheet, closeDrawer, applyTheme,
+  openBook, closeBook, openHighlight, closeSheet, closeDrawer, applyTheme, applyType,
   openStats, closeStats,
 };
 
