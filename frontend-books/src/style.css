@@ -9,6 +9,9 @@
   --border: rgba(67,56,43,.12); --border-3: rgba(67,56,43,.18);
 }
 :root[data-theme="dark"] { --page: #16151A; --page-ink: #E8E4DE; }
+/* Чёрная — тёмная на чёрной бумаге: для OLED и чтения в темноте. */
+:root[data-page="black"] { --page: #000; --page-ink: #BDB9B2; --bg: #000; --bg-2: #17161A; --bg-3: #201F24;
+  --panel: #0C0C0E; --text: #D9D5CE; --text-2: #A19D97; }
 
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
@@ -294,6 +297,7 @@ canvas.pdfpage { display: block; box-shadow: 0 1px 8px rgba(0, 0, 0, .12); borde
 #scrim { position: fixed; inset: 0; z-index: 70; background: var(--overlay); opacity: 0;
   pointer-events: none; transition: opacity .2s; }
 #scrim.on { opacity: 1; pointer-events: auto; }
+#scrim.clear { background: transparent; }
 /* Закрытая шторка не просто уезжает вниз, а гасится: на десктопе она отступает от края,
    и «уехала на свою высоту» оставляет её шапку с тенью поверх нижней полосы. */
 .sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 80; background: var(--panel);
@@ -394,6 +398,66 @@ canvas.pdfpage { display: block; box-shadow: 0 1px 8px rgba(0, 0, 0, .12); borde
 .seg { display: flex; background: var(--bg-2); border-radius: 10px; padding: 2px; gap: 2px; flex: none; }
 .seg button { padding: 6px 11px; border-radius: 8px; font-size: 12.5px; font-weight: 600; color: var(--text-2); }
 .seg button.on { background: var(--panel); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.10); }
+
+/* ── Панель «Вид» ──
+   На телефоне — шторка снизу: настройки набора выбирают, глядя на текст над ней. */
+@media (max-width: 759px) {
+  .drawer.view { top: auto; height: min(62vh, 560px); padding-top: 0; border-radius: 18px 18px 0 0;
+    box-shadow: var(--shadow-pop); transform: translateY(calc(100% + 40px)); }
+  .drawer.view.on { transform: none; }
+  .drawer.view .drawer-head { padding-top: 16px; position: relative; border-bottom: 0; }
+  .drawer.view .drawer-head::before { content: ''; position: absolute; left: 50%; top: 7px; width: 36px; height: 4px;
+    margin-left: -18px; border-radius: 2px; background: var(--border-3); }
+}
+.drawer.view .drawer-body { padding-top: 0; }
+.vw { padding: 12px 16px 14px; border-bottom: 1px solid var(--border); }
+.vw .cap { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-3); margin-bottom: 9px; }
+.papers { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.paper, .face { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 0; min-width: 0; }
+.paper small, .face small { font-size: 10.5px; font-weight: 600; color: var(--text-3); white-space: nowrap;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.paper.on small, .face.on small { color: var(--text); }
+.paper .sw { width: 100%; height: 46px; border-radius: 12px; display: grid; place-items: center;
+  font-family: ui-serif, Georgia, serif; font-size: 18px; border: 1.5px solid var(--border-3);
+  transition: border-color .15s, box-shadow .15s; }
+.paper.on .sw, .face.on .aa { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.p-light { background: #FBFAF8; color: #1A1A1F; }
+.p-sepia { background: #F6EEDC; color: #43382B; }
+.p-dark { background: #16151A; color: #E8E4DE; }
+.p-black { background: #000; color: #BDB9B2; }
+.p-auto { background: linear-gradient(135deg, #FBFAF8 50%, #16151A 50%); color: #8E8A86; }
+.faces { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 8px; }
+.face .aa { width: 100%; height: 50px; border-radius: 12px; display: grid; place-items: center; font-size: 22px;
+  background: var(--bg-2); color: var(--text); border: 1.5px solid transparent;
+  transition: border-color .15s, box-shadow .15s; }
+.face .aa .icon { width: 19px; height: 19px; color: var(--text-2); }
+.face:active .aa, .paper:active .sw { transform: scale(.97); }
+.sliders { display: flex; flex-direction: column; gap: 12px; padding-top: 14px; }
+.sl { display: grid; grid-template-columns: 22px 1fr 46px; align-items: center; column-gap: 12px; }
+.sl[hidden] { display: none; }
+.sl .ic { display: grid; place-items: center; color: var(--text-2); }
+.sl .ic .icon { width: 18px; height: 18px; }
+.sl .a-s { font-family: ui-serif, Georgia, serif; font-size: 17px; font-weight: 500; line-height: 1; }
+.sl .val { font-size: 12.5px; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; color: var(--text-2); }
+.sl .nm { grid-column: 2; font-size: 11px; color: var(--text-3); margin-top: -3px; }
+.rng { -webkit-appearance: none; appearance: none; width: 100%; height: 26px; background: none; margin: 0; --p: 50%; }
+.rng::-webkit-slider-runnable-track { height: 4px; border-radius: 2px;
+  background: linear-gradient(to right, var(--accent) var(--p), var(--border-3) var(--p)); }
+.rng::-moz-range-track { height: 4px; border-radius: 2px; background: var(--border-3); }
+.rng::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--accent); }
+.rng::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 20px; height: 20px; margin-top: -8px;
+  border-radius: 50%; background: #fff; border: 0; box-shadow: 0 1px 4px rgba(0,0,0,.28), 0 0 0 .5px rgba(0,0,0,.08); }
+.rng::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: #fff; border: 0;
+  box-shadow: 0 1px 4px rgba(0,0,0,.28); }
+.seg button .icon { width: 17px; height: 17px; }
+.switch { width: 44px; height: 26px; border-radius: 13px; background: var(--border-3); position: relative; flex: none;
+  transition: background .18s; }
+.switch::after { content: ''; position: absolute; left: 2px; top: 2px; width: 22px; height: 22px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .18s cubic-bezier(.32,.72,0,1); }
+.switch.on { background: var(--accent); }
+.switch.on::after { transform: translateX(18px); }
+.vw-foot { display: flex; justify-content: center; padding: 18px 16px 4px; }
 
 .empty { padding: 44px 26px; text-align: center; color: var(--text-3); font-size: 13.5px; line-height: 1.6; }
 #toast { position: fixed; left: 50%; bottom: calc(30px + env(safe-area-inset-bottom));

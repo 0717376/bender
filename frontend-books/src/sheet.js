@@ -93,6 +93,7 @@ let sheetWin = null;      // каким было окно, когда шторк
 
 export function openSheet() {
   resetScrim(); $('#sheet').classList.add('on'); $('#scrim').classList.add('on');
+  $('#scrim').classList.remove('clear');
   sheetWin = windowSig();
 }
 export function closeSheet() {

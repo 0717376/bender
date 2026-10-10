@@ -3,13 +3,14 @@ import { auth, showAuth } from './auth.js'
 import { $, ls, splash, state, toast, unsplash } from './core.js'
 import { t } from './i18n.js'
 import { closeDrawer } from './drawers.js'
-import { drawHighlight, hideSelbar, touch } from './highlights.js'
+import { drawHighlight, hideSelbar, redrawHighlights, touch } from './highlights.js'
 import { caretAt, clearSel, onSelected, sel, wireSelection, wordAt } from './selection.js'
 import { closeSheet, openHighlight, sheet } from './sheet.js'
 import { buildShelf, hideMenu } from './shelf.js'
 import { bookBytes, coverUrl } from './library.js'
 import { lib, saveLib } from './store.js'
 import { live, markDirty, sync } from './sync.js'
+import { PAPER, applyType, fontReady } from './typeset.js'
 import { noteJump, noteProgress, startReading, stopReading } from './stats.js'
 
 /* ── Читалка ── */
@@ -217,6 +218,10 @@ export async function jumpTo(target) {
 
 /** Создать rendition и навесить всё, что к нему прилагается. Общее для открытия и пересборки. */
 export async function mountRendition(at) {
+  // Гарнитура должна быть скачана до первой раскладки, иначе страница переедет на глазах.
+  const book = state.book;
+  await fontReady();
+  if (state.book !== book) return;
   pin = at || null;
   lastStart = null;
   moved = false;
@@ -465,47 +470,32 @@ export function resolvedTheme() {
 
 export function applyTheme() {
   const th = resolvedTheme();
-  document.documentElement.dataset.theme = th;
-  const ink = th === 'dark' ? '#E8E4DE' : th === 'sepia' ? '#43382B' : '#1A1A1F';
-  const paper = th === 'dark' ? '#16151A' : th === 'sepia' ? '#F6EEDC' : '#FBFAF8';
-  const r = state.rendition;
-  if (!r) return;
-  r.themes.register('reader', {
-    /* Вертикальные поля страницы: epub.js делает body контейнером колонок, поэтому
-       padding-top/bottom одинаково отступает во всех колонках разворота. */
-    'body': { 'color': ink + ' !important', 'background': paper + ' !important',
-              'padding': PAGE_PAD_Y + 'px 4px !important', '-webkit-text-size-adjust': '100%',
-              /* Книжная гарнитура: ui-serif — это New York на айфоне, дальше Georgia;
-                 обе с настоящей кириллицей — смешение шрифтов внутри слова исключено. */
-              'font-family': 'ui-serif, Georgia, serif !important',
-              'text-rendering': 'optimizeLegibility', 'font-kerning': 'normal' },
-    'p, li, td, div, span, h1, h2, h3, h4': { 'color': ink + ' !important' },
-    /* Книжный набор. Переносы: без них длинное слово прыгает на следующую строку целиком,
-       оставляя в узкой колонке рваный край или дыры в выключке. Свои шрифты и интерлиньяж
-       книги перебиваем сознательно: в читалке текст важнее фирменного стиля вёрстки. */
-    'p, li, blockquote, dd': {
-      'font-family': 'inherit !important', 'line-height': '1.55 !important',
-      '-webkit-hyphens': 'auto', 'hyphens': 'auto',
-      '-webkit-hyphenate-limit-before': '3', '-webkit-hyphenate-limit-after': '3',
-      '-webkit-hyphenate-limit-lines': '2',
-    },
-    /* Выключка по формату — но без !important: явно выровненное автором
-       (эпиграфы, стихи — обычно через класс) остаётся как задумано. */
-    'p': { 'text-align': 'justify', 'hanging-punctuation': 'first last' },
-    'a': { 'color': '#C05A39 !important' },
-    /* Без ограничения по высоте картинка на всю страницу вылезает за экран и режется. */
-    'img, svg': { 'max-width': '100% !important', 'max-height': '96vh !important',
-                  'height': 'auto !important', 'object-fit': 'contain' },
-    'table': { 'max-width': '100% !important' },
-    'pre, code': { 'white-space': 'pre-wrap !important', 'word-break': 'break-word' },
-  });
-  r.themes.select('reader');
-  r.themes.fontSize(state.fontSize + '%');
-  applyTouchRules();
+  const root = document.documentElement;
+  // Чёрная — та же тёмная, только бумага другая: интерфейсу хватает одного признака.
+  root.dataset.theme = th === 'black' ? 'dark' : th;
+  root.dataset.page = th;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = PAPER[th][0];
+  applyType();
 }
 
-/* Своим <style>, а не темой epub.js: та вставляет правила через insertRule один раз,
-   и переключение на лету до книги не доезжает. */
+/* Набор поменяли — страница стала другой длины. Ждём, пока рука остановится, подгоняем
+   колонку под новую строку и возвращаемся к якорю: иначе на экране окажется другое место. */
+let settleT = null;
+export function settle(ms = 180) {
+  clearTimeout(settleT);
+  settleT = setTimeout(async () => {
+    const r = state.rendition;
+    if (!r) return;
+    await fitLines();
+    if (state.rendition !== r) return;
+    if (pin) { try { await r.display(pin); } catch {} }
+    if (state.rendition !== r) return;
+    redrawHighlights();
+  }, ms);
+}
+
+/* Отдельным <style> от набора: запас внизу страницы меняется сам по себе, с каждой подгонкой. */
 export function applyTouchRules() {
   if (!state.rendition) return;
   state.rendition.getContents().forEach(c => {
@@ -519,7 +509,7 @@ export function applyTouchRules() {
     st.textContent =
       '* { -webkit-touch-callout: none !important; -webkit-user-select: none !important; user-select: none !important; }'
       + 'html, body { touch-action: ' + pan + ' !important; overscroll-behavior: none !important; }'
-      // Запас внизу страницы — в пару к fitLines; селектор с html, чтобы перебить тему epub.js.
+      // Запас внизу страницы — в пару к fitLines; селектор с html, чтобы перебить правило набора.
       + (state.flow === 'paginated' && pageReserve
         ? 'html body { padding-bottom: ' + (PAGE_PAD_Y + pageReserve) + 'px !important; }' : '');
   });
@@ -554,7 +544,7 @@ export async function turn(dir) {
 export function wireContent() {
   state.rendition.hooks.content.register(contents => {
     const doc = contents.document;
-    applyTouchRules();
+    applyType();
     wireSelection(epubSurface(contents));
     // Переносы работают, только когда браузер знает язык текста, а главы без lang — не редкость.
     const lang = ((state.meta && state.meta.language) || '').split('-')[0];

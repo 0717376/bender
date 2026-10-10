@@ -14,7 +14,8 @@ import { auth, showAuth } from './auth.js'
 import { $, state } from './core.js'
 import { wireGestures } from './gestures.js'
 import { applyDom, t } from './i18n.js'
-import { allToWiki, closeDrawer, drawerFind, drawerHighlights, drawerPrefs, drawerSettings, drawerToc, openDrawer } from './drawers.js'
+import { allToWiki, closeDrawer, drawerFind, drawerHighlights, drawerPrefs, drawerToc, openDrawer } from './drawers.js'
+import { drawerView } from './typeset.js'
 import { applyTheme, closeBook, epubSurface, loadEpub, openBook, wireGlobal, wireScrub } from './reader.js'
 import { bubbleMe, closeSheet, contextAround, followUp, openHighlight, promptFor, send, wireScrim, wireSheetKeyboard } from './sheet.js'
 import { buildShelf, pickFile, refreshShelf, wireShelfDrop } from './shelf.js'
@@ -30,7 +31,7 @@ function wireUI() {
   $('#btnToc').onclick = () => openDrawer(t('tocTitle'), drawerToc);
   $('#btnHl').onclick = () => openDrawer(t('highlightsTitle'), drawerHighlights,
     { icon: 'i-wiki', title: t('allToWikiTitle'), run: allToWiki });
-  $('#btnSet').onclick = () => openDrawer(t('viewTitle'), drawerSettings);
+  $('#btnSet').onclick = () => openDrawer(t('viewTitle'), drawerView, null, 'view');
   $('#btnAdd').onclick = pickFile;
   wireShelfDrop();
   $('#btnStats').onclick = openStats;
