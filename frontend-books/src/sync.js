@@ -85,7 +85,21 @@ export const sync = {
     const d = await r.json();
     applyHighlights(id, d.highlights || []);
     applyPosition(id, d.position);
-    return true;
+    return d;
+  },
+
+  /* Позиция с другого устройства нужна до показа страницы, но ждать сервер долго нельзя.
+     Не успел — открываемся там, где помним, а ответ, пришедший позже, отдаём в late:
+     читалка сама решит, догонять ли (если человек уже листает — не дёргаем). */
+  async pullFor(id, late, ms = 1500) {
+    const had = ls.get('at:' + id, 0);
+    const p = this.pull(id).catch(() => null);
+    const got = await Promise.race([p, new Promise(r => setTimeout(() => r(undefined), ms))]);
+    if (got !== undefined) return;
+    p.then(d => {
+      const pos = d && d.position;
+      if (pos && pos.cfi && (pos.updated || 0) > had) late(pos);
+    });
   },
 
   /** Отдать своё и получить обратно склеенное: сервер оставляет более позднюю версию. */

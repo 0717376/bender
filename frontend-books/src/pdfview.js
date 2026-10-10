@@ -2,7 +2,7 @@ import * as pdfjs from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { agent } from './agent.js'
 import { auth, showAuth } from './auth.js'
-import { $, colorOf, el, API, ls, state, toast } from './core.js'
+import { $, colorOf, el, API, ls, state, toast, unsplash } from './core.js'
 import { t } from './i18n.js'
 import { bookBytes } from './library.js'
 import { scrubbing, syncChrome } from './reader.js'
@@ -21,22 +21,25 @@ import { noteJump, noteProgress, startReading } from './stats.js'
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
 
 export async function openPdf(entry) {
-  $('#splash').classList.remove('off');
-  $('#splash').textContent = t('openingBook');
   hideMenu();
   $('#scrub').disabled = true; $('#scrub').value = 0;
   wireViewer();
   try {
-    // Позиция с другого устройства нужна до показа страницы, но ждать сервер бесконечно нельзя.
-    await Promise.race([sync.pull(entry.id).catch(() => false), new Promise(r => setTimeout(r, 3500))]);
+    // Ответ сервера, опоздавший к открытию: догоняем, только если читатель ещё не листал.
+    let first = 0, late = null;
+    const catchUp = () => {
+      const m = /^pdf:(\d+)/.exec(late.cfi);
+      if (m && state.entry === entry && state.pdf && state.pdf.page === first) show(+m[1]);
+    };
+    await sync.pullFor(entry.id, pos => { late = pos; if (first) catchUp(); });
     const doc = await pdfjs.getDocument({ data: await bookBytes(entry.id) }).promise;
     state.entry = entry;
     state.kind = 'pdf';
     state.hl = ls.get('hl:' + entry.id, []);
-    state.pdf = { doc, pages: doc.numPages, page: 0, outline: [], text: {}, task: null,
-                  wrap: null, canvas: null, layer: null, marks: null, lines: [],
+    state.pdf = { doc, pages: doc.numPages, page: 0, shown: 0, outline: [], text: {},
+                  frames: new Map(), wrap: null, canvas: null, layer: null, marks: null, lines: [],
                   prev, next, goto, refit, search, labelAt: chapterAt,
-                  redraw: drawMarks, hlAt: markAt, context };
+                  redraw: drawMarks, hlAt: markAt, context, free: () => keepFrames(state.pdf, []) };
 
     entry.opened = Date.now();
     saveLib(lib().map(x => x.id === entry.id ? entry : x));
@@ -50,14 +53,16 @@ export async function openPdf(entry) {
 
     state.pdf.outline = await loadOutline(doc);
     await show(savedPage(entry.id, doc.numPages));
-    $('#splash').classList.add('off');
+    unsplash();
+    first = state.pdf.page;
+    if (late) catchUp();
     $('#scrub').disabled = false;        // страницы известны сразу — локации считать нечего
     startReading(entry.id, ls.get('pct:' + entry.id, 0));
     ensureThumb(entry, doc).catch(() => {});
     if (auth.token) agent.connect().catch(() => {});   // прогреваем связь, пока читается страница
   } catch (e) {
     console.warn(e);
-    $('#splash').classList.add('off');
+    unsplash();
     if (/\b401\b/.test(e.message || '')) { auth.forget(); showAuth(t('sessionExpired')); }
     else toast(t('bookNotOpened'));
   }
@@ -101,34 +106,75 @@ function mount(v) {
   wireSelection(v.surf);
 }
 
+/* ── Кадры ──
+   Страница рисуется не на экране, а в стороне, и на экран попадает готовой: пока pdf.js
+   работает, читатель видит прежнюю страницу, а не белый лист — оттого листание и моргало.
+   Заодно заранее готовим соседей: следующая страница почти всегда уже нарисована.
+   Кадр привязан к размеру окна; сменился размер — прежние выбрасываются. */
+
+function frame(v, n, box, dpr, size) {
+  const key = n + '@' + size;
+  let f = v.frames.get(key);
+  if (f) return f.ready;
+  f = { n, size, canvas: null, task: null, page: null, css: null };
+  f.ready = (async () => {
+    const page = await v.doc.getPage(n);
+    const base = page.getViewport({ scale: 1 });
+    const scale = Math.min(box.width / base.width, box.height / base.height) || 1;
+    // Рисуем в физические пиксели: канвас в css-размере на ретине — мыло.
+    const vp = page.getViewport({ scale: scale * dpr });
+    const c = document.createElement('canvas');
+    c.width = Math.floor(vp.width); c.height = Math.floor(vp.height);
+    const ctx = c.getContext('2d');
+    // Свой белый фон: страница без явной заливки в jpeg и тёмной теме станет чёрной.
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+    f.canvas = c; f.page = page; f.css = page.getViewport({ scale });
+    f.task = page.render({ canvasContext: ctx, viewport: vp });
+    await f.task.promise;
+    f.task = null;
+    return f;
+  })();
+  // Отменённый или упавший кадр в запасе не держим: следующий заход нарисует заново.
+  f.ready.catch(() => { if (v.frames.get(key) === f) v.frames.delete(key); });
+  v.frames.set(key, f);
+  return f.ready;
+}
+
+/** Оставить только нужные кадры. Память канваса на телефоне считанная — лишний
+    не ждёт сборщика мусора, а отдаёт её сразу. */
+function keepFrames(v, keys) {
+  for (const [key, f] of v.frames) {
+    if (keys.includes(key)) continue;
+    v.frames.delete(key);
+    if (f.task) { try { f.task.cancel(); } catch {} }
+    if (f.canvas) f.canvas.width = f.canvas.height = 0;
+  }
+}
+
 /** Страница целиком в окно, без прокрутки — как разворот бумажной книги на столе. */
 async function render() {
-  const v = state.pdf;
-  const page = await v.doc.getPage(v.page);
-  // Прошлый рендер не просто отменяем — дожидаемся отмены: тот же канвас двум
-  // задачам pdf.js отдавать нельзя, он на этом падает.
-  if (v.task) { try { v.task.cancel(); } catch {} try { await v.task.promise; } catch {} v.task = null; }
-  if (state.pdf !== v || page.pageNumber !== v.page) return;   // пока грузили — ушли дальше
-  const box = $('#viewer').getBoundingClientRect();
-  const base = page.getViewport({ scale: 1 });
-  const scale = Math.min(box.width / base.width, box.height / base.height) || 1;
-  // Рисуем в физические пиксели: канвас в css-размере на ретине — мыло.
-  const dpr = Math.min(window.devicePixelRatio || 1, 3);
-  const css = page.getViewport({ scale });
-  const vp = page.getViewport({ scale: scale * dpr });
+  const v = state.pdf, n = v.page;
   mount(v);
+  const box = $('#viewer').getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const size = Math.round(box.width) + 'x' + Math.round(box.height) + 'x' + dpr;
+  const near = [n, n + 1, n - 1].filter(k => k >= 1 && k <= v.pages);
+  keepFrames(v, near.map(k => k + '@' + size));
+  let f;
+  try { f = await frame(v, n, box, dpr, size); } catch { return; }   // отменили ради другой страницы
+  if (state.pdf !== v || v.page !== n) return;                       // пока рисовали — ушли дальше
   const c = v.canvas;
-  c.width = Math.floor(vp.width); c.height = Math.floor(vp.height);
-  const w = Math.floor(css.width), h = Math.floor(css.height);
+  const w = Math.floor(f.css.width), h = Math.floor(f.css.height);
+  // Размер и картинка меняются в одном кадре: смена размера канвас очищает,
+  // но до отрисовки браузер его пустым показать не успевает.
+  c.width = f.canvas.width; c.height = f.canvas.height;
+  c.getContext('2d').drawImage(f.canvas, 0, 0);
   v.wrap.style.width = w + 'px'; v.wrap.style.height = h + 'px';
   c.style.width = w + 'px'; c.style.height = h + 'px';
-  const ctx = c.getContext('2d');
-  // Свой белый фон: страница без явной заливки в jpeg и тёмной теме станет чёрной.
-  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
-  v.task = page.render({ canvasContext: ctx, viewport: vp });
-  try { await v.task.promise; } catch { /* отменили ради следующей страницы */ }
-  v.task = null;
-  await renderText(v, page, css);
+  v.shown = n;
+  await renderText(v, f.page, f.css);
+  if (state.pdf !== v || v.page !== n) return;
+  near.slice(1).forEach(k => frame(v, k, box, dpr, size).catch(() => {}));
 }
 
 /* ── Текстовый слой ──
@@ -390,7 +436,7 @@ function spanBetween(v, a, b) {
   }
   if (!lines.length || !rects.length) return null;
   // Внутри строки куски идут встык, между строками — перенос: он и станет пробелом.
-  return { from, to, rects, text: lines.join(' '), id: () => `pdf:${v.page}:${lo}-${hi}` };
+  return { from, to, rects, text: lines.join(' '), id: () => `pdf:${v.shown}:${lo}-${hi}` };
 }
 
 /** Поверхность выделения: точка — строка и символ, якорь — страница со смещениями. */
@@ -406,7 +452,7 @@ function surface(v) {
       return wordAround(it.text, p.oi, (a, b) => [{ ...p, oi: a }, { ...p, oi: b }]);
     },
     span: (a, b) => spanBetween(v, a, b),
-    chapter: () => chapterAt(v.page),
+    chapter: () => chapterAt(v.shown),
   };
 }
 
@@ -418,7 +464,7 @@ function drawMarks() {
   const box = v.marks.getBoundingClientRect();
   live().forEach(h => {
     const m = MARK.exec(h.cfi || '');
-    if (!m || +m[1] !== v.page) return;
+    if (!m || +m[1] !== v.shown) return;
     const r = rangeOf(+m[2], +m[3]);
     if (!r) return;
     [...r.getClientRects()].filter(q => q.width > 0.5 && q.height > 0.5).forEach(q => {

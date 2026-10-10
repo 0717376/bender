@@ -1,5 +1,5 @@
-import { $, el, escapeHtml, ls, toast } from './core.js'
-import { plural, ru, t } from './i18n.js'
+import { $, el, escapeHtml, ls, splash, toast, unsplash } from './core.js'
+import { lang, plural, ru, t } from './i18n.js'
 import { coverUrl, deleteBook, ensureThumbs, listBooks, mergeShelf, uploadBook } from './library.js'
 import { openBook } from './reader.js'
 import { fileDel, filePut, lib, saveLib } from './store.js'
@@ -22,7 +22,7 @@ export function cardFor(e) {
   const pct = ls.get('pct:' + e.id, 0);
   card.innerHTML = `
     <div class="cover-wrap">
-      ${e.cover || e.thumb ? `<img alt="" src="${coverUrl(e)}">` : `<div class="none">${escapeHtml(e.title || t('book'))}</div>`}
+      ${e.cover || e.thumb ? `<img alt="" decoding="async" src="${coverUrl(e)}">` : `<div class="none">${escapeHtml(e.title || t('book'))}</div>`}
       <div class="bar"><i style="width:${Math.round(pct * 100)}%"></i></div>
     </div>
     <div class="t">${escapeHtml(e.title || t('untitled'))}</div>
@@ -35,9 +35,24 @@ export function cardFor(e) {
   return card;
 }
 
+/* На старте полку зовут несколько раз подряд: из памяти, с сервера, после миниатюр, после
+   синхронизации. Пересобирать её каждый раз — заново создавать все обложки, и они
+   подёргиваются. Поэтому помним, что нарисовано, и без изменений DOM не трогаем. */
+let drawn = '';
+
+const shelfSig = list => lang + '|' + list.map(e => [
+  e.id, e.title, e.author, e.cover || e.thumb ? coverUrl(e) : '', e.opened || e.added || 0,
+  ls.get('pct:' + e.id, 0), ls.get('chap:' + e.id, ''), bookLabel(e),
+].join('\u0001')).join('\u0002');
+
 export function buildShelf() {
   const list = lib();
   const heroSlot = $('#heroSlot'), wrap = $('#gridWrap');
+  $('#shelf').classList.add('on');
+  unsplash();
+  const sig = shelfSig(list);
+  if (sig === drawn && wrap.firstChild) return;
+  drawn = sig;
   heroSlot.innerHTML = ''; wrap.innerHTML = '';
 
   const reading = list.filter(e => { const p = ls.get('pct:' + e.id, 0); return p > 0.005 && p < 0.995; })
@@ -72,9 +87,6 @@ export function buildShelf() {
   add.onclick = pickFile;
   grid.appendChild(add);
   wrap.appendChild(grid);
-
-  $('#shelf').classList.add('on');
-  $('#splash').classList.add('off');
 }
 
 export function bookMenu(e, anchor) {
@@ -135,8 +147,7 @@ export function wireShelfDrop() {
 }
 
 export async function importBook(file) {
-  $('#splash').classList.remove('off');
-  $('#splash').textContent = t('parsingBook');
+  splash(t('parsingBook'));
   try {
     // Разбирает сервер: он же вычищает из книги исполняемое и заводит текст глав для агента.
     const meta = await uploadBook(file);
@@ -149,7 +160,7 @@ export async function importBook(file) {
     ensureThumbs(lib()).then(n => n && buildShelf()).catch(() => {});
   } catch (e) {
     console.warn(e);
-    $('#splash').classList.add('off');
+    unsplash();
     // Разбор — на сервере, и жалуется он по-русски: английскому интерфейсу такое не показываем.
     toast(ru && /не epub/i.test(e.message || '') ? e.message : t('cantAddBook'));
   }

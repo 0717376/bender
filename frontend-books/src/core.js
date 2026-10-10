@@ -42,6 +42,15 @@ export function toast(msg) {
   clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 2200);
 }
 
+/* Заставка гаснет и проявляется, а не подменяет экран рывком. Книгу с полки открываем
+   под её же обложкой: видно, что именно грузится, а не безликое «открываю…». */
+export function splash(text, cover) {
+  const s = $('#splash');
+  s.innerHTML = (cover ? `<img class="cv" alt="" src="${cover}">` : '') + `<div>${escapeHtml(text)}</div>`;
+  s.classList.remove('off');
+}
+export const unsplash = () => $('#splash').classList.add('off');
+
 export const state = {
   book: null, rendition: null, entry: null, meta: null,
   kind: '',            // чем открыта книга: 'epub' | 'pdf'

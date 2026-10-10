@@ -81,7 +81,7 @@
         <div class="sub" data-t="statsSub">сколько и когда</div>
       </div>
       <div class="head-acts">
-        <button class="tb" id="statsClose"><svg class="icon"><use href="#i-x"/></svg></button>
+        <button class="tb" id="statsClose" title="Закрыть" data-t-title="close"><svg class="icon"><use href="#i-x"/></svg></button>
       </div>
     </div>
     <div id="statsBody"></div>
@@ -90,12 +90,12 @@
 
 <div id="reader">
   <div class="chrome" id="topbar">
-    <button class="tb" id="btnBack"><svg class="icon"><use href="#i-back"/></svg></button>
+    <button class="tb" id="btnBack" title="К полке" data-t-title="toShelf"><svg class="icon"><use href="#i-back"/></svg></button>
     <div id="bookTitle"></div>
     <button class="tb" id="btnFind" title="Искать в книге" data-t-title="findInBook"><svg class="icon"><use href="#i-find"/></svg></button>
-    <button class="tb" id="btnToc"><svg class="icon"><use href="#i-list"/></svg></button>
-    <button class="tb" id="btnHl"><svg class="icon"><use href="#i-mark"/></svg></button>
-    <button class="tb" id="btnSet"><svg class="icon"><use href="#i-type"/></svg></button>
+    <button class="tb" id="btnToc" title="Оглавление" data-t-title="tocTitle"><svg class="icon"><use href="#i-list"/></svg></button>
+    <button class="tb" id="btnHl" title="Выписки" data-t-title="highlightsTitle"><svg class="icon"><use href="#i-mark"/></svg></button>
+    <button class="tb" id="btnSet" title="Вид" data-t-title="viewTitle"><svg class="icon"><use href="#i-type"/></svg></button>
   </div>
   <div id="viewer"></div>
   <div class="chrome" id="botbar">
@@ -114,7 +114,7 @@
   <div class="grab"></div>
   <div class="sheet-head">
     <div class="h" id="sheetTitle" data-t="agent">Агент</div>
-    <button class="tb" id="sheetClose"><svg class="icon"><use href="#i-x"/></svg></button>
+    <button class="tb" id="sheetClose" title="Закрыть" data-t-title="close"><svg class="icon"><use href="#i-x"/></svg></button>
   </div>
   <div class="quote" id="sheetQuote"></div>
   <textarea id="sheetNote" class="note" rows="1" placeholder="Своя заметка…" data-t-ph="ownNote" autocomplete="off"></textarea>
@@ -122,7 +122,7 @@
   <div class="chips" id="sheetChips"></div>
   <div class="sheet-foot">
     <input id="sheetInput" placeholder="Уточнить…" data-t-ph="refine" autocomplete="off">
-    <button class="send" id="sheetSend"><svg class="icon"><use href="#i-send"/></svg></button>
+    <button class="send" id="sheetSend" title="Отправить" data-t-title="send"><svg class="icon"><use href="#i-send"/></svg></button>
   </div>
 </div>
 
@@ -130,7 +130,7 @@
   <div class="drawer-head">
     <div class="h" id="drawerTitle"></div>
     <button class="tb" id="drawerAct" style="display:none"></button>
-    <button class="tb" id="drawerClose"><svg class="icon"><use href="#i-x"/></svg></button>
+    <button class="tb" id="drawerClose" title="Закрыть" data-t-title="close"><svg class="icon"><use href="#i-x"/></svg></button>
   </div>
   <div class="drawer-body" id="drawerBody"></div>
 </div>

@@ -707,6 +707,15 @@ await dpage.fill('#authPass', 'secret'); await dpage.click('#authGo')
 await dpage.waitForSelector('#shelf.on')
 // Библиотека на сервере — книга на полке уже есть, добавлять нечего.
 check('полка: второе устройство видит книгу с сервера', await dpage.locator('.card .t').first().textContent() === FIXTURE.title)
+// Полку зовут на каждый чих (сервер, миниатюры, синхронизация) — без изменений она стоит.
+const still = await dpage.evaluate(async () => {
+  const card = document.querySelector('.card')
+  await window.__books.refreshShelf()
+  return card.isConnected
+})
+check('полка: без изменений не пересобирается', still)
+const font = await dpage.evaluate(async () => (await document.fonts.load('600 14px Manrope', 'Книги')).length)
+check('шрифт: Manrope подключён', font > 0, `начертаний: ${font}`)
 await dpage.locator('.card').first().click()
 await dpage.waitForSelector('#reader.on')
 await dpage.waitForFunction(() => !!document.querySelector('#viewer iframe'), null, { timeout: 30000 })
@@ -1048,6 +1057,29 @@ const pFlip = await tpage.evaluate(() => ({
   info: document.querySelector('#pageInfo').textContent,
 }))
 check('pdf: тап у края листает и запоминает позицию', pFlip.page === 2 && pFlip.pos === 'pdf:2', pFlip.info)
+// Листание не показывает пустой лист: страница рисуется в стороне и встаёт готовой.
+// Каждый кадр смотрим, сколько на видимом канвасе краски, — нуля быть не должно.
+const pInk = await tpage.evaluate(() => new Promise(res => {
+  const c = document.querySelector('canvas.pdfpage')
+  const ink = () => {
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data
+    let k = 0
+    for (let i = 0; i < d.length; i += 4 * 7) if (d[i] < 200) k++
+    return k
+  }
+  let min = ink(), n = 0
+  const tick = () => {
+    min = Math.min(min, ink())
+    if (++n < 40) requestAnimationFrame(tick)
+    else res({ min, page: state.pdf.page, shown: state.pdf.shown, frames: state.pdf.frames.size })
+  }
+  state.pdf.next(); tick()
+}))
+check('pdf: при листании страница не пустеет', pInk.min > 0 && pInk.page === 3 && pInk.shown === 3,
+  JSON.stringify(pInk))
+check('pdf: соседние страницы нарисованы заранее', pInk.frames === 3, `кадров: ${pInk.frames}`)
+await tpage.evaluate(() => state.pdf.prev())
+await tpage.waitForFunction(() => state.pdf.shown === 2)
 // Оглавление из закладок.
 await tpage.click('#btnToc')
 await tpage.waitForSelector('#drawer.on')
