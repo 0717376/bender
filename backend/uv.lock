@@ -16,6 +16,7 @@ dependencies = [
     { name = "claude-agent-sdk" },
     { name = "croniter" },
     { name = "fastapi" },
+    { name = "fsrs" },
     { name = "httpx" },
     { name = "mcp" },
     { name = "openai-codex" },
@@ -36,6 +37,7 @@ requires-dist = [
     { name = "claude-agent-sdk", specifier = ">=0.2.137" },
     { name = "croniter", specifier = ">=6.2.2" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "fsrs", specifier = ">=6.3.2" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "mcp", specifier = ">=1.9" },
     { name = "openai-codex", specifier = ">=0.144.4" },
@@ -270,6 +272,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/8a/c9/5e8defe249899c0dc900643695fc07829a67fc88b4ff2cdb03fcbdbf5a4b/fastapi-0.138.1.tar.gz", hash = "sha256:96e3702dce09ee0dce48856135620d3d865ca684a79fe7513fd7b13a12f82862", size = 419646, upload-time = "2026-06-25T15:40:42.115Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/38/a9/69a6924f645eb4dd8cd625bf255b3625990eb3e14e073438a53c405dcd3e/fastapi-0.138.1-py3-none-any.whl", hash = "sha256:b994cae7ba8b82c976a728b544244de31333fa5f7d261f9a1dffe526444cae23", size = 129182, upload-time = "2026-06-25T15:40:40.771Z" },
+]
+
+[[package]]
+name = "fsrs"
+version = "6.3.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7f/cf/3995867b03de059624aa49634d62895eef211f909b322c4a478dcd858bd8/fsrs-6.3.2.tar.gz", hash = "sha256:7fe79947ceb92ca35fdca3dfa511a239be15b317cde63d6643a2da6110844d91", size = 32766, upload-time = "2026-08-09T04:36:03.074Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/00/b9/c815e796480dd22441886f06b23f249a7ff2e3f41fc9bfaa428332e34b49/fsrs-6.3.2-py3-none-any.whl", hash = "sha256:bc55066c821164b1cff6d75b17a3ed8e86cfd45789e3d775cfcb895319ce9ba4", size = 22837, upload-time = "2026-08-09T04:36:01.932Z" },
 ]
 
 [[package]]
