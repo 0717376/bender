@@ -28,6 +28,10 @@ const RU = {
   delete: 'Удалить',
   open: 'Открыть',
   deleted: 'Удалено',
+  copy: 'Копировать',
+  toCards: 'В карточки',
+  cardAdded: 'Добавлено в карточки',
+  cardFailed: 'Добавить в карточки не вышло',
   copied: 'Скопировано',
   copyFailed: 'Скопировать не вышло',
 
@@ -210,6 +214,10 @@ const EN = {
   delete: 'Delete',
   open: 'Open',
   deleted: 'Deleted',
+  copy: 'Copy',
+  toCards: 'To flashcards',
+  cardAdded: 'Added to flashcards',
+  cardFailed: 'Could not add the card',
   copied: 'Copied',
   copyFailed: 'Could not copy',
 

@@ -9,7 +9,7 @@ const FOREVER = /\/assets\/|\/books\/[^/]+\/(file|cover|thumb)\b|icon-\d+\.png$/
 /* Живое — мимо кэша вовсе: ответы бэкенда (список, состояние, статистика, поток событий)
    устаревают сразу, а поток событий ещё и бесконечный — копия такого ответа в кэш
    не дописывается никогда. Что делать без сети, приложение решает само. */
-const LIVE = /^\/(books|auth|chat|files|storage)(\/|$)/;
+const LIVE = /^\/(books|cards|auth|chat|files|storage)(\/|$)/;
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(

@@ -10,6 +10,7 @@ export default defineConfig({
     proxy: {
       '/auth': BACKEND,
       '/books': BACKEND,
+      '/cards': BACKEND,
       '/files': BACKEND,
       '/storage': BACKEND,
       '/chat': { target: BACKEND, ws: true },
