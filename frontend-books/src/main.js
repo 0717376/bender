@@ -1,11 +1,21 @@
+// Только нужные наборы знаков: полный комплект тащит в стили ещё греческий и вьетнамский.
+import '@fontsource/manrope/latin-400.css'
+import '@fontsource/manrope/cyrillic-400.css'
+import '@fontsource/manrope/latin-500.css'
+import '@fontsource/manrope/cyrillic-500.css'
+import '@fontsource/manrope/latin-600.css'
+import '@fontsource/manrope/cyrillic-600.css'
+import '@fontsource/manrope/latin-700.css'
+import '@fontsource/manrope/cyrillic-700.css'
 import './style.css'
 import { paint } from './highlights.js'
 import { caretAt, commitSel, sel, wordAt } from './selection.js'
 import { auth, showAuth } from './auth.js'
 import { $, state } from './core.js'
+import { wireGestures } from './gestures.js'
 import { applyDom, t } from './i18n.js'
 import { allToWiki, closeDrawer, drawerFind, drawerHighlights, drawerPrefs, drawerSettings, drawerToc, openDrawer } from './drawers.js'
-import { applyTheme, closeBook, epubSurface, openBook, wireGlobal, wireScrub } from './reader.js'
+import { applyTheme, closeBook, epubSurface, loadEpub, openBook, wireGlobal, wireScrub } from './reader.js'
 import { bubbleMe, closeSheet, contextAround, followUp, openHighlight, promptFor, send, wireScrim, wireSheetKeyboard } from './sheet.js'
 import { buildShelf, pickFile, refreshShelf, wireShelfDrop } from './shelf.js'
 import { storageUploadForParse } from './library.js'
@@ -31,6 +41,7 @@ function wireUI() {
   $('#sheetClose').onclick = closeSheet;
   wireScrim();
   wireSheetKeyboard();
+  wireGestures();
   $('#sheetSend').onclick = () => {
     const v = $('#sheetInput').value.trim();
     if (!v) return;
@@ -99,6 +110,8 @@ export async function start() {
   // Правку с другого устройства ждём событием, а не следующим открытием приложения.
   sync.onRemote = () => { clearTimeout(shelfTimer); shelfTimer = setTimeout(refreshShelf, 800); };
   sync.listen();
+  // Движок epub полке не нужен и грузится отдельно — подтягиваем заранее, пока выбирают книгу.
+  setTimeout(() => loadEpub().catch(() => {}), 1200);
 }
 
 let shelfTimer = null;

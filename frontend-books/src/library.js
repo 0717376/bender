@@ -87,6 +87,15 @@ export async function deleteBook(id) {
   return r.json();
 }
 
+/** Выделенное из книги — в карточки для повторения (приложение «Карточки»). */
+export async function addCard(body) {
+  const r = await fetch(`${API}/cards/quick`, {
+    method: 'POST', headers: { ...head(), 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error('карточка: ' + r.status);
+  return r.json();
+}
+
 /** Файл книги: сначала из своего кэша (мгновенно и офлайн), потом с сервера. */
 export async function bookBytes(id) {
   const cached = await fileGet(id);

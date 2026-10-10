@@ -115,7 +115,7 @@ def build_options(resume: str | None, surface: str, instructions: str,
     # official Claude plugin marketplace (code-review, deep-research, run, loop, …); skills="all"
     # would expose all of those. An explicit allow-list keeps the assistant self-contained:
     # domain wiki/tasks + whatever the agent has learned.
-    allowed_skills = ["wiki", "tasks", "books"] + [s["slug"] for s in skill_store.list_skills()]
+    allowed_skills = ["wiki", "tasks", "books", "cards"] + [s["slug"] for s in skill_store.list_skills()]
     return ClaudeAgentOptions(
         model=config.CLAUDE_MODEL,
         system_prompt={"type": "preset", "preset": "claude_code", "append": instructions},

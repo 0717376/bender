@@ -20,6 +20,7 @@ TG_WELCOME = (
     "**Что умею**\n"
     "• Вики: отвечаю по твоим заметкам, создаю и правлю страницы\n"
     "• Задачи: создаю, переношу, подсказываю план на день\n"
+    "• Карточки: завожу слова и факты, напоминаю повторить — повторять можно прямо здесь\n"
     "• Веб: ищу актуальную информацию в интернете\n"
     "• Файлы: храню документы — пришли файл, я его положу куда скажешь и найду по просьбе\n"
     "• Расписание: напоминания и регулярные сводки («каждый день в 9 пришли задачи»)\n"
@@ -29,6 +30,7 @@ TG_WELCOME = (
     "Пиши текстом или надиктовывай голосовые. Контекст общий с вики и задачами; "
     "у читалки свой разговор на каждую книгу.\n\n"
     "**Команды**\n"
+    "/review — повторить карточки\n"
     "/new — новая сессия (история сохраняется в журнале)\n"
     "/status — сессия, память, навыки, задания\n"
     "/help — это сообщение"
@@ -258,6 +260,30 @@ def quoted_note(msg: dict) -> str:
     return f"[Пользователь отвечает на {whose} сообщение: «{body}»]"
 
 
+async def tg_fast(client: httpx.AsyncClient, update: dict) -> bool:
+    """Повторение карточек: кнопки под карточкой и команда /review. Модели в этой цепочке
+    нет, поэтому такие обновления обрабатываются сразу и не стоят в очереди за ходом
+    агента. Возвращает True, если обновление разобрано здесь."""
+    from . import cards_tg
+
+    cq = update.get("callback_query")
+    if cq:
+        if not (cq.get("data") or "").startswith(cards_tg.PREFIX):
+            return False
+        if (cq.get("from") or {}).get("id") not in pairing.allowed_ids():
+            await tg_api(client, "answerCallbackQuery", callback_query_id=cq.get("id"))
+            return True
+        await cards_tg.on_callback(client, cq)
+        return True
+    msg = update.get("message") or {}
+    if (msg.get("text") or "").strip().split("@")[0] != "/review":
+        return False
+    if (msg.get("from") or {}).get("id") not in pairing.allowed_ids():
+        return False    # чужому или непривязанному чату ответит общий разбор
+    await cards_tg.start(client, msg["chat"]["id"])
+    return True
+
+
 async def tg_handle(client: httpx.AsyncClient, update: dict):
     msg = update.get("message") or update.get("edited_message")
     if not msg:
@@ -442,16 +468,45 @@ async def notify(text: str) -> None:
 
 
 BOT_COMMANDS = [
+    {"command": "review", "description": "Повторить карточки"},
     {"command": "status", "description": "Сессия, память, навыки, задания"},
     {"command": "new", "description": "Новая сессия (история остаётся в журнале)"},
     {"command": "help", "description": "Что умеет бот"},
 ]
 
 
+async def _fast(client: httpx.AsyncClient, update: dict, queue: asyncio.Queue) -> None:
+    # Обычное сообщение tg_fast отклоняет без единого await, так что в очередь они
+    # попадают в том же порядке, в каком пришли.
+    try:
+        if not await tg_fast(client, update):
+            queue.put_nowait(update)
+    except Exception:
+        logger.exception("tg fast update failed")
+
+
+async def _worker(client: httpx.AsyncClient, queue: asyncio.Queue) -> None:
+    """Сообщения — строго по одному и по порядку: у агента одна общая сессия."""
+    while True:
+        update = await queue.get()
+        try:
+            await tg_handle(client, update)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error("tg handle error: %s", e)
+
+
 async def telegram_poller():
-    """Long-poll Telegram for updates and dispatch them. One worker, sequential."""
+    """Long-poll Telegram for updates and dispatch them.
+
+    Опрос не ждёт обработки: сообщения уходят в очередь к одному работнику, а кнопки
+    карточек разбираются сразу — иначе нажатие висело бы, пока агент пишет ответ."""
     offset = None
+    queue: asyncio.Queue = asyncio.Queue()
+    spawned: set[asyncio.Task] = set()
     async with httpx.AsyncClient(timeout=httpx.Timeout(70.0)) as client:
+        worker = asyncio.create_task(_worker(client, queue))
         try:
             # The "/" menu button in clients — best-effort, once per start.
             await tg_api(client, "setMyCommands", commands=BOT_COMMANDS)
@@ -468,8 +523,11 @@ async def telegram_poller():
                 resp = await tg_api(client, "getUpdates", offset=offset, timeout=50)
                 for upd in resp.get("result", []):
                     offset = upd["update_id"] + 1
-                    await tg_handle(client, upd)
+                    task = asyncio.create_task(_fast(client, upd, queue))
+                    spawned.add(task)
+                    task.add_done_callback(spawned.discard)
             except asyncio.CancelledError:
+                worker.cancel()
                 raise
             except Exception as e:
                 logger.error("tg poll error: %s", e)

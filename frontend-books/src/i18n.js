@@ -20,11 +20,18 @@ const RU = {
   agent: 'Агент',
   opening: 'открываю…',
   openingBook: 'открываю книгу…',
+  toShelf: 'К полке',
+  close: 'Закрыть',
+  send: 'Отправить',
   parsingBook: 'разбираю книгу…',
   cancel: 'Отмена',
   delete: 'Удалить',
   open: 'Открыть',
   deleted: 'Удалено',
+  copy: 'Копировать',
+  toCards: 'В карточки',
+  cardAdded: 'Добавлено в карточки',
+  cardFailed: 'Добавить в карточки не вышло',
   copied: 'Скопировано',
   copyFailed: 'Скопировать не вышло',
 
@@ -200,11 +207,18 @@ const EN = {
   agent: 'Assistant',
   opening: 'opening…',
   openingBook: 'opening the book…',
+  toShelf: 'Back to the shelf',
+  close: 'Close',
+  send: 'Send',
   parsingBook: 'reading the file…',
   cancel: 'Cancel',
   delete: 'Delete',
   open: 'Open',
   deleted: 'Deleted',
+  copy: 'Copy',
+  toCards: 'To flashcards',
+  cardAdded: 'Added to flashcards',
+  cardFailed: 'Could not add the card',
   copied: 'Copied',
   copyFailed: 'Could not copy',
 
@@ -478,7 +492,10 @@ export function applyDom(root = document) {
   document.title = t('books');
   root.querySelectorAll('[data-t]').forEach(n => { n.textContent = t(n.dataset.t); });
   root.querySelectorAll('[data-t-ph]').forEach(n => { n.placeholder = t(n.dataset.tPh); });
-  root.querySelectorAll('[data-t-title]').forEach(n => { n.title = t(n.dataset.tTitle); });
+  // Кнопки-значки без текста: подпись нужна и подсказке, и экранному диктору.
+  root.querySelectorAll('[data-t-title]').forEach(n => {
+    n.title = t(n.dataset.tTitle); n.setAttribute('aria-label', n.title);
+  });
   root.querySelectorAll('[data-t-aria]').forEach(n => { n.setAttribute('aria-label', t(n.dataset.tAria)); });
   if (!ru) {
     // Имя приложения на домашнем экране — из манифеста, а он статический файл.

@@ -87,3 +87,14 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+  frontend-cards:
+    image: ghcr.io/0717376/bender-cards:${BENDER_TAG:-local}
+    build:
+      context: .
+      dockerfile: frontend-cards/Dockerfile
+    ports:
+      - "${CARDS_PORT:-8866}:80"
+    depends_on:
+      - backend
+    restart: unless-stopped

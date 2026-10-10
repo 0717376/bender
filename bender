@@ -48,7 +48,7 @@ cmd_doctor() {
 
   have docker && docker info >/dev/null 2>&1 && ok "docker работает" || { bad "docker недоступен"; return 1; }
 
-  local want="backend frontend-wiki frontend-tasks frontend-books" running s
+  local want="backend frontend-wiki frontend-tasks frontend-books frontend-cards" running s
   running=$(dc ps --services --filter status=running 2>/dev/null || true)
   for s in $want; do
     if printf '%s\n' "$running" | grep -qx "$s"; then ok "контейнер $s"
@@ -58,7 +58,7 @@ cmd_doctor() {
   if backend_health; then ok "бэкенд отвечает"; else bad "бэкенд не отвечает (./bender logs backend)"; fails=$((fails + 1)); fi
 
   local name port
-  for name in "вики:${WIKI_PORT:-8842}" "задачи:${TASKS_PORT:-8851}" "книги:${BOOKS_PORT:-8899}"; do
+  for name in "вики:${WIKI_PORT:-8842}" "задачи:${TASKS_PORT:-8851}" "книги:${BOOKS_PORT:-8899}" "карточки:${CARDS_PORT:-8866}"; do
     port=${name#*:}
     if ! have curl; then dim "интерфейс ${name%%:*}: нечем проверить (нет curl)"
     elif curl -fsS -m 5 -o /dev/null "http://127.0.0.1:$port/"; then ok "интерфейс ${name%%:*} на порту $port"

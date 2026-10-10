@@ -208,6 +208,10 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 #reader.m-narrow #viewer { max-width: min(1700px, max(1180px, 62vw)); }
 #reader.m-wide #viewer { max-width: max(480px, min(800px, 88vw)); }
 #viewer iframe { border: 0; }
+/* Вуаль на время пересборки страницы (поля, разметка, разворот): встаёт сразу, сходит плавно. */
+#viewer::before { content: ''; position: absolute; inset: 0; z-index: 5; background: var(--page);
+  opacity: 0; pointer-events: none; transition: opacity .2s ease; }
+#viewer.veil::before { opacity: 1; transition: none; }
 #viewer.spread::after { content: ''; position: absolute; left: 50%; top: 7%; bottom: 7%; width: 1px;
   background: var(--border); opacity: .8; pointer-events: none; }
 #reader.immersive #viewer.spread::after { opacity: .3; }
@@ -402,9 +406,15 @@ canvas.pdfpage { display: block; box-shadow: 0 1px 8px rgba(0, 0, 0, .12); borde
   padding: 10px 16px; border-radius: var(--r-pill); font-size: 13px; font-weight: 600;
   opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; max-width: calc(100vw - 40px); }
 #toast.on { opacity: .96; transform: translate(-50%, 0); }
-#splash { position: fixed; inset: 0; display: grid; place-items: center; background: var(--bg);
-  z-index: 100; font-size: 13px; color: var(--text-3); }
-#splash.off { display: none; }
+/* Заставка проявляется и гаснет: экран под ней меняется целиком, и резкая подмена
+   читается как рывок. Погасшая — невидима и нажатий не ловит. */
+#splash { position: fixed; inset: 0; display: grid; place-items: center; align-content: center; gap: 18px;
+  background: var(--bg); z-index: 100; font-size: 13px; color: var(--text-3);
+  transition: opacity .2s ease, visibility 0s 0s; }
+#splash.off { opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity .2s ease, visibility 0s .2s; }
+#splash .cv { width: 124px; aspect-ratio: 2/3; object-fit: cover; border-radius: 9px;
+  box-shadow: var(--shadow-card); background: var(--bg-2); }
 .spin { width: 15px; height: 15px; border-radius: 50%; border: 2px solid var(--border-3);
   border-top-color: var(--accent); animation: rot .7s linear infinite; flex: none; }
 @keyframes rot { to { transform: rotate(360deg); } }
@@ -417,3 +427,8 @@ canvas.pdfpage { display: block; box-shadow: 0 1px 8px rgba(0, 0, 0, .12); borde
   padding: 10px 12px; border-radius: 9px; font-size: 14px; }
 #menu button:active { background: var(--bg-2); }
 #menu button.danger { color: #C0454A; }
+
+/* Кто просил систему убрать движение — получает интерфейс без него. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

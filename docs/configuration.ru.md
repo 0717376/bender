@@ -164,7 +164,7 @@ settings → Change visibility), иначе `docker compose pull` попроси
 | `SESSION_FRESH_HOURS` | `6` | простой, после которого начинается свежая сессия |
 | `REVIEWER_ENABLED` / `REVIEWER_MODEL` | `1` / `sonnet` | фоновый ревьюер памяти и навыков |
 | `CURATOR_ENABLED` / `CURATOR_INTERVAL_HOURS` | `1` / `168` | куратор библиотеки навыков |
-| `WIKI_PORT` / `TASKS_PORT` / `BOOKS_PORT` | `8842` / `8851` / `8899` | порты интерфейсов |
+| `WIKI_PORT` / `TASKS_PORT` / `BOOKS_PORT` / `CARDS_PORT` | `8842` / `8851` / `8899` / `8866` | порты интерфейсов |
 | `BENDER_TAG` | `local` | `main` — готовые образы из GHCR, `local` — сборка из исходников |
 | `TZ` | `Europe/Moscow` | таймзона (по ней срабатывает крон) |
 

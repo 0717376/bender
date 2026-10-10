@@ -6,10 +6,20 @@ const CACHE = 'books-2';
    Прогресс и выписки (/books/<id>/state) сюда попадать не должны: закэшированное навсегда
    состояние — это книга, которая на телефоне навсегда осталась там, где её открыли впервые. */
 const FOREVER = /\/assets\/|\/books\/[^/]+\/(file|cover|thumb)\b|icon-\d+\.png$/;
+/* Живое — мимо кэша вовсе: ответы бэкенда (список, состояние, статистика, поток событий)
+   устаревают сразу, а поток событий ещё и бесконечный — копия такого ответа в кэш
+   не дописывается никогда. Что делать без сети, приложение решает само. */
+const LIVE = /^\/(books|cards|auth|chat|files|storage)(\/|$)/;
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(
   caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k))))
+    // Прошлая версия складывала в кэш и ответы бэкенда — выметаем их, книги и сборку не трогая.
+    .then(() => caches.open(CACHE))
+    .then(async c => Promise.all((await c.keys()).filter(r => {
+      const p = new URL(r.url).pathname;
+      return LIVE.test(p) && !FOREVER.test(p);
+    }).map(r => c.delete(r))))
     .then(() => self.clients.claim())
 ));
 
@@ -29,6 +39,7 @@ self.addEventListener('fetch', e => {
     }));
     return;
   }
+  if (LIVE.test(url.pathname)) return;
   e.respondWith((async () => {
     try {
       const res = await fetch(req);

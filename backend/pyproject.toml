@@ -18,6 +18,7 @@ dependencies = [
     # зависимость прямая, пусть так и будет записана.
     "sse-starlette>=2.1",
     "pypdf>=6.15.0",
+    "fsrs>=6.3.2",
 ]
 
 [dependency-groups]

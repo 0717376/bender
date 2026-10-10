@@ -76,6 +76,7 @@ TZ=$(ask "Таймзона (по ней срабатывают напомина�
 WIKI_PORT=$(ask_port "Порт вики" "${WIKI_PORT:-8842}")
 TASKS_PORT=$(ask_port "Порт задач" "${TASKS_PORT:-8851}")
 BOOKS_PORT=$(ask_port "Порт читалки" "${BOOKS_PORT:-8899}")
+CARDS_PORT=$(ask_port "Порт карточек" "${CARDS_PORT:-8866}")
 
 say
 say "Telegram-бот — необязателен, но с ним ассистент всегда под рукой."
@@ -194,6 +195,7 @@ title "Готово"
 say "  Задачи:  http://$host:$TASKS_PORT"
 say "  Вики:    http://$host:$WIKI_PORT"
 say "  Книги:   http://$host:$BOOKS_PORT"
+say "  Карточки: http://$host:$CARDS_PORT"
 say "  Пароль:  $WIKI_PASSWORD"
 say "  Движок:  $ENGINE"
 say
