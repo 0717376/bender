@@ -184,6 +184,14 @@ async def create_note(req: NoteIn):
         raise _bad(e)
 
 
+@router.get("/notes/{note_id}")
+async def get_note(note_id: int):
+    n = store.note(note_id)
+    if not n:
+        raise HTTPException(404, "Карточка не найдена")
+    return {**n, "cards": store.note_cards(note_id)}
+
+
 @router.patch("/notes/{note_id}")
 async def update_note(note_id: int, req: NoteIn):
     try:

@@ -1,0 +1,27 @@
+{
+  "name": "frontend-cards",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "TZ=Europe/Moscow vitest run"
+  },
+  "dependencies": {
+    "@fontsource/manrope": "^5.2.8",
+    "lucide-react": "^1.27.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.2.0",
+    "jsdom": "^29.1.1",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.6",
+    "vitest": "^4.1.10"
+  }
+}

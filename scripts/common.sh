@@ -112,7 +112,7 @@ dc() { docker compose "$@"; }
 # Ключи, которые пишет установщик. Один список на install.sh и ./bender: разъедутся —
 # и половина ответов человека потеряется при следующей же правке .env.
 ENV_KEYS="ENGINE WIKI_PASSWORD CLAUDE_MODEL CODEX_MODEL CLAUDE_CODE_OAUTH_TOKEN \
-TELEGRAM_BOT_TOKEN TELEGRAM_ALLOWED_IDS TZ WIKI_PORT TASKS_PORT BOOKS_PORT BENDER_TAG"
+TELEGRAM_BOT_TOKEN TELEGRAM_ALLOWED_IDS TZ WIKI_PORT TASKS_PORT BOOKS_PORT CARDS_PORT BENDER_TAG"
 
 engine() { printf '%s' "${ENGINE:-claude}"; }
 
@@ -175,4 +175,4 @@ pair_code() {
 
 # Фронтенды кэшируют IP бэкенда при старте своего nginx: пересобрали бэкенд —
 # без этого рестарта они отдают 502 на всё живое.
-restart_frontends() { dc restart frontend-wiki frontend-tasks frontend-books >/dev/null; }
+restart_frontends() { dc restart frontend-wiki frontend-tasks frontend-books frontend-cards >/dev/null; }
