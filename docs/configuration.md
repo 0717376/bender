@@ -166,7 +166,7 @@ settings → Change visibility), otherwise `docker compose pull` asks for a logi
 | `SESSION_FRESH_HOURS` | `6` | idle time after which a fresh session starts |
 | `REVIEWER_ENABLED` / `REVIEWER_MODEL` | `1` / `sonnet` | background memory/skills reviewer |
 | `CURATOR_ENABLED` / `CURATOR_INTERVAL_HOURS` | `1` / `168` | skill-library curator |
-| `WIKI_PORT` / `TASKS_PORT` / `BOOKS_PORT` | `8842` / `8851` / `8899` | frontend ports |
+| `WIKI_PORT` / `TASKS_PORT` / `BOOKS_PORT` / `CARDS_PORT` | `8842` / `8851` / `8899` / `8866` | frontend ports |
 | `BENDER_TAG` | `local` | `main` — prebuilt images from GHCR, `local` — build from source |
 | `TZ` | `Europe/Moscow` | timezone (matters for cron) |
 

@@ -317,7 +317,10 @@ def test_api_review_round(api, store):
     assert back["card"]["id"] == s["card"]["id"] and back["counts"]["new"] == 1
     assert api.post(f"/cards/{s['card']['id']}/answer", json={"rating": 7}).status_code == 400
     assert api.post("/cards/notes", json={"kind": "basic", "fields": {"front": "a"}}).status_code == 400
+    one = api.get(f"/cards/notes/{made['id']}").json()
+    assert one["fields"]["front"] == "a" and [c["tpl"] for c in one["cards"]] == ["fwd"]
     assert api.delete(f"/cards/notes/{made['id']}").json() == {"ok": True}
+    assert api.get(f"/cards/notes/{made['id']}").status_code == 404
     assert api.get("/cards/next").json()["card"] is None
 
 

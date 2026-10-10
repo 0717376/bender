@@ -12,6 +12,7 @@ A self-hosted personal AI agent: a markdown wiki, a Things-style task manager, a
 - **Wiki** — a personal knowledge base of markdown files. Confluence-style hierarchy: there are no folders at all, only pages — any page can grow children and becomes a parent (on disk that is a folder with its own `index.md`, but neither "folder" nor "index" ever appears in the UI). Links by name (`[[litellm]]`), so a page can move between parents for free; plain links are rewritten automatically on move. Deleting means trash with undo. Live sync over SSE: edits from the agent, Telegram, or external MCP clients show up on their own.
 - **Files** — a personal file storage: plain folders on disk, browsable from the wiki UI (upload, preview, drag-and-drop). Send a document to the Telegram bot — it lands in the inbox folder, gets a human name, and the agent files it into the right folder; ask for a file and the bot sends it back. Wiki pages link to files with `[name](<storage:Folder/file.pdf>)`. Deletes go to a trash folder, not oblivion.
 - **Reader** — epub and pdf right in the browser: a shelf with covers and progress, highlights by colour (colour = meaning: important, question, disagree, send to wiki), bookmarks, reading stats and a day streak. The agent sits next to the text and reads the actual book: ask "what is this chapter about" or "translate this paragraph" and it answers from the book, not from the snippet you pasted. Each book keeps its own conversation thread, separate from the main one.
+- **Cards** — spaced repetition for anything: words (asked both ways, with pronunciation and an example), question–answer and cloze deletions. The scheduler is FSRS, the same one current Anki uses: each card has its own stability and difficulty, and a review arrives the day you would start forgetting it. Add with one line — "serendipity" or a whole fact — and the agent builds the card (meaning, transcription, example). It will also make a deck from a book chapter or a wiki page. Cards that keep slipping set themselves aside: rewrite them rather than drill them.
 - **Two UI languages** — English and Russian: the wiki follows the browser language, Tasks and the Reader also have a switch in settings. In the Reader the UI language sets the language of the analysis too: an English UI asks the assistant to translate into English, a Russian one into Russian.
 - **Assistant everywhere** — web chat in both UIs plus a Telegram bot sharing one session: whatever you discussed on the web, it remembers in Telegram. The reader keeps a thread per book, so working through a chapter doesn't crowd out the main conversation. Voice messages via ASR. Replies stream in Telegram through the native `sendMessageDraft`.
 - **Scheduling** — "remind me in 20 minutes", "send my tasks every weekday at 8:30": the agent creates cron jobs itself. Every run sees the outputs of previous runs (no repeating itself), stays quiet when there is nothing new (`[SILENT]`), and stops the job once the tracked event is over (`[FINAL]`).
@@ -42,10 +43,12 @@ backend/          FastAPI + the agent engine (single process)
   app/telegram.py   bot: long polling, draft streaming, /status
   app/tasks_*.py    Things mechanics on SQLite (+SSE)
   app/books_*.py    epub library: parsing, highlights, the whole book for the agent
-  agent_skills/     the agent's domain skills (wiki/tasks/books)
+  app/cards_*.py    flashcards: FSRS, the daily queue, agent-filled notes (+SSE)
+  agent_skills/     the agent's domain skills (wiki/tasks/books/cards)
 frontend-wiki/    React: three panes, markdown, chat
 frontend-tasks/   React: tasks, dnd-kit, themes & palettes, chat
 frontend-books/   epub reader: shelf, highlights, agent on the book (PWA, no framework)
+frontend-cards/   React: flashcards, review session, stats, chat (PWA)
 install.sh        setup wizard: questions, .env, images, verification
 bender            day-to-day: doctor / update / rollback / pair / login / token / logs
 ```
@@ -71,6 +74,7 @@ At the end it prints the addresses:
 - Tasks: http://localhost:8851
 - Wiki: http://localhost:8842
 - Books: http://localhost:8899 (you fill the shelf yourself — books live in `books/`, never in the repo)
+- Cards: http://localhost:8866
 
 Telegram binds by a six-digit code the installer prints: send it to your bot and the chat
 is paired — no config editing, no restart.
