@@ -139,6 +139,22 @@
     background: var(--accent-soft);
 }
 
+.parseToggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    color: var(--text-2);
+    font-size: 12px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.parseToggle input {
+    accent-color: var(--accent-line);
+    cursor: pointer;
+}
+
 /* ── Обзор папки ── */
 .listing {
     flex: 1;

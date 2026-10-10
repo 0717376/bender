@@ -179,15 +179,27 @@ export function storageFileUrl(path: string): string {
   return API + '/storage/file?path=' + encodeURIComponent(path) + '&token=' + (getToken() ?? '')
 }
 
-export async function storageUpload(dir: string, file: File): Promise<void> {
+export interface StorageUploadResult {
+  ok: boolean
+  path: string
+  size: number
+  parse_prompt?: string
+}
+
+export async function storageUpload(
+  dir: string, file: File, opts: { parse?: boolean } = {},
+): Promise<StorageUploadResult> {
   const formData = new FormData()
   formData.append('file', file, file.name)
-  const res = await fetch(API + '/storage/upload?dir=' + encodeURIComponent(dir), {
+  const qs = new URLSearchParams({ dir })
+  if (opts.parse) qs.set('parse', '1')
+  const res = await fetch(API + '/storage/upload?' + qs.toString(), {
     method: 'POST',
     headers: authHeaders(),
     body: formData,
   })
   await ok(res, 'upload error')
+  return res.json()
 }
 
 export async function storageMkdir(path: string): Promise<void> {
