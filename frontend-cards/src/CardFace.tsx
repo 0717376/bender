@@ -56,7 +56,8 @@ export default function CardFace({ kind, fields, tpl, source, open }: {
   if (kind === "word") {
     const word = f(fields, "word"), meaning = f(fields, "meaning");
     const lang = f(fields, "lang") || "en";
-    const lemma = f(fields, "lemma");
+    // Заголовок — начальная форма; в примере слово стоит так, как было в тексте.
+    const shown = f(fields, "form") || word;
     const from = source?.title ? [source.title, source.chapter].filter(Boolean).join(" · ") : "";
     const head = (
       <div className="cf-word">
@@ -71,7 +72,6 @@ export default function CardFace({ kind, fields, tpl, source, open }: {
       <div className="cf-details">
         {f(fields, "ipa") && <span className="cf-ipa">{f(fields, "ipa")}</span>}
         {f(fields, "pos") && <span className="cf-pos">{f(fields, "pos")}</span>}
-        {lemma && lemma.toLowerCase() !== word.toLowerCase() && <span className="cf-lemma">{t("lemma")}: {lemma}</span>}
       </div>
     );
     if (tpl === "rev") {
@@ -80,7 +80,7 @@ export default function CardFace({ kind, fields, tpl, source, open }: {
           <div className="cf-q">
             <div className="cf-hint">{t("recall_word")}</div>
             <div className="cf-meaning big">{meaning}</div>
-            <Example text={f(fields, "example")} word={word} hide={!open} />
+            <Example text={f(fields, "example")} word={shown} hide={!open} />
           </div>
           {open && (
             <div className="cf-a">
@@ -96,7 +96,7 @@ export default function CardFace({ kind, fields, tpl, source, open }: {
       <>
         <div className="cf-q">
           {head}
-          <Example text={f(fields, "example")} word={word} />
+          <Example text={f(fields, "example")} word={shown} />
         </div>
         {open && (
           <div className="cf-a">

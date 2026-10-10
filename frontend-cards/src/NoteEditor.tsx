@@ -12,7 +12,7 @@ const KINDS: Kind[] = ["word", "basic", "cloze"];
 const WORD: { key: string; label: string; wide?: boolean; area?: boolean }[] = [
   { key: "word", label: "f_word" }, { key: "meaning", label: "f_meaning" },
   { key: "ipa", label: "f_ipa" }, { key: "pos", label: "f_pos" },
-  { key: "lemma", label: "f_lemma" }, { key: "other", label: "f_other" },
+  { key: "form", label: "f_form" }, { key: "other", label: "f_other" },
   { key: "example", label: "f_example", wide: true, area: true },
   { key: "example_tr", label: "f_example_tr", wide: true, area: true },
 ];

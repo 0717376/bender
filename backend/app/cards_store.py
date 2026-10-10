@@ -115,6 +115,10 @@ def init() -> None:
     _conn.row_factory = sqlite3.Row
     _conn.execute("PRAGMA journal_mode=WAL")
     _conn.executescript(SCHEMA)
+    # Раньше заголовком слова была форма из текста, а начальная лежала в lemma.
+    for r in _conn.execute("SELECT id, fields FROM notes WHERE kind = 'word' AND fields LIKE '%\"lemma\"%'").fetchall():
+        _conn.execute("UPDATE notes SET fields = ? WHERE id = ?",
+                      (json.dumps(headword(json.loads(r["fields"])), ensure_ascii=False), r["id"]))
     _conn.commit()
 
 
@@ -269,9 +273,25 @@ def resolve_deck(ref, kind: str = "basic") -> dict:
 
 CLOZE = re.compile(r"\{\{c(\d+)::(.*?)(?:::(.*?))?\}\}", re.S)
 
-WORD_FIELDS = ("word", "lemma", "ipa", "pos", "meaning", "other", "example", "example_tr", "lang")
+WORD_FIELDS = ("word", "form", "ipa", "pos", "meaning", "other", "example", "example_tr", "lang")
 BASIC_FIELDS = ("front", "back", "extra", "reverse")
 CLOZE_FIELDS = ("text", "extra")
+
+
+def headword(fields: dict) -> dict:
+    """Заголовок словарной карточки — начальная форма: учат «hush», а не «hushes».
+    Форма из текста уходит в form — по ней слово находят в примере. Прежние заметки и
+    агент могут прислать по-старому (word как в тексте + lemma) — переводим."""
+    f = dict(fields or {})
+    lemma = str(f.pop("lemma", None) or "").strip()
+    word = str(f.get("word") or "").strip()
+    if lemma and lemma.lower() != word.lower():
+        if word and not str(f.get("form") or "").strip():
+            f["form"] = word
+        f["word"] = lemma
+    if str(f.get("form") or "").strip().lower() == str(f.get("word") or "").strip().lower():
+        f.pop("form", None)
+    return f
 
 
 def clean_fields(kind: str, fields: dict, draft: bool = False) -> dict:
@@ -280,6 +300,8 @@ def clean_fields(kind: str, fields: dict, draft: bool = False) -> dict:
     if kind not in KINDS:
         raise ValueError(f"вид карточки — один из {', '.join(KINDS)}")
     keep = {"word": WORD_FIELDS, "basic": BASIC_FIELDS, "cloze": CLOZE_FIELDS}[kind]
+    if kind == "word":
+        fields = headword(fields)
     out = {}
     for k in keep:
         v = (fields or {}).get(k)
@@ -316,16 +338,16 @@ def faces(kind: str, fields: dict, tpl: str) -> dict:
     if kind == "word":
         word, meaning = f.get("word", ""), f.get("meaning", "")
         details = " · ".join(x for x in (f.get("ipa"), f.get("pos")) if x)
-        lemma = f.get("lemma") if f.get("lemma") and f.get("lemma") != word else ""
         example = f.get("example", "")
         if tpl == "rev":
-            hidden = re.sub(re.escape(word), "____", example, flags=re.I) if word and example else ""
+            shown = f.get("form") or word      # в примере слово стоит в своей форме
+            hidden = re.sub(re.escape(shown), "____", example, flags=re.I) if shown and example else ""
             front = meaning + (f"\n\n_{hidden}_" if hidden and hidden != example else "")
             back = "\n".join(x for x in (f"**{word}**", details, f"_{example}_" if example else "") if x)
             return {"front": front, "back": back}
         front = f"**{word}**" + (f"\n\n_{example}_" if example else "")
         back = "\n".join(x for x in (
-            f"**{meaning}**", details, f"начальная форма: {lemma}" if lemma else "",
+            f"**{meaning}**", details,
             f.get("other", ""), f.get("example_tr", "")) if x)
         return {"front": front, "back": back}
     if kind == "basic":

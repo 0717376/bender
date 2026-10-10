@@ -58,7 +58,6 @@ const RU = {
 
   // Повторение
   say: "Произнести",
-  lemma: "от",
   recall_word: "Вспомните слово",
   counts_hint: "Новые · доучиваются · к повтору",
   tap_to_reveal: "Нажмите, чтобы увидеть ответ",
@@ -98,7 +97,7 @@ const RU = {
   f_meaning: "Перевод",
   f_ipa: "Транскрипция",
   f_pos: "Часть речи",
-  f_lemma: "Начальная форма",
+  f_form: "Форма в тексте",
   f_other: "Другие значения",
   f_example: "Пример",
   f_example_tr: "Перевод примера",
@@ -247,7 +246,6 @@ const EN: Record<Key, string> = {
   today_short: "now",
 
   say: "Pronounce",
-  lemma: "from",
   recall_word: "Recall the word",
   counts_hint: "New · learning · to review",
   tap_to_reveal: "Tap to reveal the answer",
@@ -285,7 +283,7 @@ const EN: Record<Key, string> = {
   f_meaning: "Meaning",
   f_ipa: "Transcription",
   f_pos: "Part of speech",
-  f_lemma: "Base form",
+  f_form: "Form in the text",
   f_other: "Other meanings",
   f_example: "Example",
   f_example_tr: "Example translation",
