@@ -12,6 +12,7 @@ import { paint } from './highlights.js'
 import { caretAt, commitSel, sel, wordAt } from './selection.js'
 import { auth, showAuth } from './auth.js'
 import { $, state } from './core.js'
+import { wireGestures } from './gestures.js'
 import { applyDom, t } from './i18n.js'
 import { allToWiki, closeDrawer, drawerFind, drawerHighlights, drawerPrefs, drawerSettings, drawerToc, openDrawer } from './drawers.js'
 import { applyTheme, closeBook, epubSurface, loadEpub, openBook, wireGlobal, wireScrub } from './reader.js'
@@ -39,6 +40,7 @@ function wireUI() {
   $('#sheetClose').onclick = closeSheet;
   wireScrim();
   wireSheetKeyboard();
+  wireGestures();
   $('#sheetSend').onclick = () => {
     const v = $('#sheetInput').value.trim();
     if (!v) return;
