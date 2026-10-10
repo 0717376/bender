@@ -59,6 +59,8 @@ export const state = {
   pending: null,       // выделение до того, как его закрасили
   active: null,        // выписка, открытая в шторке
   fontSize: ls.get('set:font', 108),
+  // набор текста: гарнитура, интерлиньяж, насыщенность, разрядка, выключка, переносы, абзацы
+  type: { font: 'system', lh: 1.55, weight: 400, track: 0, align: 'justify', hyph: true, para: 'book', ...ls.get('set:type', {}) },
   margin: ls.get('set:margin', 'normal'),
   flow: ls.get('set:flow', 'paginated'),
   spread: ls.get('set:spread', 'auto'),

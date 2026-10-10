@@ -818,9 +818,11 @@ const setMargin = async label => {
   await dpage.click('#btnSet')
   await dpage.waitForSelector('#drawer.on')
   await dpage.click(`#drawerBody .seg button:text-is("${label}")`)
-  // Выбор перезапускает rendition: ждём не закрытия ящика, а собранной заново книги.
-  await dpage.waitForFunction(() => !document.querySelector('#drawer').classList.contains('on')
+  // Выбор перезапускает rendition, панель остаётся открытой: ждём собранной заново книги.
+  await dpage.waitForTimeout(150)
+  await dpage.waitForFunction(() => !document.querySelector('#viewer').classList.contains('veil')
     && state.rendition && state.rendition.getContents().length > 0, null, { timeout: 20000 })
+  await dpage.click('#drawerClose')
   await dpage.waitForTimeout(900)
 }
 const mNorm = await marginNow()
@@ -836,6 +838,57 @@ check('поля: узкие отдают полосе почти весь экр
 check('поля: выбор запоминается',
   await dpage.evaluate(() => JSON.parse(localStorage.getItem('set:margin'))) === 'narrow')
 await setMargin('Обычные')
+// 8а++. Набор: гарнитура, интерлиньяж, выключка, переносы, абзацы — всё на лету и с того же места.
+const para = () => dpage.evaluate(() => {
+  const doc = document.querySelector('#viewer iframe').contentDocument
+  const p = [...doc.querySelectorAll('p')].find(x => x.textContent.length > 120)
+  const cs = doc.defaultView.getComputedStyle(p)
+  return { font: cs.fontFamily, lh: +(parseFloat(cs.lineHeight) / parseFloat(cs.fontSize)).toFixed(2), align: cs.textAlign,
+           hyph: cs.webkitHyphens || cs.hyphens, weight: cs.fontWeight,
+           // после заголовка красной строки нет — смотрим по всем абзацам
+           indent: Math.max(...[...doc.querySelectorAll('p')].map(x => parseFloat(doc.defaultView.getComputedStyle(x).textIndent))),
+           loaded: [...doc.fonts].some(f => /Literata/.test(f.family) && f.status === 'loaded'),
+           bg: doc.defaultView.getComputedStyle(doc.body).backgroundColor,
+           pos: JSON.parse(localStorage.getItem('pos:' + state.entry.id)) }
+})
+const setRangeD = (key, v) => dpage.evaluate(([key, v]) => {
+  const i = document.querySelector(`#drawerBody input[data-k="${key}"]`)
+  i.value = v; i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new Event('change', { bubbles: true }))
+}, [key, v])
+const ty0 = await para()
+await dpage.click('#btnSet')
+await dpage.waitForSelector('#drawer.on')
+await dpage.click('#drawerBody .face[data-v="literata"]')
+await setRangeD('lineHeight', 1.8)
+await dpage.click('#drawerBody [data-k="align"] button[data-v="left"]')
+await dpage.click('#drawerBody [data-k="para"] button[data-v="indent"]')
+await dpage.click('#drawerBody [data-k="hyph"] .switch')
+await dpage.waitForTimeout(1500)
+await setRangeD('weight', 500)
+await dpage.click('#drawerBody .paper[data-v="black"]')
+await dpage.waitForTimeout(1200)
+const ty1 = await para()
+await dpage.screenshot({ path: shot('view-desktop') })
+check('набор: гарнитура из сборки доехала до книги', /Literata/.test(ty1.font) && ty1.loaded, ty1.font)
+check('набор: интерлиньяж, выключка, абзац, переносы и насыщенность меняются на лету',
+  ty1.lh === 1.8 && ty1.align === 'left' && ty1.indent > 10 && ty1.hyph === 'manual' && ty1.weight === '500',
+  JSON.stringify({ ...ty1, font: undefined, pos: undefined }))
+check('набор: чёрная тема красит страницу и интерфейс',
+  ty1.bg === 'rgb(0, 0, 0)' && await dpage.evaluate(() => document.documentElement.dataset.theme === 'dark'), ty1.bg)
+check('набор: правки не сбивают место в книге', ty1.pos === ty0.pos, `${ty0.pos} → ${ty1.pos}`)
+check('набор: выбор запоминается', await dpage.evaluate(() => {
+  const s = JSON.parse(localStorage.getItem('set:type'))
+  return s.font === 'literata' && s.lh === 1.8 && s.align === 'left' && s.para === 'indent' && s.hyph === false && s.weight === 500
+}))
+await dpage.click('#drawerBody .paper[data-v="light"]')
+await dpage.click('#viewReset')
+await dpage.waitForTimeout(1200)
+const ty2 = await para()
+check('набор: сброс возвращает исходный вид',
+  !/Literata/.test(ty2.font) && ty2.lh === ty0.lh && ty2.align === 'justify' && ty2.hyph === 'auto' && ty2.pos === ty0.pos,
+  JSON.stringify({ ...ty2, pos: undefined }))
+await dpage.click('#drawerClose')
+await dpage.waitForTimeout(400)
 // 8b. Клик по готовой выписке: открыть её, ничего больше не задев
 const dmarked = await selectByDrag(dpage)
 await dpage.evaluate(() => paint('imp'))
@@ -1026,8 +1079,23 @@ check('тач: тап у левого края возвращает назад',
 // 10d. Кегль: смена размера перекладывает текст, метки выписок должны переехать вместе с ним.
 await tpage.click('#btnSet')
 await tpage.waitForSelector('#drawer.on')
-await tpage.locator('#drawerBody .seg button', { hasText: 'A+' }).click()
-await tpage.waitForTimeout(900)
+const lowPanel = await tpage.evaluate(() => ({
+  top: document.querySelector('#drawer').getBoundingClientRect().top, h: window.innerHeight,
+  scrim: getComputedStyle(document.querySelector('#scrim')).backgroundColor,
+}))
+check('вид: на телефоне панель встаёт снизу, книга над ней не затемнена',
+  lowPanel.top > lowPanel.h * 0.3 && /rgba\(0, 0, 0, 0\)|transparent/.test(lowPanel.scrim), JSON.stringify(lowPanel))
+const setRange = (pg, key, v) => pg.evaluate(([key, v]) => {
+  const i = document.querySelector(`#drawerBody input[data-k="${key}"]`)
+  i.value = v; i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new Event('change', { bubbles: true }))
+}, [key, v])
+await setRange(tpage, 'fontSize', 124)
+await tpage.waitForTimeout(1100)
+await tpage.screenshot({ path: shot('view-phone') })
+check('кегль: ползунок меняет размер и запоминает его', await tpage.evaluate(() => {
+  const doc = document.querySelector('#viewer iframe').contentDocument
+  return parseFloat(doc.defaultView.getComputedStyle(doc.body).fontSize) > 19 && JSON.parse(localStorage.getItem('set:font')) === 124
+}))
 // Range — из отрисованного контента: book.getRange даёт неотрисованный документ без прямоугольников.
 const marks = await tpage.evaluate(() => {
   const c = state.rendition.getContents()[0]
@@ -1284,10 +1352,11 @@ await tpage.evaluate(() => { state.theme = 'auto'; applyTheme() })
 await tpage.click('#btnSet')
 await tpage.waitForSelector('#drawer.on')
 const pSet = await tpage.evaluate(() => ({
-  rows: document.querySelectorAll('#drawerBody .setrow').length,
+  rows: document.querySelectorAll('#drawerBody .setrow, #drawerBody .sl, #drawerBody .face').length,
+  themes: document.querySelectorAll('#drawerBody .paper').length,
   note: /вёрстка/i.test(document.querySelector('#drawerBody').textContent),
 }))
-check('pdf: в настройках только тема', pSet.rows === 1 && pSet.note, `рядов: ${pSet.rows}`)
+check('pdf: в настройках только тема', pSet.rows === 0 && pSet.themes === 5 && pSet.note, JSON.stringify(pSet))
 await tpage.evaluate(() => closeDrawer())
 // Позиция переживает закрытие и уходит на сервер; миниатюра — первая страница.
 await tpage.evaluate(() => state.pdf.goto(5))

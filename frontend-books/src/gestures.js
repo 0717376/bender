@@ -10,7 +10,9 @@ const FAR = 90;          // px: дальше — закрываем
 const FAST = 0.55;       // px/мс: бросок закрывает и с короткого пути
 const SLOP = 10;         // px: до этого жест ещё не решён (тап, прокрутка списка)
 
-function dragClose(panel, { axis, from, close }) {
+function dragClose(panel, { axis: axisOf, from: fromOf, close }) {
+  const pick = v => (typeof v === 'function' ? v() : v);
+  let axis = 'y';
   let start = null, d = 0, locked = false, t0 = 0;
 
   const reset = () => { panel.style.transition = ''; panel.style.transform = ''; start = null; locked = false; d = 0; };
@@ -19,7 +21,9 @@ function dragClose(panel, { axis, from, close }) {
     if (e.touches.length !== 1 || !panel.classList.contains('on')) return;
     // Кнопки и поля живут своей жизнью: тянуть ползунок или двигать курсор — не закрывать.
     if (e.target.closest('button, input, textarea, select, a')) return;
+    const from = pick(fromOf);
     if (from && !e.target.closest(from)) return;
+    axis = pick(axisOf);
     const p = e.touches[0];
     start = { x: p.clientX, y: p.clientY }; t0 = e.timeStamp; d = 0; locked = false;
   }, { passive: true });
@@ -54,5 +58,7 @@ function dragClose(panel, { axis, from, close }) {
 
 export function wireGestures() {
   dragClose($('#sheet'), { axis: 'y', from: '.grab, .sheet-head', close: closeSheet });
-  dragClose($('#drawer'), { axis: 'x', close: closeDrawer });
+  // Панель вида на телефоне — шторка снизу: её, как и шторку выписки, тянут вниз за шапку.
+  const low = () => $('#drawer').classList.contains('view') && window.innerWidth < 760;
+  dragClose($('#drawer'), { axis: () => (low() ? 'y' : 'x'), from: () => (low() ? '.drawer-head' : null), close: closeDrawer });
 }

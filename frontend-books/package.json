@@ -10,7 +10,13 @@
     "test": "node tests/smoke.mjs"
   },
   "dependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/literata": "^5.3.0",
+    "@fontsource-variable/lora": "^5.3.0",
+    "@fontsource-variable/manrope": "^5.3.0",
+    "@fontsource-variable/source-serif-4": "^5.3.0",
     "@fontsource/manrope": "^5.3.0",
+    "@fontsource/pt-serif": "^5.3.0",
     "epubjs": "0.3.93",
     "pdfjs-dist": "^6.2.108"
   },

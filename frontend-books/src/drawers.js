@@ -2,17 +2,23 @@ import { auth, showAuth } from './auth.js'
 import { $, COLORS, colorName, colorOf, el, escapeHtml, ls, state, toast, when } from './core.js'
 import { PROMPT, lang, plural, setLang, t } from './i18n.js'
 import { redrawHighlights } from './highlights.js'
-import { applyTheme, findInBook, fitLines, flashFind, jumpTo, relayoutNow, reopen, windowSig } from './reader.js'
+import { findInBook, flashFind, jumpTo, relayoutNow, windowSig } from './reader.js'
+import { themePicker } from './typeset.js'
 import { chips, inline, openHighlight, openSheet, resetScrim, send, sheet, sheetHead } from './sheet.js'
 import { buildShelf } from './shelf.js'
 import { live, sync } from './sync.js'
 
 /* ── Ящики ── */
 
-const THEMES = () => [['auto', t('themeAuto')], ['light', t('themeLight')],
-                      ['sepia', t('themeSepia')], ['dark', t('themeDark')]];
-
-export function openDrawer(title, build, action) {
+/** mode 'view' — панель вида: на телефоне встаёт снизу, а книга над ней остаётся на виду
+    и без затемнения — настройки набора выбирают, глядя на текст. */
+export function openDrawer(title, build, action, mode) {
+  const d = $('#drawer'), view = mode === 'view';
+  if (d.classList.contains('view') !== view) {
+    // Форму меняем без анимации: закрытая панель не должна ехать через экран.
+    d.style.transition = 'none'; d.classList.toggle('view', view); void d.offsetWidth; d.style.transition = '';
+  }
+  $('#scrim').classList.toggle('clear', view);
   $('#drawerTitle').textContent = title;
   const act = $('#drawerAct');
   act.style.display = 'none'; act.onclick = null;
@@ -166,58 +172,6 @@ export function allToWiki() {
   ].join('\n'));
 }
 
-export function drawerSettings(body) {
-  const row = (label, hint, control) => {
-    const r = el('div', 'setrow');
-    const l = el('div'); l.appendChild(el('div', 'lbl', label));
-    if (hint) l.appendChild(el('div', 'hint', hint));
-    r.appendChild(l); r.appendChild(control); body.appendChild(r);
-  };
-  const seg = (opts, cur, on) => {
-    const s = el('div', 'seg');
-    opts.forEach(([v, t]) => { const b = el('button', v === cur ? 'on' : '', t); b.onclick = () => on(v); s.appendChild(b); });
-    return s;
-  };
-  row(t('theme'), null, seg(THEMES(), state.theme, v => {
-    state.theme = v; ls.set('set:theme', v); applyTheme();
-    closeDrawer(); openDrawer(t('viewTitle'), drawerSettings);
-  }));
-  // PDF свёрстан навсегда: кегль, поля и разметку задаёт сам файл, крутить нечего.
-  if (state.kind === 'pdf') {
-    body.appendChild(el('div', 'empty', t('pdfFixed')));
-    return;
-  }
-  const sizes = el('div', 'seg');
-  [['A−', -8], ['A+', 8]].forEach(([t, d]) => {
-    const b = el('button', '', t);
-    b.onclick = () => {
-      state.fontSize = Math.max(70, Math.min(190, state.fontSize + d));
-      ls.set('set:font', state.fontSize);
-      state.rendition.themes.fontSize(state.fontSize + '%');
-      // Строка стала другой высоты — подгонка съехала, а метки выписок остались от старой раскладки.
-      setTimeout(async () => { await fitLines(); redrawHighlights(); }, 140);
-      const lbl = body.querySelector('#fsz'); if (lbl) lbl.textContent = state.fontSize + '%';
-    };
-    sizes.appendChild(b);
-  });
-  row(t('fontSize'), null, sizes);
-  const cur = body.lastElementChild.querySelector('.lbl');
-  cur.innerHTML = escapeHtml(t('fontSize'))
-    + ' <span id="fsz" style="color:var(--text-3)">' + state.fontSize + '%</span>';
-  row(t('margins'), t('marginsHint'),
-    seg([['narrow', t('marginNarrow')], ['normal', t('marginNormal')], ['wide', t('marginWide')]], state.margin, v => {
-      state.margin = v; ls.set('set:margin', v); closeDrawer(); reopen();
-    }));
-  row(t('layout'), t('layoutHint'),
-    seg([['paginated', t('layoutPaged')], ['scrolled', t('layoutScrolled')]], state.flow, v => {
-      state.flow = v; ls.set('set:flow', v); closeDrawer(); reopen();
-    }));
-  row(t('spread'), t('spreadHint'),
-    seg([['auto', t('spreadAuto')], ['single', t('spreadSingle')]], state.spread, v => {
-      state.spread = v; ls.set('set:spread', v); closeDrawer(); reopen();
-    }));
-}
-
 export function drawerPrefs(body) {
   const row = (label, hint, control) => {
     const r = el('div', 'setrow');
@@ -230,10 +184,10 @@ export function drawerPrefs(body) {
     opts.forEach(([v, t]) => { const b = el('button', v === cur ? 'on' : '', t); b.onclick = () => on(v); s.appendChild(b); });
     return s;
   };
-  row(t('theme'), null, seg(THEMES(), state.theme, v => {
-    state.theme = v; ls.set('set:theme', v); applyTheme();
-    closeDrawer(); openDrawer(t('settings'), drawerPrefs);
-  }));
+  const themes = el('section', 'vw');
+  themes.appendChild(el('div', 'cap', escapeHtml(t('theme'))));
+  themePicker(themes);
+  body.appendChild(themes);
   // Язык интерфейса: по умолчанию берётся из браузера, здесь его можно закрепить.
   row(t('language'), null, seg([['ru', 'Русский'], ['en', 'English']], lang, v => {
     if (v !== lang) setLang(v);
