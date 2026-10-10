@@ -939,6 +939,48 @@ await tpage.touchscreen.tap(scrimPt.x, scrimPt.y)
 await tpage.waitForTimeout(500)
 check('тач: своим тапом затемнение шторку закрывает',
   await tpage.evaluate(() => !document.querySelector('#sheet').classList.contains('on')), `тапнули в ${scrimPt.hit}`)
+// Жесты: шторку тянут вниз за шапку, ящик — вправо. Недотянули — панель возвращается.
+const drag = (sel, dx, dy) => tpage.evaluate(async ([sel, dx, dy]) => {
+  const n = document.querySelector(sel), r = n.getBoundingClientRect()
+  const x0 = r.left + r.width / 2, y0 = r.top + Math.min(r.height / 2, 60)
+  const fire = (type, x, y) => {
+    // Конструктора Touch в WebKit нет — событие собираем руками, обработчикам хватает полей.
+    const e = new Event(type, { bubbles: true, cancelable: true }), t = { clientX: x, clientY: y }
+    Object.defineProperty(e, 'touches', { value: type === 'touchend' ? [] : [t] })
+    Object.defineProperty(e, 'changedTouches', { value: [t] })
+    n.dispatchEvent(e)
+  }
+  fire('touchstart', x0, y0)
+  for (let i = 1; i <= 6; i++) { fire('touchmove', x0 + dx * i / 6, y0 + dy * i / 6); await new Promise(res => setTimeout(res, 60)) }
+  const held = n.closest('.sheet, .drawer').style.transform
+  fire('touchend', x0 + dx, y0 + dy)
+  return held
+}, [sel, dx, dy])
+const isOn = sel => tpage.evaluate(s => document.querySelector(s).classList.contains('on'), sel)
+await tpage.touchscreen.tap(tmark.x, tmark.y)
+await tpage.waitForSelector('#sheet.on', { timeout: 5000 })
+await tpage.waitForTimeout(400)
+const heldShort = await drag('#sheetTitle', 0, 40)
+await tpage.waitForTimeout(350)
+const stayed = await isOn('#sheet')
+const heldLong = await drag('#sheetTitle', 0, 170)
+await tpage.waitForTimeout(350)
+check('жесты: шторка едет за пальцем, недотянутая возвращается, дотянутая закрывается',
+  /translateY\(40px\)/.test(heldShort) && stayed && /translateY\(170px\)/.test(heldLong) && !(await isOn('#sheet'))
+    && await tpage.evaluate(() => !document.querySelector('#sheet').style.transform),
+  `${heldShort} → открыта: ${stayed}; ${heldLong} → открыта: ${await isOn('#sheet')}`)
+await tpage.click('#btnToc')
+await tpage.waitForSelector('#drawer.on')
+await tpage.waitForTimeout(350)
+await drag('#drawerBody', 6, 150)
+await tpage.waitForTimeout(300)
+const scrolled = await isOn('#drawer')
+const heldSide = await drag('#drawerBody', 180, 10)
+await tpage.waitForTimeout(350)
+check('жесты: ящик вправо закрывается, а прокрутка списка его не трогает',
+  scrolled && /translateX\(180px\)/.test(heldSide) && !(await isOn('#drawer')),
+  `после прокрутки открыт: ${scrolled}; ${heldSide} → открыт: ${await isOn('#drawer')}`)
+
 // И удаление после повторного входа в выписку — то, ради чего в неё и тыкают.
 await tpage.touchscreen.tap(tmark.x, tmark.y)
 await tpage.waitForSelector('#sheet.on', { timeout: 5000 })

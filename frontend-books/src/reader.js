@@ -525,6 +525,32 @@ export function applyTouchRules() {
   });
 }
 
+/* Листание epub. Сама страница меняется мгновенно — epub.js сдвигает ленту главы, — и глаз
+   видит скачок. Поэтому текст на мгновение гаснет со сдвигом в сторону листания и
+   проявляется уже новым. Вести страницу пальцем нельзя: глава — одна прокручиваемая
+   лента, и на границе глав соседней страницы просто нет. */
+let turning = false;
+export async function turn(dir) {
+  const r = state.rendition;
+  if (!r) return;
+  const go = () => Promise.resolve(dir > 0 ? r.next() : r.prev()).catch(() => {});
+  const v = $('#viewer');
+  // Листают быстрее анимации — не копим очередь затуханий, просто листаем.
+  if (turning || !v.animate || matchMedia('(prefers-reduced-motion: reduce)').matches) return go();
+  turning = true;
+  const out = v.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: `translateX(${-dir * 12}px)` }],
+    { duration: 90, easing: 'ease-in', fill: 'forwards' });
+  try {
+    await out.finished;
+    // Последняя страница книги: next() может не ответить — ждём недолго.
+    await Promise.race([go(), new Promise(res => setTimeout(res, 600))]);
+  } catch { /* анимацию отменили — показываем как есть */ }
+  out.cancel();
+  v.animate([{ opacity: 0, transform: `translateX(${dir * 12}px)` }, { opacity: 1, transform: 'none' }],
+    { duration: 150, easing: 'ease-out' });
+  turning = false;
+}
+
 export function wireContent() {
   state.rendition.hooks.content.register(contents => {
     const doc = contents.document;
@@ -541,8 +567,8 @@ export function wireContent() {
     const tap = x => {
       const v = $('#viewer').getBoundingClientRect();
       const k = (x - v.left) / v.width;
-      if (state.flow === 'paginated' && k < 0.22) return state.rendition.prev();
-      if (state.flow === 'paginated' && k > 0.78) return state.rendition.next();
+      if (state.flow === 'paginated' && k < 0.22) return turn(-1);
+      if (state.flow === 'paginated' && k > 0.78) return turn(1);
       $('#reader').classList.toggle('immersive');
       hideSelbar();
     };
@@ -559,7 +585,7 @@ export function wireContent() {
       const t = e.changedTouches[0];
       const dx = t.clientX - sx, dy = t.clientY - sy;
       if (state.flow === 'paginated' && Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.6) {
-        return dx < 0 ? state.rendition.next() : state.rendition.prev();
+        return dx < 0 ? turn(1) : turn(-1);
       }
       // Тап по выписке открываем в конце жеста, а не в начале: пока палец на экране,
       // ничего поверх книги вставать не должно — иначе оно и съест этот тап.
@@ -650,7 +676,7 @@ export function wireGlobal() {
       return;
     }
     if (state.flow !== 'paginated' || !state.rendition) return;
-    e.clientX < window.innerWidth / 2 ? state.rendition.prev() : state.rendition.next();
+    e.clientX < window.innerWidth / 2 ? turn(-1) : turn(1);
   });
 }
 
@@ -670,6 +696,6 @@ export function onKey(e) {
     return;
   }
   if (!state.rendition || state.flow !== 'paginated') return;
-  if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); state.rendition.next(); }
-  if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); state.rendition.prev(); }
+  if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); turn(1); }
+  if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); turn(-1); }
 }
