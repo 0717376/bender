@@ -420,3 +420,15 @@ def test_tools_add_batch_reports_bad_notes(store):
     assert summary["decks"][0]["name"] == "Проба" and summary["due"]["new"] == 2
     found = [cards_tools.brief(n) for n in store.list_notes(q="кошка")]
     assert found[0]["fields"]["word"] == "cat" and found[0]["leech"] is False
+
+
+def test_word_headword_is_the_base_form(store):
+    """Учат начальную форму; форма из текста остаётся в form и прячется в примере."""
+    n = store.create_note("word", {"word": "hushes", "lemma": "hush", "meaning": "шикать",
+                                   "example": "Libby hushes you."})
+    assert n["fields"]["word"] == "hush" and n["fields"]["form"] == "hushes" and "lemma" not in n["fields"]
+    fwd, rev = (store.faces("word", n["fields"], t) for t in ("fwd", "rev"))
+    assert fwd["front"].startswith("**hush**")
+    assert "____" in rev["front"] and "hushes" not in rev["front"] and "**hush**" in rev["back"]
+    same = store.create_note("word", {"word": "cat", "form": "Cat", "meaning": "кошка"})
+    assert "form" not in same["fields"]

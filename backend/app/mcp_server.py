@@ -433,7 +433,7 @@ def cards_due() -> dict:
 @mcp.tool()
 def cards_add(notes: list[dict], deck: str | None = None) -> dict:
     """Добавить карточки пачкой. deck — название или id колоды (новое название заводит
-    колоду). У каждой заметки kind и fields: word {word, meaning, lemma?, ipa?, pos?,
+    колоду). У каждой заметки kind и fields: word {word — начальная форма, meaning, form?, ipa?, pos?,
     example?, example_tr?} — слово, две карточки; basic {front, back} — вопрос и ответ;
     cloze {text: "… {{c1::скрытое}} …"} — фраза с пропусками."""
     return cards_tools.add(notes, deck)
