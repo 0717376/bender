@@ -36,7 +36,7 @@ export interface Overview {
   due: Counts; waiting: number | null; decks: Deck[];
   streak: { current: number; best: number };
   today: { n: number; again: number; ms: number };
-  forecast: { day: string; n: number }[];
+  forecast: { day: string; n: number; new: number }[];
   inbox: number; leeches: number;
 }
 
@@ -47,7 +47,7 @@ export interface Stats {
   totals: { reviews: number; ms: number; days: number };
   retention: { seen: number; kept: number; rate: number | null };
   maturity: { new: number; learning: number; young: number; mature: number; suspended: number };
-  forecast: { day: string; n: number }[];
+  forecast: { day: string; n: number; new: number }[];
 }
 
 export interface Settings { notify: boolean; notify_hour: number; new_per_day: number; retention: number }

@@ -693,14 +693,41 @@ def _review_days() -> dict[date, dict]:
 
 
 def forecast(days: int = 7, t: int | None = None) -> list[dict]:
-    """Сколько повторов придётся на каждый из ближайших дней. Просроченное — на сегодня."""
+    """Сколько карточек придётся на каждый из ближайших дней: повторы (просроченное — на
+    сегодня) и новые. Новые раскладываем по тем же правилам, что и очередь: дневная норма
+    колоды, одна новая карточка заметки в день, обратная — на следующий день после прямой.
+    Без этого прогноз молчит про завтрашние обратные карточки и обещает пустой день."""
     t = t or now()
     today = day_of(t)
-    out = [{"day": (today + timedelta(days=i)).isoformat(), "n": 0} for i in range(days)]
+    out = [{"day": (today + timedelta(days=i)).isoformat(), "n": 0, "new": 0} for i in range(days)]
     for r in _q(f"SELECT c.due {_LIVE} AND c.state != 0 AND c.due IS NOT NULL"):
         i = max(0, (day_of(r["due"]) - today).days)
         if i < days:
             out[i]["n"] += 1
+    rows = _q(f"SELECT c.id, c.note_id, c.state, c.buried_until, n.deck_id AS deck, "
+              f"d.new_per_day AS quota {_LIVE} ORDER BY c.id")
+    # В какой день карточка начата: уже выученные — давно, доучиваемые — считаем, что сегодня.
+    began = {r["id"]: (-1 if r["state"] == REVIEW else 0) for r in rows if r["state"] != NEW}
+    by_note: dict[int, list] = {}
+    for r in rows:
+        by_note.setdefault(r["note_id"], []).append(r["id"])
+    fresh = [r for r in rows if r["state"] == NEW]
+    for i in range(days):
+        at = t if i == 0 else day_start(today + timedelta(days=i))
+        used = dict(_introduced_today(t)) if i == 0 else {}
+        seen = set()
+        for r in fresh:
+            if r["id"] in began or r["note_id"] in seen or r["buried_until"] > at:
+                continue
+            if used.get(r["deck"], 0) >= r["quota"]:
+                continue
+            if any(began.get(sid, days) >= i for sid in by_note[r["note_id"]] if sid < r["id"]):
+                continue
+            began[r["id"]] = i
+            used[r["deck"]] = used.get(r["deck"], 0) + 1
+            seen.add(r["note_id"])
+            out[i]["n"] += 1
+            out[i]["new"] += 1
     return out
 
 

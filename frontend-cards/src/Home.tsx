@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ArrowRight, Flame, Inbox, Play, Plus, Settings2, Sparkles, TriangleAlert } from "lucide-react";
 import { api } from "./api";
 import { spent } from "./fmt";
-import { lang, plural, t, weekday } from "./i18n";
+import { lang, plural, shortDate, t, weekday } from "./i18n";
 import type { Deck, Overview } from "./types";
 
 /** Счётчики колоды: новые, доучиваемые, повторы — тем же цветом, что и в сессии. */
@@ -47,6 +47,11 @@ export default function Home({ o, onReview, onDeck, onBrowse, onNewDeck, notify,
 
   const due = o.due.total;
   const peak = Math.max(1, ...o.forecast.map((d) => d.n));
+  // Когда на сегодня пусто — честно сказать, когда и сколько придёт дальше, считая новые.
+  const nextAt = o.forecast.findIndex((d, i) => i > 0 && d.n > 0);
+  const ahead = nextAt < 0 ? t("all_clear_hint")
+    : nextAt === 1 ? t("next_tomorrow", plural(o.forecast[1].n, "cards"))
+    : t("next_on", shortDate(o.forecast[nextAt].day), plural(o.forecast[nextAt].n, "cards"));
 
   return (
     <div className="home">
@@ -63,7 +68,7 @@ export default function Home({ o, onReview, onDeck, onBrowse, onNewDeck, notify,
                 {o.due.new > 0 && <span><i className="dot c-new" />{plural(o.due.new, "new_cards")}</span>}
               </>
             ) : (
-              <span>{o.decks.length ? t("all_clear_hint") : t("empty_hint")}</span>
+              <span>{o.decks.length ? ahead : t("empty_hint")}</span>
             )}
           </div>
           {due > 0 && (
@@ -139,9 +144,13 @@ export default function Home({ o, onReview, onDeck, onBrowse, onNewDeck, notify,
         <div className="block-head"><h2>{t("week_ahead")}</h2></div>
         <div className="forecast">
           {o.forecast.map((d, i) => (
-            <div key={d.day} className={"fc" + (i === 0 ? " today" : "")} title={plural(d.n, "cards")}>
+            <div key={d.day} className={"fc" + (i === 0 ? " today" : "")} title={d.new ? t("of_them_new", plural(d.n, "cards"), d.new) : plural(d.n, "cards")}>
               <span className="fc-n">{d.n || ""}</span>
-              <span className="fc-bar"><i style={{ height: `${Math.max(d.n ? 8 : 2, (d.n / peak) * 100)}%` }} /></span>
+              <span className="fc-bar">
+                <i style={{ height: `${Math.max(d.n ? 8 : 2, (d.n / peak) * 100)}%` }}>
+                  {d.new > 0 && <b style={{ height: `${(d.new / d.n) * 100}%` }} />}
+                </i>
+              </span>
               <span className="fc-day">{i === 0 ? t("today_short") : weekday(d.day)}</span>
             </div>
           ))}
