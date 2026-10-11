@@ -23,11 +23,22 @@ export function caretAt(doc, x, y) {
   return r;
 }
 
+/** Каретка обязана быть под пальцем. Браузер на точку мимо текста (поле, зазор между
+    колонками, край экрана) порой отвечает местом в другом конце главы — и выделение
+    разом накрывает всю страницу. Такую точку не принимаем: край остаётся где был. */
+export function near(caret, x, y) {
+  if (!caret || caret.startContainer.nodeType !== 3) return null;
+  const r = caret.getClientRects()[0] || caret.getBoundingClientRect();
+  if (!r || !r.height) return caret;            // измерить нечем — верим
+  const dy = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
+  return dy > r.height * 2 || Math.abs(x - r.left) > 140 ? null : caret;
+}
+
 export const WORD = /[\p{L}\p{N}'’\-]/u;
 
 export function wordAt(doc, x, y) {
-  const caret = caretAt(doc, x, y);
-  if (!caret || caret.startContainer.nodeType !== 3) return null;
+  const caret = near(caretAt(doc, x, y), x, y);
+  if (!caret) return null;
   return wordAround(caret.startContainer.textContent, caret.startOffset, (a, b) => {
     const r = doc.createRange();
     r.setStart(caret.startContainer, a); r.setEnd(caret.startContainer, b);
@@ -124,9 +135,26 @@ function paintNow() {
   placeHandle('end', fr.left + last.right, fr.top + last.top, last.height);
 }
 
+/** Тянут от слова: оно остаётся выделенным целиком, а за пальцем идёт только дальний край.
+    Палец внутри слова ничего не меняет — иначе слово обрезалось бы под самим нажатием. */
+function stretch(surf, word, p) {
+  try {
+    const head = surf.span(word[0], p);
+    if (!head) return word;                       // палец на начале слова
+    if (head.from === p) return [word[1], p];     // ушли назад — держим конец слова
+    const tail = surf.span(p, word[1]);
+    return tail && tail.from === p ? word : [word[0], p];
+  } catch { return word; }
+}
+
+/* Палец на удержании не стоит: он дрожит и перекатывается на несколько пикселей. Пока он
+   не ушёл дальше — это всё ещё «выделить слово», а не «тянуть край». */
+const HOLD_SLOP = 12;
+
 export function wireSelection(surf) {
   const doc = surf.doc, root = surf.root || doc;
   let timer = null, sx = 0, sy = 0, pressing = false;
+  let word = null, pulling = false;
 
   root.addEventListener('pointerdown', e => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
@@ -143,6 +171,7 @@ export function wireSelection(surf) {
       const w = surf.word(sx, sy);
       if (!w) return;
       sel.on = true; sel.surf = surf; sel.anchor = w[0]; sel.focus = w[1];
+      word = w; pulling = false;
       hideSelbar(); paintSel();
     };
     // Мышь выделяет сразу протаскиванием, палец — только после удержания:
@@ -158,7 +187,8 @@ export function wireSelection(surf) {
     if (!pressing) return;
     if (sel.pendingMouse && !sel.on && Math.hypot(e.clientX - sx, e.clientY - sy) > 4) {
       const w = surf.word(sel.pendingMouse.x, sel.pendingMouse.y);
-      if (w) { sel.on = true; sel.surf = surf; sel.anchor = w[0]; sel.focus = w[1]; }
+      // Мышь тянет сразу: порог она уже прошла.
+      if (w) { sel.on = true; sel.surf = surf; sel.anchor = w[0]; sel.focus = w[1]; word = w; pulling = true; }
     }
     if (!sel.on) {
       // Палец дрожит всегда; 14px — это уже осознанный свайп, а не удержание.
@@ -166,13 +196,15 @@ export function wireSelection(surf) {
       return;
     }
     e.preventDefault();                       // держим страницу на месте, пока тянем
+    if (!pulling && Math.hypot(e.clientX - sx, e.clientY - sy) < HOLD_SLOP) return;
+    pulling = true;
     const p = surf.at(e.clientX, e.clientY);  // событие из документа поверхности — координаты её
     if (!p) return;
     // Край, от которого отрезок схлопывается (палец левее начала строки, мимо текста),
     // не принимаем: выделение должно стоять на месте, а не пропадать и появляться.
-    const was = sel.focus;
-    sel.focus = p;
-    if (selSpan()) paintSel(); else sel.focus = was;
+    const was = [sel.anchor, sel.focus];
+    [sel.anchor, sel.focus] = word ? stretch(surf, word, p) : [sel.anchor, p];
+    if (selSpan()) paintSel(); else [sel.anchor, sel.focus] = was;
   }, { passive: false });
 
   // Только своё отпускание: слушаем весь документ, и без этой проверки палец, снятый
@@ -180,6 +212,7 @@ export function wireSelection(surf) {
   const finish = () => {
     if (!pressing) return;
     pressing = false; sel.pendingMouse = null; clearTimeout(timer);
+    word = null; pulling = false;
     if (sel.on) { sel.justEnded = true; commitSel(); }
   };
   doc.addEventListener('pointerup', finish);

@@ -332,6 +332,48 @@ check('текст: книжная вёрстка — переносы, выкл�
   typo.lang === 'ru' && typo.hyph === 'auto' && typo.align === 'justify' && typo.lh > 1.4 && /serif|Georgia/i.test(typo.font),
   JSON.stringify(typo))
 
+// 3а+. Долгое нажатие: палец на удержании дрожит — слово должно остаться целым, а не обрезаться
+// и не разрастись; потянули дальше — слово остаётся выделенным целиком, край уходит за пальцем.
+const hold = await page.evaluate(async () => {
+  const frame = document.querySelector('#viewer iframe'), doc = frame.contentDocument, fr = frame.getBoundingClientRect()
+  const sleep = ms => new Promise(r => setTimeout(r, ms))
+  const ev = (type, x, y) => (doc.elementFromPoint(x, y) || doc.body).dispatchEvent(new PointerEvent(type,
+    { bubbles: true, cancelable: true, clientX: x, clientY: y, pointerType: 'touch', pointerId: 9, isPrimary: true }))
+  // слово посреди строки, с запасом текста справа
+  let hit = null
+  const walk = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT)
+  for (let node; !hit && (node = walk.nextNode());) {
+    const re = /(?<=\s)(\p{L}{3,5})(?=\s)/gu
+    for (let m; !hit && (m = re.exec(node.textContent));) {
+      const r = doc.createRange(); r.setStart(node, m.index); r.setEnd(node, m.index + m[1].length)
+      const bb = r.getClientRects()[0]
+      const x = bb && fr.left + bb.left, y = bb && fr.top + bb.top
+      if (bb && r.getClientRects().length === 1 && x > 20 && x + bb.width + 130 < innerWidth && y > 90 && y < innerHeight - 120) hit = { w: m[1], bb }
+    }
+  }
+  if (!hit) return null
+  const x = hit.bb.left + hit.bb.width / 2, y = hit.bb.top + hit.bb.height / 2
+  const out = { want: hit.w, jitter: [] }
+  for (const [jx, jy] of [[0, 0], [3, 2], [-6, 4], [2, -8], [-9, 0]]) {
+    ev('pointerdown', x, y); await sleep(400)
+    if (jx || jy) ev('pointermove', x + jx, y + jy)
+    ev('pointerup', x + jx, y + jy); await sleep(50)
+    out.jitter.push(state.pending ? state.pending.text : null)
+    document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); await sleep(40)
+  }
+  ev('pointerdown', x, y); await sleep(400)
+  for (let i = 1; i <= 5; i++) { ev('pointermove', x + i * 22, y); await sleep(20) }
+  ev('pointerup', x + 110, y); await sleep(50)
+  out.pulled = state.pending ? state.pending.text : null
+  document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); await sleep(40)
+  return out
+})
+check('удержание: дрожание пальца не обрезает и не раздувает слово',
+  !!hold && hold.jitter.every(x => x === hold.want), JSON.stringify(hold))
+check('удержание: потянули — слово целиком плюс то, что за ним',
+  !!hold && !!hold.pulled && hold.pulled.startsWith(hold.want + ' ') && hold.pulled.length < 60, JSON.stringify(hold && hold.pulled))
+await page.evaluate(() => { document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); state.pending = null })
+
 // 3б. Карточки: запрос перехватываем здесь, кнопка — под ответом агента (ниже)
 let quick = null
 await ctx.route('**/cards/quick', r => {
