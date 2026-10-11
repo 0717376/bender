@@ -432,3 +432,18 @@ def test_word_headword_is_the_base_form(store):
     assert "____" in rev["front"] and "hushes" not in rev["front"] and "**hush**" in rev["back"]
     same = store.create_note("word", {"word": "cat", "form": "Cat", "meaning": "кошка"})
     assert "form" not in same["fields"]
+
+
+def test_forecast_counts_tomorrows_reverse_card(store):
+    """Прямую выучили сегодня — обратная придёт завтра, и прогноз обязан это показать."""
+    n = word(store)
+    t = store.now()
+    fc = store.forecast(3, t)
+    assert (fc[0]["n"], fc[0]["new"]) == (1, 1) and (fc[1]["n"], fc[1]["new"]) == (1, 1)
+    card = store.next_card(None, t)
+    while card and card["note_id"] == n["id"] and card["tpl"] == "fwd":
+        store.answer(card["id"], 4, 1000, t=t)
+        card = store.next_card(None, t)
+    assert store.counts(None, t)["total"] == 0
+    fc = store.forecast(3, t)
+    assert fc[0]["n"] == 0 and (fc[1]["n"], fc[1]["new"]) == (1, 1)
