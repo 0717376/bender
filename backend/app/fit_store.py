@@ -38,6 +38,7 @@ DELOAD = 0.9
 DEFAULTS = {
     "notify": True,          # присылать ли утреннюю сводку в Telegram
     "notify_hour": 8,        # не раньше этого часа (по часам сервера)
+    "oura_min_minutes": 15,  # тренировки кольца короче этого не берём: дорога до метро — не кардио
     "profile": {},           # что ассистент знает о человеке: опыт, инвентарь, дни, ограничения
 }
 
@@ -128,11 +129,38 @@ CREATE TABLE IF NOT EXISTS body (
   weight REAL NOT NULL,
   note   TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS oura_daily (
+  day           TEXT PRIMARY KEY,
+  readiness     INTEGER,
+  sleep_score   INTEGER,
+  activity      INTEGER,
+  hrv           REAL,
+  rhr           REAL,
+  temp_dev      REAL,
+  sleep_sec     INTEGER,
+  deep_sec      INTEGER,
+  rem_sec       INTEGER,
+  efficiency    INTEGER,
+  bed_start     TEXT,
+  bed_end       TEXT,
+  steps         INTEGER,
+  active_cal    INTEGER,
+  stress_sec    INTEGER,
+  recovery_sec  INTEGER,
+  resilience    TEXT,
+  spo2          REAL,
+  vo2max        REAL,
+  updated       INTEGER NOT NULL DEFAULT 0
+);
 CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
 """
+
+OURA_FIELDS = ("readiness", "sleep_score", "activity", "hrv", "rhr", "temp_dev", "sleep_sec",
+               "deep_sec", "rem_sec", "efficiency", "bed_start", "bed_end", "steps", "active_cal",
+               "stress_sec", "recovery_sec", "resilience", "spo2", "vo2max")
 
 
 def init() -> None:
@@ -216,6 +244,8 @@ def save_settings(patch: dict) -> dict:
             v = bool(v)
         if k == "notify_hour":
             v = max(0, min(23, int(v)))
+        if k == "oura_min_minutes":
+            v = max(0, min(120, int(v)))
         if k == "profile":
             if not isinstance(v, dict):
                 raise ValueError("profile — объект")
@@ -450,13 +480,14 @@ def _history(ex_id: int, sessions_n: int = 2, exclude: int | None = None) -> lis
     return out
 
 
-def plan_for(day_id: int, exclude: int | None = None) -> dict | None:
+def plan_for(day_id: int, exclude: int | None = None, easy: bool = False) -> dict | None:
     """День программы с целями на сегодня. exclude — идущая тренировка: её подходы
-    не должны считаться «прошлым разом»."""
+    не должны считаться «прошлым разом». easy — облегчённый вариант для дня, когда
+    восстановление так себе: на подход меньше и без прибавки веса."""
     d = _q("SELECT * FROM program_days WHERE id = ?", (day_id,))
     if not d:
         return None
-    out = {**dict(d[0]), "items": []}
+    out = {**dict(d[0]), "easy": easy, "items": []}
     for i in _q("SELECT i.*, e.name, e.name_en, e.muscle, e.kind, e.step, e.equipment "
                 "FROM program_items i JOIN exercises e ON e.id = i.exercise_id "
                 "WHERE i.day_id = ? ORDER BY i.pos", (day_id,)):
@@ -464,8 +495,13 @@ def plan_for(day_id: int, exclude: int | None = None) -> dict | None:
         weight, reps, hint = next_target(i["sets"], i["reps_min"], i["reps_max"], i["step"],
                                          [h["sets"] for h in hist],
                                          inc=5 if i["kind"] == "time" else 1)
+        item = dict(i)
+        if easy:
+            item["sets"] = max(1, item["sets"] - 1)
+            if hint == "up":
+                weight, reps, hint = max(s[0] for s in hist[0]["sets"]), i["reps_max"], "hold"
         out["items"].append({
-            **dict(i), "weight": weight, "reps": reps, "hint": hint,
+            **item, "weight": weight, "reps": reps, "hint": hint,
             "last": [{"weight": w, "reps": r} for w, r in hist[0]["sets"]] if hist else [],
             "last_day": hist[0]["day"] if hist else None})
     return out
@@ -765,6 +801,125 @@ def delete_body(day: str) -> bool:
     return True
 
 
+# ── Кольцо ──
+# Что приносит синхронизация с Oura (fit_oura): сутки одной строкой и тренировки кольца.
+
+def oura_put(day: str, **vals) -> None:
+    """Дописать сутки. Пустое не затирает записанное: сон и активность приходят порознь."""
+    f = {k: v for k, v in vals.items() if k in OURA_FIELDS and v is not None}
+    if not f:
+        return
+    cols = ", ".join(f)
+    _w(f"INSERT INTO oura_daily(day, {cols}, updated) VALUES(?, {', '.join('?' * len(f))}, ?) "
+       f"ON CONFLICT(day) DO UPDATE SET {', '.join(k + ' = excluded.' + k for k in f)}, "
+       "updated = excluded.updated", (day, *f.values(), now()))
+
+
+def oura_days(days: int = 30, t: int | None = None) -> list[dict]:
+    since = (today(t) - timedelta(days=max(1, days) - 1)).isoformat()
+    return [dict(r) for r in _q("SELECT * FROM oura_daily WHERE day >= ? ORDER BY day", (since,))]
+
+
+def oura_workout(ext_id: str, day: str, started: int, ended: int, kind: str, title: str,
+                 distance=None, calories=None) -> int | None:
+    """Тренировка, которую записало кольцо. Если на это время уже есть своя запись —
+    вторую не заводим, а дописываем в свою калории: человек записал подходы, кольцо — расход."""
+    mine = _q("SELECT id, calories FROM sessions WHERE deleted = 0 AND source = 'manual' "
+              "AND ended IS NOT NULL AND started < ? AND ended > ?", (ended, started))
+    if mine:
+        if mine[0]["calories"] is None and calories:
+            _w("UPDATE sessions SET calories = ? WHERE id = ?", (calories, mine[0]["id"]))
+        return None
+    sec = (ended - started) // 1000
+    r = _q("SELECT id FROM sessions WHERE source = 'oura' AND ext_id = ?", (ext_id,))
+    if r:
+        # Удалённую не воскрешаем, заметку и самочувствие не трогаем — меняется только измеренное.
+        _w("UPDATE sessions SET day = ?, started = ?, ended = ?, duration = ?, distance = ?, "
+           "calories = ? WHERE id = ?", (day, started, ended, sec, distance, calories, r[0]["id"]))
+        return r[0]["id"]
+    if sec < settings()["oura_min_minutes"] * 60:
+        return None
+    return _w("INSERT INTO sessions(day, started, ended, kind, title, source, ext_id, duration, "
+              "distance, calories) VALUES(?, ?, ?, ?, ?, 'oura', ?, ?, ?, ?)",
+              (day, started, ended, kind, title, ext_id, sec, distance, calories))
+
+
+def without_pulse(since: str) -> list[dict]:
+    """Законченные тренировки без пульса — синхронизация спросит его у кольца."""
+    return [dict(r) for r in _q(
+        "SELECT id, started, ended FROM sessions WHERE deleted = 0 AND avg_hr IS NULL "
+        "AND ended IS NOT NULL AND ended > started AND day >= ? ORDER BY started", (since,))]
+
+
+def set_pulse(session_id: int, avg: int, top: int) -> None:
+    _w("UPDATE sessions SET avg_hr = ?, max_hr = ? WHERE id = ?", (avg, top, session_id))
+
+
+# ── Восстановление ──
+# Совет на день считается по правилам, без модели: сегодняшние цифры кольца против
+# своей же нормы за две недели. Одного жёлтого сигнала мало — кольцо шумит.
+
+BASE_DAYS = 14
+BASE_MIN = 5          # меньше дней — нормы ещё нет, сравнивать не с чем
+
+
+def _base(rows: list[dict], key: str) -> tuple | None:
+    vals = [r[key] for r in rows if r[key] is not None]
+    if len(vals) < BASE_MIN:
+        return None
+    mean = sum(vals) / len(vals)
+    sd = (sum((v - mean) ** 2 for v in vals) / len(vals)) ** 0.5
+    return mean, sd
+
+
+def _grade(value, warn, bad, below: bool = True) -> str:
+    if value is None:
+        return ""
+    if below:
+        return "bad" if value < bad else "warn" if value < warn else "ok"
+    return "bad" if value > bad else "warn" if value > warn else "ok"
+
+
+def recovery(t: int | None = None) -> dict:
+    """Как человек восстановился к сегодняшнему дню и что с этим делать:
+    go — по плану, easy — облегчить, rest — перенести или погулять. level None — данных нет
+    (кольцо не подключено или ещё не синхронизировалось с утра)."""
+    d = today(t).isoformat()
+    rows = oura_days(BASE_DAYS + 1, t)
+    row = next((r for r in rows if r["day"] == d), None)
+    out = {"day": d, "level": None, "signals": [], "data": row}
+    if not row or (row["readiness"] is None and row["sleep_sec"] is None):
+        return out
+    past = [r for r in rows if r["day"] != d]
+    sig = []
+
+    def add(key, value, state, base=None):
+        if state:
+            sig.append({"key": key, "value": value, "state": state,
+                        **({"base": round(base, 1)} if base is not None else {})})
+
+    add("readiness", row["readiness"], _grade(row["readiness"], 70, 60))
+    add("sleep", row["sleep_sec"], _grade(row["sleep_sec"], 6 * 3600, 5 * 3600))
+    add("temp", row["temp_dev"], _grade(row["temp_dev"], 0.5, 1.0, below=False))
+    hrv, rhr = _base(past, "hrv"), _base(past, "rhr")
+    if hrv and row["hrv"] is not None:
+        # Разброс не меньше двадцатой части нормы: у ровного человека сигма мала, и любой чих был бы тревогой.
+        sd = max(hrv[1], hrv[0] * 0.05)
+        add("hrv", row["hrv"], _grade(row["hrv"], hrv[0] - sd, hrv[0] - 2 * sd), hrv[0])
+    if rhr and row["rhr"] is not None:
+        sd = max(rhr[1], 2)
+        add("rhr", row["rhr"], _grade(row["rhr"], rhr[0] + sd, rhr[0] + 2 * sd, below=False), rhr[0])
+    state = {s["key"]: s["state"] for s in sig}
+    score = sum({"warn": 1, "bad": 2}.get(s["state"], 0) for s in sig)
+    if score >= 4 or state.get("temp") == "bad" or (row["readiness"] or 100) < 50:
+        level = "rest"
+    elif score >= 2:
+        level = "easy"
+    else:
+        level = "go"
+    return {**out, "level": level, "signals": sig}
+
+
 # ── Сводка ──
 
 def overview(t: int | None = None) -> dict:
@@ -775,13 +930,16 @@ def overview(t: int | None = None) -> dict:
     act = active()
     nxt = next_day()
     weights = body(1)
+    rec = recovery(t)
     return {
         "day": d,
         "program": {"id": p["id"], "name": p["name"], "goal": p["goal"],
                     "days": [{"id": x["id"], "name": x["name"], "kind": x["kind"]}
                              for x in p["days"]]} if p else None,
         "active": act,
-        "next": plan_for(nxt["id"], exclude=act["id"] if act else None) if nxt else None,
+        "next": plan_for(nxt["id"], exclude=act["id"] if act else None,
+                         easy=rec["level"] in ("easy", "rest")) if nxt else None,
+        "recovery": rec,
         "today": [s for s in sessions(since=d, until=d) if s["ended"]],
         "week": week(t),
         "body": weights[0] if weights else None,

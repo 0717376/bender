@@ -174,7 +174,8 @@ _BASE_PROMPT = (
     "бассейн; занимается он по приложению. Что на очереди и что сделано — {t[fit.today]}; "
     "записать тренировку со слов («жим 80 на 5, три подхода», «пробежал 5 км за полчаса») — "
     "{t[fit.log_session]}; составить или поправить программу — {t[fit.get_program]} и "
-    "{t[fit.set_program]}; как идёт прогресс — {t[fit.progress]} и {t[fit.history]}. "
+    "{t[fit.set_program]}; как идёт прогресс — {t[fit.progress]} и {t[fit.history]}; "
+    "сон, готовность и пульс с кольца Oura — {t[fit.recovery]}. "
     "Веса и повторы на сегодня считает само приложение — не придумывай их.\n"
     "Прошлые разговоры: полный журнал всех сессий (веб и Telegram) доступен через "
     "{t[sessions.session_search]}. Если пользователь ссылается на прошлый разговор или "
@@ -267,6 +268,10 @@ def system_prompt_for(surface: str, engine: str = "") -> str:
 
 # --- Telegram ---
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+# Кольцо Oura для тренировок: ключи приложения из кабинета developer.ouraring.com.
+# Пусто — раздел про кольцо в приложении скрыт.
+OURA_CLIENT_ID = os.environ.get("OURA_CLIENT_ID", "")
+OURA_CLIENT_SECRET = os.environ.get("OURA_CLIENT_SECRET", "")
 TELEGRAM_ALLOWED_IDS = {
     int(x) for x in os.environ.get("TELEGRAM_ALLOWED_IDS", "").replace(" ", "").split(",")
     if x.lstrip("-").isdigit()

@@ -95,6 +95,15 @@ cmd_doctor() {
     dim "Telegram не настроен"
   fi
 
+  if [ -n "${OURA_CLIENT_ID:-}" ]; then
+    local oura; oura=$(dc exec -T backend "$BACKEND_PY" -m app.fit_oura 2>/dev/null | tr -d '\r') || true
+    case "$oura" in
+      ok*) ok "кольцо Oura: ${oura#ok }" ;;
+      off) dim "кольцо Oura не подключено — настройки приложения тренировок" ;;
+      *)   bad "кольцо Oura: ${oura:-нет ответа} — подключите заново в настройках тренировок"; fails=$((fails + 1)) ;;
+    esac
+  fi
+
   if [ -n "${ASR_UPSTREAM:-}" ]; then
     # Без -f: ручка транскрипции на GET отвечает 405, и это тоже признак жизни. Проверяем,
     # что сервис вообще отзывается, а не что он согласен на GET — иначе доктор врёт.

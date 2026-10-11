@@ -161,6 +161,7 @@ settings → Change visibility), otherwise `docker compose pull` asks for a logi
 | `TG_API_BASE` | `https://api.telegram.org` | local bot-api server URL (see above) |
 | `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` | — | my.telegram.org keys for the `tgapi` service |
 | `FILES_MAX_UPLOAD` | `524288000` | web upload size limit, bytes |
+| `OURA_CLIENT_ID` / `OURA_CLIENT_SECRET` | — | Oura app keys (developer.ouraring.com) for the training app; redirect URI is `https://<training app address>/fit/oura/callback` |
 | `ASR_UPSTREAM` | — | speech-to-text service URL for voice messages |
 | `ASR_MODEL` | `gigaam-rnnt` | model_id passed to the ASR service |
 | `SESSION_FRESH_HOURS` | `6` | idle time after which a fresh session starts |

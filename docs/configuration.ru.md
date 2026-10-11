@@ -158,6 +158,7 @@ settings → Change visibility), иначе `docker compose pull` попроси
 | `TELEGRAM_ALLOWED_IDS` | — | список chat id через запятую; пусто — привязка по коду |
 | `TG_API_BASE` | `https://api.telegram.org` | адрес локального bot-api (см. выше) |
 | `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` | — | ключи my.telegram.org для сервиса `tgapi` |
+| `OURA_CLIENT_ID` / `OURA_CLIENT_SECRET` | — | ключи приложения Oura (developer.ouraring.com) для тренировок; адрес возврата — `https://<адрес тренировок>/fit/oura/callback` |
 | `FILES_MAX_UPLOAD` | `524288000` | предел загрузки через веб, байты |
 | `ASR_UPSTREAM` | — | адрес сервиса распознавания речи для голосовых |
 | `ASR_MODEL` | `gigaam-rnnt` | model_id, который передаётся сервису распознавания |

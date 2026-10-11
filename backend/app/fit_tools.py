@@ -76,7 +76,36 @@ def today() -> dict:
             "done_today": [brief(s) for s in o["today"]],
             "week": {"sessions": w["sessions"], "minutes": w["minutes"], "by_kind": w["by_kind"],
                      "sets_by_muscle": w["sets"]},
+            "recovery": recovery_brief(o["recovery"]),
             "body": o["body"], "profile": o["profile"]}
+
+
+def _night(r: dict) -> dict:
+    """Сутки кольца для агента: часы вместо секунд, без пустых полей."""
+    out = {k: r[k] for k in ("day", "readiness", "sleep_score", "activity", "hrv", "rhr", "temp_dev",
+                             "efficiency", "steps", "active_cal", "resilience", "spo2", "vo2max")
+           if r.get(k) is not None}
+    for k, name in (("sleep_sec", "sleep_h"), ("deep_sec", "deep_h"), ("rem_sec", "rem_h"),
+                    ("stress_sec", "stress_h"), ("recovery_sec", "recovery_h")):
+        if r.get(k) is not None:
+            out[name] = round(r[k] / 3600, 1)
+    return out
+
+
+def recovery_brief(rec: dict) -> dict | None:
+    """Совет на день по кольцу: go — по плану, easy — облегчить, rest — перенести."""
+    if not rec["level"]:
+        return None
+    return {"level": rec["level"], "today": _night(rec["data"]),
+            "signals": [s for s in rec["signals"] if s["state"] != "ok"]}
+
+
+def recovery(days: int = 14) -> dict:
+    rec = store.recovery()
+    rows = store.oura_days(max(1, min(120, days)))
+    if not rows:
+        return {"error": "данных кольца нет: Oura не подключена или ещё не синхронизировалась"}
+    return {"today": recovery_brief(rec), "days": [_night(r) for r in rows]}
 
 
 def history(days: int = 30, kind: str = "", limit: int = 30) -> list[dict]:
@@ -236,6 +265,19 @@ async def progress(args):
 
 
 @tool(
+    "recovery",
+    "Сон и восстановление с кольца Oura по дням: готовность, оценка сна, часы сна (всего, "
+    "глубокий, REM), вариабельность пульса (hrv), пульс покоя (rhr), отклонение температуры, "
+    "шаги, стресс. today — совет на сегодня по правилам приложения: go (по плану), easy "
+    "(облегчить), rest (перенести) и сигналы, из-за которых так. days — сколько дней, "
+    "по умолчанию 14.",
+    {"type": "object", "properties": {"days": {"type": "integer"}}},
+)
+async def recovery_tool(args):
+    return _text(recovery(args.get("days") or 14))
+
+
+@tool(
     "delete_session",
     "Удалить тренировку по id — если записал с ошибкой и проще записать заново.",
     {"type": "object", "properties": {"id": {"type": "integer"}}, "required": ["id"]},
@@ -268,7 +310,7 @@ async def update_profile(args):
 
 
 TOOLS = [today_tool, get_program, set_program, list_exercises, add_exercise, log_session,
-         history_tool, progress, delete_session, log_body, update_profile]
+         history_tool, progress, recovery_tool, delete_session, log_body, update_profile]
 
 TOOL_NAMES = [f"mcp__fit__{t.name}" for t in TOOLS]
 
