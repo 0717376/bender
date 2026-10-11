@@ -101,3 +101,14 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+  frontend-fit:
+    image: ghcr.io/0717376/bender-fit:${BENDER_TAG:-local}
+    build:
+      context: .
+      dockerfile: frontend-fit/Dockerfile
+    ports:
+      - "${FIT_PORT:-8877}:80"
+    depends_on:
+      - backend
+    restart: unless-stopped

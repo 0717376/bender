@@ -51,6 +51,7 @@ class SessionIn(BaseModel):
     duration: int | None = None
     distance: float | None = None
     calories: float | None = None
+    program_day_id: int | None = None     # засчитать тренировку как день программы
 
 
 class FinishIn(BaseModel):
@@ -224,8 +225,8 @@ async def plan(day_id: int, exclude: int | None = None, easy: bool = False):
 # ── Упражнения ──
 
 @router.get("/exercises")
-async def exercises(q: str = "", muscle: str = "", archived: bool = False):
-    return store.exercises(q, muscle, archived)
+async def exercises(q: str = "", muscle: str = "", archived: bool = False, used: bool = False):
+    return store.used_exercises() if used else store.exercises(q, muscle, archived)
 
 
 @router.post("/exercises")

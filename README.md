@@ -13,6 +13,7 @@ A self-hosted personal AI agent: a markdown wiki, a Things-style task manager, a
 - **Files** — a personal file storage: plain folders on disk, browsable from the wiki UI (upload, preview, drag-and-drop). Send a document to the Telegram bot — it lands in the inbox folder, gets a human name, and the agent files it into the right folder; ask for a file and the bot sends it back. Wiki pages link to files with `[name](<storage:Folder/file.pdf>)`. Deletes go to a trash folder, not oblivion.
 - **Reader** — epub and pdf right in the browser: a shelf with covers and progress, highlights by colour (colour = meaning: important, question, disagree, send to wiki), bookmarks, reading stats and a day streak. The agent sits next to the text and reads the actual book: ask "what is this chapter about" or "translate this paragraph" and it answers from the book, not from the snippet you pasted. Each book keeps its own conversation thread, separate from the main one.
 - **Cards** — spaced repetition for anything: words (asked both ways, with pronunciation and an example), question–answer and cloze deletions. The scheduler is FSRS, the same one current Anki uses: each card has its own stability and difficulty, and a review arrives the day you would start forgetting it. Add with one line — "serendipity" or a whole fact — and the agent builds the card (meaning, transcription, example). It will also make a deck from a book chapter or a wiki page. In the reader a card is made from the conversation with the assistant: ask it to translate or explain the selection, read the answer, and send it to that book’s deck with one tap. A translation becomes a vocabulary card in the dictionary form, an explanation becomes a comprehension card. You can review in Telegram too: `/review` shows a card with rating buttons, and in the morning the bot tells you how many cards are waiting. Cards that keep slipping set themselves aside: rewrite them rather than drill them.
+- **Training** — a log for the gym, cardio and the pool, with a program the agent builds for "the most result for the least time". The program is a cycle of days, not a weekly schedule, so a skipped day breaks nothing. Today's weight and reps are computed from last time (reps grow first, then the weight), a set is logged with one tap, and nothing is lost without a connection — it is sent once the network is back. An Oura ring connects in settings: sleep, readiness, HRV and resting heart rate are compared with your own baseline, and on a poor-recovery day the app offers a lighter version. Ring workouts land in the log on their own. The agent sees both the log and the ring data: it logs a workout from your words, reviews progress and adjusts the program.
 - **Two UI languages** — English and Russian: the wiki follows the browser language, Tasks and the Reader also have a switch in settings. In the Reader the UI language sets the language of the analysis too: an English UI asks the assistant to translate into English, a Russian one into Russian.
 - **Assistant everywhere** — web chat in both UIs plus a Telegram bot sharing one session: whatever you discussed on the web, it remembers in Telegram. The reader keeps a thread per book, so working through a chapter doesn't crowd out the main conversation. Voice messages via ASR. Replies stream in Telegram through the native `sendMessageDraft`.
 - **Scheduling** — "remind me in 20 minutes", "send my tasks every weekday at 8:30": the agent creates cron jobs itself. Every run sees the outputs of previous runs (no repeating itself), stays quiet when there is nothing new (`[SILENT]`), and stops the job once the tracked event is over (`[FINAL]`).
@@ -44,11 +45,13 @@ backend/          FastAPI + the agent engine (single process)
   app/tasks_*.py    Things mechanics on SQLite (+SSE)
   app/books_*.py    epub library: parsing, highlights, the whole book for the agent
   app/cards_*.py    flashcards: FSRS, the daily queue, agent-filled notes (+SSE)
-  agent_skills/     the agent's domain skills (wiki/tasks/books/cards)
+  app/fit_*.py      training: log, program, progression, Oura ring (+SSE)
+  agent_skills/     the agent's domain skills (wiki/tasks/books/cards/fit)
 frontend-wiki/    React: three panes, markdown, chat
 frontend-tasks/   React: tasks, dnd-kit, themes & palettes, chat
 frontend-books/   epub reader: shelf, highlights, agent on the book (PWA, no framework)
 frontend-cards/   React: flashcards, review session, stats, chat (PWA)
+frontend-fit/     React: training, offline set logging, progress, chat (PWA)
 install.sh        setup wizard: questions, .env, images, verification
 bender            day-to-day: doctor / update / rollback / pair / login / token / logs
 ```
@@ -75,6 +78,7 @@ At the end it prints the addresses:
 - Wiki: http://localhost:8842
 - Books: http://localhost:8899 (you fill the shelf yourself — books live in `books/`, never in the repo)
 - Cards: http://localhost:8866
+- Training: http://localhost:8877
 
 Telegram binds by a six-digit code the installer prints: send it to your bot and the chat
 is paired — no config editing, no restart.

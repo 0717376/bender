@@ -290,6 +290,14 @@ def exercises(q: str = "", muscle: str = "", archived: bool = False) -> list[dic
     return out
 
 
+def used_exercises() -> list[dict]:
+    """Упражнения, по которым есть история, — последнее сделанное первым."""
+    return [_exercise(r) for r in _q(
+        "SELECT e.*, MAX(x.day) AS last_day FROM exercises e JOIN sets s ON s.exercise_id = e.id "
+        "JOIN sessions x ON x.id = s.session_id WHERE s.warm = 0 AND x.deleted = 0 "
+        "GROUP BY e.id ORDER BY last_day DESC, e.name")]
+
+
 def exercise(ex_id: int) -> dict | None:
     r = _q("SELECT * FROM exercises WHERE id = ?", (ex_id,))
     return _exercise(r[0]) if r else None
@@ -518,7 +526,7 @@ def e1rm(weight: float, reps: int) -> float:
 
 def _sets(session_id: int) -> list[dict]:
     return [{**dict(r), "warm": bool(r["warm"])} for r in _q(
-        "SELECT s.id, s.exercise_id, s.pos, s.weight, s.reps, s.rir, s.warm, s.ts, "
+        "SELECT s.id, s.uid, s.exercise_id, s.pos, s.weight, s.reps, s.rir, s.warm, s.ts, "
         "e.name, e.name_en, e.muscle, e.kind FROM sets s JOIN exercises e ON e.id = s.exercise_id "
         "WHERE s.session_id = ? ORDER BY s.pos, s.id", (session_id,))]
 
@@ -632,7 +640,9 @@ def update_session(session_id: int, **patch) -> dict | None:
         return None
     f = {k: v for k, v in patch.items() if v is not None and k in
          ("title", "note", "feel", "kind", "day", "duration", "distance", "calories",
-          "avg_hr", "max_hr", "started", "ended")}
+          "avg_hr", "max_hr", "started", "ended", "program_day_id")}
+    if "program_day_id" in f and not _q("SELECT 1 FROM program_days WHERE id = ?", (f["program_day_id"],)):
+        raise ValueError("нет такого дня программы")
     if "feel" in f:
         f["feel"] = max(1, min(5, int(f["feel"])))
     if "kind" in f and f["kind"] not in KINDS:
