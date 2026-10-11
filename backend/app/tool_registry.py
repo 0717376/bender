@@ -7,7 +7,7 @@ Codex — тем же набором, но по HTTP (см. mcp_internal.py). Р
 — это тихо разная функциональность у одного продукта.
 """
 
-from . import (books_tools, cards_tools, config, cron_tools, memory_tools, session_tools, skill_tools,
+from . import (books_tools, cards_tools, config, cron_tools, fit_tools, memory_tools, session_tools, skill_tools,
                tasks_tools, telegram_tools)
 
 # Имя группы = имя MCP-сервера у Claude и префикс имени инструмента у Codex.
@@ -18,6 +18,7 @@ GROUPS = {
     "tg": telegram_tools,
     "books": books_tools,
     "cards": cards_tools,
+    "fit": fit_tools,
     "cron": cron_tools,
     "memory": memory_tools,
 }

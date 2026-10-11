@@ -7,8 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from starlette.routing import Route
 
-from . import (books_store, cards_enrich, cards_store, config, cron_store, engines, mcp_internal, mcp_server, pairing,
-               seed, session_log, skill_store, tasks_store)
+from . import (books_store, cards_enrich, cards_store, config, cron_store, engines, fit_store, mcp_internal, mcp_server,
+               pairing, seed, session_log, skill_store, tasks_store)
 from .asr import router as asr_router
 from .auth import require_auth
 from .books_api import init as books_init
@@ -17,6 +17,8 @@ from .books_api import router as books_router
 from .cards_api import events_router as cards_events_router
 from .cards_api import router as cards_router
 from .chat import router as chat_router
+from .fit_api import events_router as fit_events_router
+from .fit_api import router as fit_router
 from .files import normalize_pages
 from .files import router as files_router
 from .files_events import router as files_events_router
@@ -45,6 +47,7 @@ async def lifespan(_app: FastAPI):
     books_store.init()
     books_init()
     cards_store.init()
+    fit_store.init()
     seed.init()  # первый запуск: страница «Начало работы» и задачи-примеры
     # Движку может понадобиться разложить своё до первого хода (у Codex — файл с
     # запретами и ссылки на навыки). У Claude готовить нечего.
@@ -118,6 +121,8 @@ app.include_router(books_events_router)   # /books/events: SSE без auth-за�
 app.include_router(books_router)
 app.include_router(cards_events_router)   # /cards/events — так же, токен в query
 app.include_router(cards_router)
+app.include_router(fit_events_router)     # /fit/events — так же, токен в query
+app.include_router(fit_router)
 app.include_router(asr_router)
 app.include_router(tasks_events_router)  # before tasks_router so /tasks/events isn't shadowed by /tasks/{id}
 app.include_router(tasks_router)
