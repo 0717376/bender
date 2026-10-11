@@ -332,24 +332,12 @@ check('текст: книжная вёрстка — переносы, выкл�
   typo.lang === 'ru' && typo.hyph === 'auto' && typo.align === 'justify' && typo.lh > 1.4 && /serif|Georgia/i.test(typo.font),
   JSON.stringify(typo))
 
-// 3б. Выделение → в карточки
+// 3б. Карточки: запрос перехватываем здесь, кнопка — под ответом агента (ниже)
 let quick = null
 await ctx.route('**/cards/quick', r => {
   quick = { body: r.request().postDataJSON(), auth: r.request().headers().authorization }
   return r.fulfill({ status: 200, contentType: 'application/json', body: '{"id":1,"status":"draft"}' })
 })
-const toCard = await selectByDrag()
-await page.locator('#selColors .tb[aria-label="В карточки"]').click()
-await page.waitForFunction(() => /в карточки/i.test(document.querySelector('#toast')?.textContent || ''), null, { timeout: 5000 }).catch(() => {})
-check('карточки: выделение ушло с контекстом, книгой и якорем',
-  !!quick && quick.auth === 'Bearer T' && !!quick.body.text && quick.body.context.length > quick.body.text.length
-    && !!quick.body.book.id && !!quick.body.cfi && quick.body.ui === 'ru',
-  quick ? JSON.stringify({ ...quick.body, context: quick.body.context.length }).slice(0, 200) : 'запроса не было')
-check('карточки: панель убрана, читателю сказано',
-  await page.evaluate(() => !document.querySelector('#selbar').classList.contains('on')
-    && /Добавлено в карточки/.test(document.querySelector('#toast')?.textContent || '')),
-  JSON.stringify((toCard || '').slice(0, 30)))
-
 // 4. Выделение → агент
 const picked = await selectByDrag()
 check('выделение: панель показана', await page.locator('#selbar').evaluate(n => n.classList.contains('on')),
@@ -390,6 +378,18 @@ check('агент: стриминг не утаскивает вниз — чи�
   flow.over > 40 && Math.abs(flow.scroll - flow.want) < 30, JSON.stringify(flow))
 await page.screenshot({ path: shot('sheet') })
 
+// 4б. В карточки — после ответа: над выделением кнопки нет, под ответом есть.
+check('карточки: над выделением кнопки больше нет', await page.locator('#selColors .tb[aria-label="В карточки"]').count() === 0)
+await page.locator('#sheetChips .chip', { hasText: 'В карточки' }).click()
+await page.waitForFunction(() => /в карточки/i.test(document.querySelector('#toast')?.textContent || ''), null, { timeout: 5000 }).catch(() => {})
+check('карточки: ушли выделение, контекст, книга, якорь, просьба и ответ агента',
+  !!quick && quick.auth === 'Bearer T' && !!quick.body.text && quick.body.context.length > quick.body.text.length
+    && !!quick.body.book.id && !!quick.body.cfi && quick.body.ui === 'ru'
+    && quick.body.mode === 'explain' && /сложност/i.test(quick.body.answer),
+  quick ? JSON.stringify({ ...quick.body, context: quick.body.context.length, answer: quick.body.answer.length }).slice(0, 220) : 'запроса не было')
+check('карточки: второй раз ту же не отправить',
+  await page.locator('#sheetChips .chip', { hasText: 'В карточках' }).isDisabled()
+    && /Добавлено в карточки/.test(await page.locator('#toast').textContent()))
 // 5. Сохранение в выписки
 await page.locator('#sheetChips .chip', { hasText: 'В выписки' }).click()
 await page.waitForTimeout(300)
