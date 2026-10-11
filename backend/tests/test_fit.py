@@ -226,6 +226,23 @@ def test_cardio_log(store):
         store.log_session({"kind": "cardio", "day": "вчера"}, t=at(5))
 
 
+def test_ring_cardio_can_be_counted_as_program_day(store):
+    store.set_program(PROGRAM)
+    done(store, 5, [("Жим лёжа", 80, 8)], "А")
+    run = done(store, 6, [], kind="cardio", minutes=30)
+    cardio = store.program()["days"][1]["id"]
+    assert store.update_session(run["id"], program_day_id=cardio)["day_name"] == "Кардио"
+    assert store.next_day()["name"] == "Б"
+    with pytest.raises(ValueError):
+        store.update_session(run["id"], program_day_id=999)
+
+
+def test_used_exercises_latest_first(store):
+    done(store, 5, [("Жим лёжа", 80, 8)])
+    done(store, 7, [("Планка", 0, 60)])
+    assert [e["name"] for e in store.used_exercises()] == ["Планка", "Жим лёжа"]
+
+
 def test_deleted_session_leaves_history(store):
     store.set_program(PROGRAM)
     s = done(store, 5, [("Жим лёжа", 80, 8)], "А")
