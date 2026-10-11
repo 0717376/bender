@@ -252,6 +252,20 @@ export function clearSel() {
   hideSelbar();
 }
 
+/* Страховка к правилам в style.css: если браузер всё же выделил что-то в самой странице
+   (не в книге) — снимаем. Шторку и поля не трогаем: там выделяют и копируют намеренно. */
+export function wireNativeSelection() {
+  document.addEventListener('selectionchange', () => {
+    if (!document.documentElement.classList.contains('reading')) return;
+    const s = window.getSelection();
+    if (!s || s.isCollapsed || !s.rangeCount) return;
+    const at = s.anchorNode && (s.anchorNode.nodeType === 1 ? s.anchorNode : s.anchorNode.parentElement);
+    const el = document.activeElement;
+    if ((at && at.closest('#sheetBody, #sheetQuote')) || (el && /^(INPUT|TEXTAREA)$/.test(el.tagName))) return;
+    s.removeAllRanges();
+  });
+}
+
 /** Запасной путь: если браузер всё же сам что-то выделил. */
 export async function onSelected() {
   if (sel.on) return;

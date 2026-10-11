@@ -9,7 +9,7 @@ import '@fontsource/manrope/latin-700.css'
 import '@fontsource/manrope/cyrillic-700.css'
 import './style.css'
 import { paint } from './highlights.js'
-import { caretAt, commitSel, sel, wordAt } from './selection.js'
+import { caretAt, commitSel, sel, wireNativeSelection, wordAt } from './selection.js'
 import { auth, showAuth } from './auth.js'
 import { $, state } from './core.js'
 import { wireGestures } from './gestures.js'
@@ -40,6 +40,7 @@ function wireUI() {
   $('#drawerClose').onclick = closeDrawer;
   $('#sheetClose').onclick = closeSheet;
   wireScrim();
+  wireNativeSelection();
   wireSheetKeyboard();
   wireGestures();
   $('#sheetSend').onclick = () => {

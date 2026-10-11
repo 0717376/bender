@@ -225,7 +225,13 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 /* Читалка целиком невыделяемая: в epub текст живёт в iframe и до окна не достаёт, а в pdf
    он лежит тут же — и своё выделение браузер вёл бы поверх нашего, прихватывая полосы и
    подписи. Шторка агента снаружи #reader: его ответ по-прежнему можно выделить и скопировать. */
-#reader { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+/* Пока читаем, браузер не выделяет ничего и нигде: выделение у нас своё. Одной книги мало —
+   панель над выделением встаёт прямо под палец, который ещё держит долгое нажатие, и iOS
+   начинает своё выделение уже с неё и тянет его до низа страницы. Текст ответа агента и
+   поля ввода остаются выделяемыми: их копируют и правят. */
+html.reading body, #reader, #selbar, #selLayer { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+html.reading #sheetBody, html.reading #sheetQuote, html.reading input, html.reading textarea {
+  -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
 
 /* ── PDF ──
    Страница — три слоя в общей обёртке: канвас, метки выписок и прозрачный текст поверх.

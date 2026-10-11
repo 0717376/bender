@@ -374,6 +374,20 @@ check('удержание: потянули — слово целиком плю
   !!hold && !!hold.pulled && hold.pulled.startsWith(hold.want + ' ') && hold.pulled.length < 60, JSON.stringify(hold && hold.pulled))
 await page.evaluate(() => { document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); state.pending = null })
 
+// 3а++. Браузер не должен выделять ничего в самой странице, пока читаем: на айпаде его
+// выделение начиналось с панели над словом и накрывало всё до низа экрана.
+const native = await page.evaluate(async () => {
+  const us = s => getComputedStyle(document.querySelector(s)).webkitUserSelect || getComputedStyle(document.querySelector(s)).userSelect
+  const r = document.createRange()
+  r.setStart(document.querySelector('#selbar'), 0); r.setEnd(document.querySelector('#botbar'), document.querySelector('#botbar').childNodes.length)
+  const s = getSelection(); s.removeAllRanges(); s.addRange(r)
+  await new Promise(res => setTimeout(res, 120))
+  return { selbar: us('#selbar'), bot: us('#botbar'), body: us('body'), sheet: us('#sheetBody'), left: getSelection().toString().length }
+})
+check('выделение: браузер не выделяет панель и полосы, ответ агента — можно',
+  native.selbar === 'none' && native.bot === 'none' && native.body === 'none' && native.sheet === 'text' && native.left === 0,
+  JSON.stringify(native))
+
 // 3б. Карточки: запрос перехватываем здесь, кнопка — под ответом агента (ниже)
 let quick = null
 await ctx.route('**/cards/quick', r => {
