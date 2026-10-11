@@ -163,6 +163,7 @@ export interface Settings {
   notify: boolean;
   notify_hour: number;
   oura_min_minutes: number;
+  weekly: boolean;
   profile: Record<string, string | number>;
 }
 
