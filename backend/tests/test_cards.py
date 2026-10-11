@@ -447,3 +447,58 @@ def test_forecast_counts_tomorrows_reverse_card(store):
     assert store.counts(None, t)["total"] == 0
     fc = store.forecast(3, t)
     assert fc[0]["n"] == 0 and (fc[1]["n"], fc[1]["new"]) == (1, 1)
+
+
+def test_card_from_reader_follows_the_request_and_goes_to_the_books_deck(store, monkeypatch):
+    """Вид карточки задаёт просьба читателя, а не язык и длина выделения; колода — книга."""
+    from app import agent, cards_enrich
+
+    prompts = []
+
+    async def fake(prompt, surface="telegram"):
+        prompts.append(prompt)
+        return '{"kind": "basic", "fields": {"front": "Что такое deep module?", "back": "Простой интерфейс, много работы внутри."}}'
+
+    monkeypatch.setattr(agent, "run_cron", fake)
+
+    async def go():
+        n = cards_enrich.quick("deep module", "A deep module hides complexity.",
+                               {"id": "b1", "title": "1984"}, mode="explain",
+                               answer="Глубокий модуль — простой интерфейс и большая реализация.")
+        assert n["kind"] == "basic"
+        await asyncio.gather(*cards_enrich._tasks)
+        return n["id"]
+
+    n = store.note(asyncio.run(go()))
+    assert n["kind"] == "basic" and n["status"] == "ready"
+    assert store.deck(n["deck_id"])["name"] == "1984"
+    assert len(prompts) == 1 and "не словарная" in prompts[0] and "Глубокий модуль" in prompts[0]
+    assert '"lemma"' not in prompts[0] and '"ipa"' not in prompts[0]
+
+
+def test_flawed_card_gets_one_corrective_pass(store, monkeypatch):
+    from app import agent, cards_enrich
+
+    bad = ('{"kind": "word", "fields": {"word": "hush", "form": "hushes", "meaning": "шикать", '
+           '"ipa": "hʌʃ", "example": "She hushes everybody in the room."}}')
+    good = ('{"kind": "word", "fields": {"word": "hush", "form": "hushes", "meaning": "шикать", '
+            '"ipa": "/hʌʃ/", "example": "Libby hushes you."}}')
+    prompts, replies = [], iter([bad, good])
+
+    async def fake(prompt, surface="telegram"):
+        prompts.append(prompt)
+        return next(replies)
+
+    monkeypatch.setattr(agent, "run_cron", fake)
+
+    async def go():
+        n = cards_enrich.quick("hushes", "From across the room, Libby hushes you. Then silence.",
+                               {"id": "b1", "title": "Book Lovers"}, mode="translate", answer="шикает")
+        await asyncio.gather(*cards_enrich._tasks)
+        return n["id"]
+
+    n = store.note(asyncio.run(go()))
+    assert len(prompts) == 2 and "Замечания" in prompts[1] and "косых чертах" in prompts[1]
+    assert "без правок" in prompts[1]
+    assert n["fields"]["example"] == "Libby hushes you." and n["fields"]["ipa"] == "/hʌʃ/"
+    assert store.deck(n["deck_id"])["name"] == "Book Lovers"

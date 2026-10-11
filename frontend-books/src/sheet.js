@@ -1,12 +1,13 @@
 import { agent } from './agent.js'
 import { auth, showAuth } from './auth.js'
 import { $, COLORS, colorName, el, escapeHtml, state, toast } from './core.js'
-import { PROMPT, t } from './i18n.js'
+import { PROMPT, lang, t } from './i18n.js'
 import { closeDrawer } from './drawers.js'
 import { ACTS, drawHighlight, eraseHighlight, hideSelbar, save, touch } from './highlights.js'
 import { relayoutNow, windowSig } from './reader.js'
 import { sel } from './selection.js'
 import { live } from './sync.js'
+import { addCard } from './library.js'
 
 /* ── Шторка агента ── */
 
@@ -177,6 +178,7 @@ export async function askAgent(kind, question) {
   if (!auth.token) return showAuth(t('signInToAsk'));
   state.active = h;
   if (!h.thread) h.thread = [];
+  h.asked = kind;          // о чём просили — по этому потом собирается карточка
   sheet.kind = kind;
   hideSelbar();
   sheetHead(kind, h);
@@ -320,6 +322,30 @@ export function chips(list, withActions) {
     };
     box.appendChild(keep);
   }
+  // В карточки — после ответа: сначала понять, потом запоминать. Просьба (перевести или
+  // объяснить) задаёт вид карточки, а сам разговор уезжает следом — карточка строится по нему.
+  const said = (h.thread || []).some(m => m.role === 'ai');
+  if (said) {
+    const card = el('button', 'chip strong', '<svg class="icon"><use href="#i-cards"/></svg>'
+      + escapeHtml(t(h.carded ? 'inCards' : 'toCards')));
+    card.disabled = !!h.carded;
+    card.onclick = async () => {
+      card.disabled = true;
+      try {
+        const context = await contextAround(h.cfi).catch(() => '');
+        const answer = h.thread.map(m => (m.role === 'me' ? PROMPT.me : PROMPT.you) + m.text).join('\n\n');
+        await addCard({ text: h.text, context, book: bookInfo(), cfi: h.cfi, ui: lang, mode: h.asked || 'explain', answer });
+        h.carded = true;
+        if (live().find(x => x.id === h.id)) { touch(h); save(); }
+        toast(t('cardAdded'));
+        chips(list, true);
+      } catch {
+        card.disabled = false;
+        toast(t('cardFailed'));
+      }
+    };
+    box.appendChild(card);
+  }
   const wiki = el('button', 'chip strong', '<svg class="icon"><use href="#i-wiki"/></svg>' + escapeHtml(t('toWiki')));
   wiki.onclick = () => {
     if (!live().find(x => x.id === h.id)) { h.color = h.color || 'wiki'; state.hl.push(h); drawHighlight(h); save(); }
@@ -443,6 +469,30 @@ export function openHighlight(h) {
     c.onclick = () => askAgent(a.kind);
     box.appendChild(c);
   });
+  // В карточки — после ответа: сначала понять, потом запоминать. Просьба (перевести или
+  // объяснить) задаёт вид карточки, а сам разговор уезжает следом — карточка строится по нему.
+  const said = (h.thread || []).some(m => m.role === 'ai');
+  if (said) {
+    const card = el('button', 'chip strong', '<svg class="icon"><use href="#i-cards"/></svg>'
+      + escapeHtml(t(h.carded ? 'inCards' : 'toCards')));
+    card.disabled = !!h.carded;
+    card.onclick = async () => {
+      card.disabled = true;
+      try {
+        const context = await contextAround(h.cfi).catch(() => '');
+        const answer = h.thread.map(m => (m.role === 'me' ? PROMPT.me : PROMPT.you) + m.text).join('\n\n');
+        await addCard({ text: h.text, context, book: bookInfo(), cfi: h.cfi, ui: lang, mode: h.asked || 'explain', answer });
+        h.carded = true;
+        if (live().find(x => x.id === h.id)) { touch(h); save(); }
+        toast(t('cardAdded'));
+        chips(list, true);
+      } catch {
+        card.disabled = false;
+        toast(t('cardFailed'));
+      }
+    };
+    box.appendChild(card);
+  }
   const wiki = el('button', 'chip strong', '<svg class="icon"><use href="#i-wiki"/></svg>' + escapeHtml(t('toWiki')));
   wiki.onclick = () => {
     sheet.kind = 'wiki'; $('#sheetTitle').textContent = TITLES.wiki;

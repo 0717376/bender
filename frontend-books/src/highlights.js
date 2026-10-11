@@ -1,8 +1,7 @@
 import { $, COLORS, colorName, colorOf, el, ls, state, toast } from './core.js'
-import { lang, t } from './i18n.js'
-import { addCard } from './library.js'
+import { t } from './i18n.js'
 import { clearSel, sel } from './selection.js'
-import { askAgent, bookInfo, contextAround } from './sheet.js'
+import { askAgent } from './sheet.js'
 import { live, markDirty, sync } from './sync.js'
 
 /* ── Панель над выделением ── */
@@ -35,12 +34,6 @@ export function showSelbar(rect) {
   };
   colors.appendChild(copy);
 
-  const card = el('button', 'tb');
-  card.innerHTML = '<svg class="icon"><use href="#i-cards"/></svg>';
-  card.title = t('toCards'); card.setAttribute('aria-label', t('toCards'));
-  card.onclick = () => toCards();
-  colors.appendChild(card);
-
   ACTS.forEach((a, i) => {
     const b = el('button', 'act' + (i === 0 ? ' primary' : ''));
     b.innerHTML = `<svg class="icon"><use href="#${a.icon}"/></svg>${t(a.key)}`;
@@ -64,22 +57,6 @@ export function showSelbar(rect) {
     bar.style.left = Math.max(8, Math.min(left, window.innerWidth - bw - 8)) + 'px';
     bar.style.visibility = '';
   });
-}
-
-/** Выделенное — в карточки одним тапом. Сервер отвечает сразу черновиком, а перевод,
-    транскрипцию и пример агент дописывает в фоне: ему для этого уезжает абзац вокруг. */
-export async function toCards() {
-  const h = state.pending;
-  if (!h || !h.text) return;
-  const book = bookInfo();          // до снятия выделения: глава берётся из него
-  clearSel();
-  try {
-    const context = await contextAround(h.cfi).catch(() => '');
-    await addCard({ text: h.text, context, book, cfi: h.cfi, ui: lang });
-    toast(t('cardAdded'));
-  } catch {
-    toast(t('cardFailed'));
-  }
 }
 
 export function hideSelbar() { $('#selbar').classList.remove('on'); }

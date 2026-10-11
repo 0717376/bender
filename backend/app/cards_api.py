@@ -52,6 +52,8 @@ class QuickIn(BaseModel):
     book: dict | None = None
     cfi: str = ""
     ui: str = "ru"
+    mode: str = ""       # о чём просили агента в читалке: translate | explain | ask
+    answer: str = ""     # что агент ответил — карточка строится по этому разговору
 
 
 def _bad(e: ValueError) -> HTTPException:
@@ -225,6 +227,6 @@ async def retry_note(note_id: int):
 async def quick(req: QuickIn):
     """Одна кнопка из читалки: черновик заводится сразу, поля дописывает агент в фоне."""
     try:
-        return enrich.quick(req.text, req.context, req.book, req.cfi, req.ui)
+        return enrich.quick(req.text, req.context, req.book, req.cfi, req.ui, req.mode, req.answer)
     except ValueError as e:
         raise _bad(e)
