@@ -18,7 +18,7 @@ from mcp.server.fastmcp.server import StreamableHTTPASGIApp
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.responses import JSONResponse
 
-from . import books_api, books_tools, cards_store, cards_tools, config, files, tasks_store
+from . import books_api, books_tools, cards_store, cards_tools, config, files, fit_store, fit_tools, tasks_store
 
 TOKEN_FILE = os.path.join(config.DATA_DIR, "mcp_token")
 
@@ -78,8 +78,8 @@ mcp = FastMCP(
     "bender",
     instructions=(
         "Личный агент пользователя: вики (база знаний из markdown-страниц), "
-        "задачи (менеджер дел в стиле Things), книги (читалка epub с выписками) и карточки "
-        "(интервальные повторения, как Anki). "
+        "задачи (менеджер дел в стиле Things), книги (читалка epub с выписками), карточки "
+        "(интервальные повторения, как Anki) и тренировки (дневник, программа, прогресс). "
         "Пути вики — относительные, например 'vault/machines/backups.md'. "
         "Даты — ISO YYYY-MM-DD.\n"
         "Вики иерархична: папка с index.md — это одна страница со своими детьми "
@@ -464,6 +464,51 @@ def cards_update(id: int, fields: dict | None = None, deck: str | None = None,
 def cards_delete(id: int) -> dict:
     """Удалить карточку по id заметки."""
     return {"ok": True} if cards_store.delete_note(id) else {"error": "карточка не найдена"}
+
+
+# ── Тренировки ──
+
+@mcp.tool()
+def fit_today() -> dict:
+    """Тренировки сегодня: какой день программы на очереди и с какими целями, что уже
+    сделано, итог недели, вес тела и профиль человека."""
+    return fit_tools.today()
+
+
+@mcp.tool()
+def fit_history(days: int = 30, kind: str = "") -> list[dict]:
+    """Прошлые тренировки, свежие первыми. kind: strength | cardio | swim | other."""
+    return fit_tools.history(days, kind)
+
+
+@mcp.tool()
+def fit_log(session: dict) -> dict:
+    """Записать сделанную тренировку. kind: strength | cardio | swim | other. Силовая —
+    sets: [{exercise (название), weight (кг), reps, rir?, warm?}] по записи на подход;
+    кардио и бассейн — minutes и distance_km. Ещё: day (ГГГГ-ММ-ДД), program_day,
+    feel (1…5), title, note."""
+    try:
+        return fit_tools.log(session)
+    except (ValueError, TypeError) as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def fit_progress(exercise: str) -> dict:
+    """Как менялось упражнение: лучший подход, расчётный максимум, объём по тренировкам."""
+    try:
+        return fit_tools.exercise_progress(exercise)
+    except ValueError as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def fit_body(weight: float, day: str | None = None) -> dict:
+    """Записать вес тела, кг."""
+    try:
+        return fit_store.log_body(weight, day)
+    except ValueError as e:
+        return {"error": str(e)}
 
 
 # ASGI-хендлер напрямую, минуя внутренний Starlette-роутер FastMCP — он
