@@ -5,7 +5,7 @@ import asyncio
 import logging
 from datetime import datetime
 
-from . import agent, cards_tg, clock, cron_outbox, cron_store, curator, fit_oura, session_log
+from . import agent, cards_tg, clock, cron_outbox, cron_store, curator, fit_oura, fit_tg, session_log
 from .telegram import notify
 
 logger = logging.getLogger("wiki.cron")
@@ -113,6 +113,8 @@ async def tick() -> None:
     await curator.maybe_run()  # idle-triggered skill-library consolidation
     await cards_tg.maybe_notify()  # раз в день: сколько карточек ждёт повторения
     await fit_oura.maybe_sync()    # кольцо: утром раз в полчаса, днём раз в два часа
+    await fit_tg.maybe_notify()    # раз в день: готовность и что на очереди
+    await fit_tg.maybe_review()    # раз в неделю: разбор от ассистента
 
 
 async def scheduler_loop() -> None:

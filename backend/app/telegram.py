@@ -21,6 +21,8 @@ TG_WELCOME = (
     "• Вики: отвечаю по твоим заметкам, создаю и правлю страницы\n"
     "• Задачи: создаю, переношу, подсказываю план на день\n"
     "• Карточки: завожу слова и факты, напоминаю повторить — повторять можно прямо здесь\n"
+    "• Тренировки: составляю программу, записываю сделанное со слов, по утрам присылаю "
+    "готовность по кольцу и план на день\n"
     "• Веб: ищу актуальную информацию в интернете\n"
     "• Файлы: храню документы — пришли файл, я его положу куда скажешь и найду по просьбе\n"
     "• Расписание: напоминания и регулярные сводки («каждый день в 9 пришли задачи»)\n"
@@ -31,6 +33,7 @@ TG_WELCOME = (
     "у читалки свой разговор на каждую книгу.\n\n"
     "**Команды**\n"
     "/review — повторить карточки\n"
+    "/fit — готовность и тренировка на очереди\n"
     "/new — новая сессия (история сохраняется в журнале)\n"
     "/status — сессия, память, навыки, задания\n"
     "/help — это сообщение"
@@ -261,10 +264,10 @@ def quoted_note(msg: dict) -> str:
 
 
 async def tg_fast(client: httpx.AsyncClient, update: dict) -> bool:
-    """Повторение карточек: кнопки под карточкой и команда /review. Модели в этой цепочке
-    нет, поэтому такие обновления обрабатываются сразу и не стоят в очереди за ходом
-    агента. Возвращает True, если обновление разобрано здесь."""
-    from . import cards_tg
+    """Повторение карточек (кнопки под карточкой и /review) и сводка тренировок (/fit).
+    Модели в этой цепочке нет, поэтому такие обновления обрабатываются сразу и не стоят
+    в очереди за ходом агента. Возвращает True, если обновление разобрано здесь."""
+    from . import cards_tg, fit_tg
 
     cq = update.get("callback_query")
     if cq:
@@ -276,11 +279,12 @@ async def tg_fast(client: httpx.AsyncClient, update: dict) -> bool:
         await cards_tg.on_callback(client, cq)
         return True
     msg = update.get("message") or {}
-    if (msg.get("text") or "").strip().split("@")[0] != "/review":
+    command = (msg.get("text") or "").strip().split("@")[0]
+    if command not in ("/review", "/fit"):
         return False
     if (msg.get("from") or {}).get("id") not in pairing.allowed_ids():
         return False    # чужому или непривязанному чату ответит общий разбор
-    await cards_tg.start(client, msg["chat"]["id"])
+    await (cards_tg if command == "/review" else fit_tg).start(client, msg["chat"]["id"])
     return True
 
 
@@ -469,6 +473,7 @@ async def notify(text: str) -> None:
 
 BOT_COMMANDS = [
     {"command": "review", "description": "Повторить карточки"},
+    {"command": "fit", "description": "Готовность и тренировка на очереди"},
     {"command": "status", "description": "Сессия, память, навыки, задания"},
     {"command": "new", "description": "Новая сессия (история остаётся в журнале)"},
     {"command": "help", "description": "Что умеет бот"},
