@@ -7,9 +7,11 @@
 import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
+from . import fit_oura as oura
 from . import fit_store as store
 from .auth import check_token, require_auth
 
@@ -18,6 +20,8 @@ router = APIRouter(prefix="/fit", tags=["fit"], dependencies=[Depends(require_au
 # Поток событий — отдельным роутером без зависимости: EventSource не умеет слать
 # заголовок Authorization, токен приезжает в query.
 events_router = APIRouter(prefix="/fit", tags=["fit"])
+
+_background: set[asyncio.Task] = set()
 
 
 class StartIn(BaseModel):
@@ -65,6 +69,10 @@ class ExerciseIn(BaseModel):
     step: float | None = None
     note: str | None = None
     archived: bool | None = None
+
+
+class ConnectIn(BaseModel):
+    origin: str      # адрес, с которого открыто приложение: на него Oura вернёт человека
 
 
 class BodyIn(BaseModel):
@@ -209,8 +217,8 @@ async def set_program(data: dict):
 
 
 @router.get("/program/days/{day_id}")
-async def plan(day_id: int, exclude: int | None = None):
-    return _found(store.plan_for(day_id, exclude), "Запись")
+async def plan(day_id: int, exclude: int | None = None, easy: bool = False):
+    return _found(store.plan_for(day_id, exclude, easy), "Запись")
 
 
 # ── Упражнения ──
@@ -270,3 +278,51 @@ async def log_body(req: BodyIn):
 async def delete_body(day: str):
     _found(store.delete_body(day), "Запись")
     return {"ok": True}
+
+
+# ── Кольцо ──
+
+@router.get("/oura")
+async def oura_status():
+    return oura.status()
+
+
+@router.post("/oura/connect")
+async def oura_connect(req: ConnectIn):
+    try:
+        return {"url": oura.connect_url(req.origin)}
+    except ValueError as e:
+        raise _bad(e)
+
+
+@events_router.get("/oura/callback")
+async def oura_callback(code: str = "", state: str = "", error: str = ""):
+    """Сюда Oura возвращает человека после согласия. Заголовка с токеном у браузера в этот
+    момент нет, поэтому ручка без авторизации: пропуском служит одноразовый state,
+    который мы сами выдали минуту назад."""
+    try:
+        if error or not code:
+            raise ValueError(error or "Oura не прислала код")
+        origin = await oura.finish_connect(code, state)
+    except (ValueError, oura.NeedLogin) as e:
+        raise HTTPException(400, str(e))
+    # История за три месяца — в фоне: человек уже вернулся в приложение и видит, как она едет.
+    _background.add(t := asyncio.create_task(oura.sync(oura.BACKFILL_DAYS)))
+    t.add_done_callback(_background.discard)
+    return RedirectResponse(origin + "/#/settings")
+
+
+@router.post("/oura/sync")
+async def oura_sync():
+    return await oura.sync()
+
+
+@router.delete("/oura")
+async def oura_disconnect():
+    oura.disconnect()
+    return oura.status()
+
+
+@router.get("/recovery")
+async def recovery(days: int = 30):
+    return {**store.recovery(), "days": store.oura_days(max(1, min(400, days)))}

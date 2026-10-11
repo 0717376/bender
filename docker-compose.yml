@@ -32,6 +32,9 @@ services:
       - TELEGRAM_ALLOWED_IDS=${TELEGRAM_ALLOWED_IDS:-}
       - TG_API_BASE=${TG_API_BASE:-https://api.telegram.org}
       - ASR_UPSTREAM=${ASR_UPSTREAM:-}
+      # Кольцо Oura для приложения тренировок: ключи из кабинета developer.ouraring.com.
+      - OURA_CLIENT_ID=${OURA_CLIENT_ID:-}
+      - OURA_CLIENT_SECRET=${OURA_CLIENT_SECRET:-}
       - ASR_MODEL=${ASR_MODEL:-gigaam-rnnt}
       - TZ=${TZ:-Europe/Moscow}
       - CURATOR_ENABLED=${CURATOR_ENABLED:-1}

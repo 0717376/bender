@@ -503,6 +503,13 @@ def fit_progress(exercise: str) -> dict:
 
 
 @mcp.tool()
+def fit_recovery(days: int = 14) -> dict:
+    """Сон и восстановление с кольца Oura по дням: готовность, сон, вариабельность пульса,
+    пульс покоя, температура — и совет на сегодня (go | easy | rest)."""
+    return fit_tools.recovery(days)
+
+
+@mcp.tool()
 def fit_body(weight: float, day: str | None = None) -> dict:
     """Записать вес тела, кг."""
     try:
