@@ -2,6 +2,9 @@ export type Kind = "strength" | "cardio" | "swim" | "other";
 export type Hint = "new" | "up" | "hold" | "down";
 export type Level = "go" | "easy" | "rest";
 
+/** Карточка техники: как найти снаряд, исходное положение, на что смотреть, частая ошибка. */
+export type Guide = Partial<Record<"find" | "setup" | "focus" | "avoid", string>>;
+
 export interface Exercise {
   id: number;
   name: string;
@@ -12,6 +15,9 @@ export interface Exercise {
   kind: "strength" | "time";
   step: number;
   archived: boolean;
+  image: string;
+  guide: Guide;
+  guide_en: Guide;
 }
 
 /** Строка дня программы; с целями на сегодня — когда пришла из плана. */

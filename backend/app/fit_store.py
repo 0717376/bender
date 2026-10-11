@@ -17,6 +17,7 @@ from datetime import date, datetime, timedelta
 from datetime import time as dtime
 
 from . import config
+from .fit_guides import GUIDES, KEYS as GUIDE_KEYS, slug
 from .fit_seed import EXERCISES
 
 _lock = threading.RLock()
@@ -55,7 +56,10 @@ CREATE TABLE IF NOT EXISTS exercises (
   step      REAL    NOT NULL DEFAULT 2.5,
   note      TEXT    NOT NULL DEFAULT '',
   archived  INTEGER NOT NULL DEFAULT 0,
-  created   INTEGER NOT NULL DEFAULT 0
+  created   INTEGER NOT NULL DEFAULT 0,
+  image     TEXT    NOT NULL DEFAULT '',
+  guide     TEXT    NOT NULL DEFAULT '{}',
+  guide_en  TEXT    NOT NULL DEFAULT '{}'
 );
 CREATE TABLE IF NOT EXISTS programs (
   id      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -171,12 +175,23 @@ def init() -> None:
     _conn.row_factory = sqlite3.Row
     _conn.execute("PRAGMA journal_mode=WAL")
     _conn.executescript(SCHEMA)
+    have = {r["name"] for r in _conn.execute("PRAGMA table_info(exercises)")}
+    for col, decl in (("image", "''"), ("guide", "'{}'"), ("guide_en", "'{}'")):
+        if col not in have:
+            _conn.execute(f"ALTER TABLE exercises ADD COLUMN {col} TEXT NOT NULL DEFAULT {decl}")
     if not _conn.execute("SELECT 1 FROM exercises LIMIT 1").fetchone():
         _conn.executemany(
             "INSERT INTO exercises(name, name_en, muscle, also, equipment, kind, step, created) "
             "VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
             [(n, en, m, json.dumps(also), eq, kind, step, now())
              for n, en, m, also, eq, kind, step in EXERCISES])
+    # Техника из коробки — только туда, где пусто: своё описание (ассистент записал, как
+    # тренажёр выглядит именно в этом зале) обновление не затирает.
+    _conn.executemany(
+        "UPDATE exercises SET image = ?, guide = ?, guide_en = ? "
+        "WHERE name_en = ? AND image = '' AND guide = '{}'",
+        [(slug(en), *(json.dumps(dict(zip(GUIDE_KEYS, g)), ensure_ascii=False) for g in pair), en)
+         for en, pair in GUIDES.items()])
     _conn.commit()
 
 
@@ -272,7 +287,8 @@ def set_meta(key: str, value) -> None:
 # ── Упражнения ──
 
 def _exercise(r) -> dict:
-    return {**dict(r), "also": json.loads(r["also"]), "archived": bool(r["archived"])}
+    return {**dict(r), "also": json.loads(r["also"]), "archived": bool(r["archived"]),
+            "guide": json.loads(r["guide"]), "guide_en": json.loads(r["guide_en"])}
 
 
 def exercises(q: str = "", muscle: str = "", archived: bool = False) -> list[dict]:
@@ -324,6 +340,14 @@ def _need_exercise(ref) -> dict:
     return e
 
 
+def _guide(g) -> str:
+    """Техника к хранению: только известные строки, без пустых."""
+    if not isinstance(g, dict) or any(k not in GUIDE_KEYS for k in g):
+        raise ValueError(f"guide — объект со строками: {', '.join(GUIDE_KEYS)}")
+    return json.dumps({k: str(g[k]).strip()[:500] for k in GUIDE_KEYS if str(g.get(k) or "").strip()},
+                      ensure_ascii=False)
+
+
 def _check_exercise(f: dict) -> None:
     if f.get("muscle") is not None and f["muscle"] not in MUSCLES:
         raise ValueError(f"muscle — одно из: {', '.join(MUSCLES)}")
@@ -337,7 +361,7 @@ def _check_exercise(f: dict) -> None:
 
 def create_exercise(name: str, muscle: str, also=None, equipment: str = "other",
                     kind: str = "strength", step: float | None = None, name_en: str = "",
-                    note: str = "") -> dict:
+                    note: str = "", guide: dict | None = None) -> dict:
     name = (name or "").strip()
     if not name:
         raise ValueError("у упражнения нет названия")
@@ -347,17 +371,18 @@ def create_exercise(name: str, muscle: str, also=None, equipment: str = "other",
     if step is None:
         step = 0 if kind == "time" else 2.5
     return exercise(_w(
-        "INSERT INTO exercises(name, name_en, muscle, also, equipment, kind, step, note, created) "
-        "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO exercises(name, name_en, muscle, also, equipment, kind, step, note, guide, created) "
+        "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (name, name_en.strip(), muscle, json.dumps(also or []), equipment, kind,
-         max(0.0, float(step)), note, now())))
+         max(0.0, float(step)), note, _guide(guide or {}), now())))
 
 
 def update_exercise(ex_id: int, **patch) -> dict | None:
     if not exercise(ex_id):
         return None
     f = {k: v for k, v in patch.items() if v is not None and k in
-         ("name", "name_en", "muscle", "also", "equipment", "kind", "step", "note", "archived")}
+         ("name", "name_en", "muscle", "also", "equipment", "kind", "step", "note", "archived",
+          "guide", "guide_en")}
     _check_exercise(f)
     if "name" in f:
         f["name"] = f["name"].strip()
@@ -368,6 +393,9 @@ def update_exercise(ex_id: int, **patch) -> dict | None:
         f["also"] = json.dumps(f["also"])
     if "archived" in f:
         f["archived"] = int(bool(f["archived"]))
+    for k in ("guide", "guide_en"):
+        if k in f:
+            f[k] = _guide(f[k])
     if f:
         _w(f"UPDATE exercises SET {', '.join(k + ' = ?' for k in f)} WHERE id = ?",
            (*f.values(), ex_id))

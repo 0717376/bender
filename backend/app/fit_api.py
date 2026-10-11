@@ -70,6 +70,8 @@ class ExerciseIn(BaseModel):
     step: float | None = None
     note: str | None = None
     archived: bool | None = None
+    guide: dict | None = None
+    guide_en: dict | None = None
 
 
 class ConnectIn(BaseModel):
@@ -241,7 +243,7 @@ async def create_exercise(req: ExerciseIn):
     try:
         return store.create_exercise(req.name or "", req.muscle or "", req.also,
                                      req.equipment or "other", req.kind or "strength",
-                                     req.step, req.name_en or "", req.note or "")
+                                     req.step, req.name_en or "", req.note or "", req.guide)
     except ValueError as e:
         raise _bad(e)
 

@@ -314,6 +314,25 @@ def test_exercises_are_seeded_once(store):
     assert all("biceps" in (e["muscle"], *e["also"]) for e in store.exercises(muscle="biceps"))
 
 
+def test_seed_comes_with_guides(store):
+    from app import fit_guides, fit_seed
+
+    assert {e[1] for e in fit_seed.EXERCISES} == set(fit_guides.GUIDES)
+    e = store.find_exercise("Тяга верхнего блока")
+    assert e["image"] == "lat-pulldown" and set(e["guide"]) == set(e["guide_en"]) == set(store.GUIDE_KEYS)
+    assert "Lat Pulldown" in e["guide"]["find"]
+
+
+def test_guides_reach_an_old_base_but_keep_edits(store):
+    mine = store.find_exercise("Жим ногами")
+    store.update_exercise(mine["id"], guide={"find": "У окна, красный"})
+    store._conn.execute("UPDATE exercises SET image = '', guide = '{}' WHERE name = 'Планка'")
+    store._conn.commit()
+    store.init()
+    assert store.find_exercise("Планка")["guide"]["setup"]
+    assert store.find_exercise("Жим ногами")["guide"] == {"find": "У окна, красный"}
+
+
 def test_custom_exercise(store):
     e = store.create_exercise("Тяга Т-грифа", "back", also=["biceps"], equipment="barbell")
     assert e["step"] == 2.5 and store.find_exercise("тяга т-грифа")["id"] == e["id"]
@@ -412,5 +431,13 @@ def test_tools_profile_body_exercises(store):
     assert "error" in call(tools.log_body, weight=2)
     assert call(tools.add_exercise, name="Тяга Т-грифа", muscle="back")["name"] == "Тяга Т-грифа"
     assert [e["name"] for e in call(tools.list_exercises, q="т-грифа")] == ["Тяга Т-грифа"]
+    assert call(tools.add_exercise, name="Тяга к поясу в Хаммере", muscle="back",
+                guide={"find": "Жёлтый, у зеркала", "avoid": " "})["guide"] == {"find": "Жёлтый, у зеркала"}
+    assert "error" in call(tools.add_exercise, name="Ещё одно", muscle="back", guide={"where": "там"})
+    assert call(tools.exercise_guide_tool, exercise="Планка")["guide"]["find"]
+    got = call(tools.exercise_guide_tool, exercise="Планка", guide={"find": "Коврики на втором этаже", "avoid": ""})
+    assert got["guide"]["find"] == "Коврики на втором этаже" and got["guide"]["setup"] and "avoid" not in got["guide"]
+    assert set(store.find_exercise("Планка")["guide_en"]) == {"setup", "focus"}
+    assert "error" in call(tools.exercise_guide_tool, exercise="Жим мизинцем")
     plank = call(tools.log_session, kind="strength", sets=[{"exercise": "Планка", "reps": 60}])
     assert plank["exercises"] == {"Планка": "60 с"}
