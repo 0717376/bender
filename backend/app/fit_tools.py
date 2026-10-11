@@ -180,6 +180,11 @@ async def set_program(args):
                                          "days": [d["name"] for d in p["days"]]})
 
 
+GUIDE_HELP = ("find — как выглядит снаряд и как его найти в зале, setup — исходное положение, "
+              "focus — на что обратить внимание, avoid — частая ошибка; по одной-две фразы.")
+GUIDE_SCHEMA = {"type": "object", "properties": {k: {"type": "string"} for k in store.GUIDE_KEYS}}
+
+
 @tool(
     "list_exercises",
     "Справочник упражнений. q — часть названия, muscle — группа мышц: " + ", ".join(store.MUSCLES) + ".",
@@ -195,20 +200,44 @@ async def list_exercises(args):
     "add_exercise",
     "Завести упражнение, которого нет в справочнике. muscle — главная группа, also — "
     "вспомогательные; equipment: " + ", ".join(store.EQUIPMENT) + "; kind: strength (вес и "
-    "повторы) или time (держим на время, в повторах секунды); step — шаг прибавки веса, кг.",
+    "повторы) или time (держим на время, в повторах секунды); step — шаг прибавки веса, кг. "
+    "guide — карточка техники, её человек открывает в зале: " + GUIDE_HELP,
     {"type": "object",
      "properties": {"name": {"type": "string"}, "name_en": {"type": "string"},
                     "muscle": {"type": "string", "enum": list(store.MUSCLES)},
                     "also": {"type": "array", "items": {"type": "string"}},
                     "equipment": {"type": "string", "enum": list(store.EQUIPMENT)},
                     "kind": {"type": "string", "enum": list(store.EX_KINDS)},
-                    "step": {"type": "number"}},
+                    "step": {"type": "number"}, "guide": GUIDE_SCHEMA},
      "required": ["name", "muscle"]},
 )
 async def add_exercise(args):
     return _text(_try(store.create_exercise, args["name"], args["muscle"], args.get("also"),
                       args.get("equipment", "other"), args.get("kind", "strength"),
-                      args.get("step"), args.get("name_en", "")))
+                      args.get("step"), args.get("name_en", ""), guide=args.get("guide")))
+
+
+def exercise_guide(exercise, guide: dict | None = None) -> dict:
+    e = store._need_exercise(exercise)
+    if guide:
+        # Правят по строке: «мой тренажёр стоит у окна» не должно стирать остальное.
+        # Перевод переписанной строки устарел — убираем: приложение покажет то, что записано.
+        e = store.update_exercise(
+            e["id"], guide={**e["guide"], **guide},
+            guide_en={k: v for k, v in e["guide_en"].items() if k not in guide})
+    return {"exercise": e["name"], "guide": e["guide"], "image": bool(e["image"])}
+
+
+@tool(
+    "exercise_guide",
+    "Карточка техники упражнения — то, что человек видит в приложении по нажатию на название. "
+    "Без guide — прочитать; с guide — записать указанные строки, остальные остаются: "
+    + GUIDE_HELP + " Пустая строка стирает свою.",
+    {"type": "object", "properties": {"exercise": {"type": "string"}, "guide": GUIDE_SCHEMA},
+     "required": ["exercise"]},
+)
+async def exercise_guide_tool(args):
+    return _text(_try(exercise_guide, args["exercise"], args.get("guide")))
 
 
 @tool(
@@ -309,8 +338,9 @@ async def update_profile(args):
     return _text(s if "error" in s else s["profile"])
 
 
-TOOLS = [today_tool, get_program, set_program, list_exercises, add_exercise, log_session,
-         history_tool, progress, recovery_tool, delete_session, log_body, update_profile]
+TOOLS = [today_tool, get_program, set_program, list_exercises, add_exercise, exercise_guide_tool,
+         log_session, history_tool, progress, recovery_tool, delete_session, log_body,
+         update_profile]
 
 TOOL_NAMES = [f"mcp__fit__{t.name}" for t in TOOLS]
 

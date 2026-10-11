@@ -3,6 +3,7 @@ import { HttpError } from "./api";
 import { parseRoute } from "./App";
 import { layout } from "./Chart";
 import { clock, dayLabel, hours, restText, sessionTitle, setText } from "./fmt";
+import { frame, guideText, pack } from "./guides";
 import { plural, pluralForm } from "./i18n";
 import {
   addItem, addSet, allDone, begin, bump, current, cursorOf, discard, editSet, endedAt, extra, finish, flush,
@@ -255,5 +256,20 @@ describe("график", () => {
     expect(flat.pts[0].y).toBeLessThan(130);
     const one = layout([{ day: "2026-01-01", y: 80 }], 170);
     expect(Number.isFinite(one.pts[0].x) && Number.isFinite(one.pts[0].y)).toBe(true);
+  });
+});
+
+describe("техника", () => {
+  const ex = { id: 7, image: "plank", guide: { find: "Коврики наверху", setup: "Локти под плечами" }, guide_en: { setup: "Elbows under shoulders" } };
+
+  it("в справочник идёт только то, что есть что показать", () => {
+    expect(Object.keys(pack([ex, { id: 8, image: "", guide: {}, guide_en: {} }]))).toEqual(["7"]);
+    expect(frame("plank", 1)).toBe("/ex/plank-1.webp");
+  });
+
+  it("строка без перевода показывается как записана", () => {
+    const info = pack([ex])[7];
+    expect(guideText(info, "ru")).toEqual(ex.guide);
+    expect(guideText(info, "en")).toEqual({ find: "Коврики наверху", setup: "Elbows under shoulders" });
   });
 });

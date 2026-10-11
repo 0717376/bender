@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Check, ChevronDown, CloudOff, Minus, Plus, Search, Trash2, Trophy, X } from "lucide-react";
 import { api } from "./api";
 import { clock, dayLabel, exName, kg, mins, num, restText, setText } from "./fmt";
+import GuideModal, { GuideThumb } from "./Guide";
 import { plural, t } from "./i18n";
 import type { Exercise, Record_ } from "./types";
 import {
@@ -85,6 +86,7 @@ function ExerciseCard({ w, item, open, today, onOpen, onChange }: {
   const [reps, setReps] = useState(start.reps);
   const [warm, setWarm] = useState(false);
   const [editing, setEditing] = useState<DoneSet | null>(null);
+  const [guide, setGuide] = useState(false);
   // После каждого подхода поля возвращаются к цели: вес — как только что, повторы — по плану.
   useEffect(() => { setWeight(start.weight); setReps(start.reps); setWarm(false); }, [mine.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -110,9 +112,13 @@ function ExerciseCard({ w, item, open, today, onOpen, onChange }: {
   return (
     <section className="ex open">
       <div className="ex-head">
-        <h3>{exName(item)}</h3>
-        <span className="ex-target">{target} · {t("rest_of", restText(item.rest))}</span>
+        <div>
+          <h3>{exName(item)}</h3>
+          <span className="ex-target">{target} · {t("rest_of", restText(item.rest))}</span>
+        </div>
+        <GuideThumb id={item.exercise_id} onOpen={() => setGuide(true)} />
       </div>
+      {guide && <GuideModal id={item.exercise_id} name={exName(item)} onClose={() => setGuide(false)} />}
       {item.last && item.last.length > 0 ? (
         <div className="ex-last">
           <span>{t("last_time")}{item.last_day ? ` (${dayLabel(item.last_day, today)})` : ""}: </span>

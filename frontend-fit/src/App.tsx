@@ -8,6 +8,7 @@ import Progress from "./Progress";
 import SettingsModal, { type ThemeMode } from "./SettingsModal";
 import Today from "./Today";
 import WorkoutScreen from "./Workout";
+import { refreshGuides, useBook, warm } from "./guides";
 import { t } from "./i18n";
 import type { OuraStatus, Overview, PlanDay } from "./types";
 import { adopt, begin, current, watchQueue, type Workout } from "./live";
@@ -104,6 +105,10 @@ function Shell() {
   }, []);
 
   useEffect(() => watchQueue(), []);
+  // Техника к упражнениям: справочник — при входе, кадры ближайшего дня — заранее, пока есть сеть.
+  const book = useBook();
+  useEffect(() => { void refreshGuides(); }, []);
+  useEffect(() => warm((o?.next?.items ?? []).map((i) => i.exercise_id)), [book, o?.next]);
 
   const [chatCollapsed, setChatCollapsed] = useState(() => {
     const s = localStorage.getItem("fit_chat");
