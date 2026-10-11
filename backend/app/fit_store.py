@@ -38,6 +38,7 @@ DELOAD = 0.9
 DEFAULTS = {
     "notify": True,          # присылать ли утреннюю сводку в Telegram
     "notify_hour": 8,        # не раньше этого часа (по часам сервера)
+    "weekly": True,          # воскресный разбор недели от ассистента
     "oura_min_minutes": 15,  # тренировки кольца короче этого не берём: дорога до метро — не кардио
     "profile": {},           # что ассистент знает о человеке: опыт, инвентарь, дни, ограничения
 }
@@ -240,7 +241,7 @@ def save_settings(patch: dict) -> dict:
     for k, v in patch.items():
         if k not in DEFAULTS:
             continue
-        if k == "notify":
+        if k in ("notify", "weekly"):
             v = bool(v)
         if k == "notify_hour":
             v = max(0, min(23, int(v)))

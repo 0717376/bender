@@ -112,7 +112,14 @@ async def fit_events(request: Request, token: str = ""):
 
 
 @router.get("/overview")
-async def overview():
+async def overview(request: Request):
+    # Запоминаем, по какому адресу открыто приложение: бот ставит на него кнопку под сводкой.
+    host = request.headers.get("host", "")
+    if host:
+        local = host.split(":")[0].replace(".", "").isdigit() or host.startswith("localhost")
+        url = ("http://" if local else "https://") + host
+        if store.meta("app_url") != url:
+            store.set_meta("app_url", url)
     return store.overview()
 
 
