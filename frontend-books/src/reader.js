@@ -4,7 +4,7 @@ import { $, ls, splash, state, toast, unsplash } from './core.js'
 import { t } from './i18n.js'
 import { closeDrawer } from './drawers.js'
 import { drawHighlight, hideSelbar, redrawHighlights, touch } from './highlights.js'
-import { caretAt, clearSel, onSelected, sel, wireSelection, wordAt } from './selection.js'
+import { caretAt, clearSel, near, onSelected, sel, wireSelection, wordAt } from './selection.js'
 import { closeSheet, openHighlight, sheet } from './sheet.js'
 import { buildShelf, hideMenu } from './shelf.js'
 import { bookBytes, coverUrl } from './library.js'
@@ -325,7 +325,7 @@ export function epubSurface(contents) {
   return {
     root: doc, doc,
     origin: () => doc.defaultView.frameElement.getBoundingClientRect(),
-    at: (x, y) => caretAt(doc, x, y),
+    at: (x, y) => near(caretAt(doc, x, y), x, y),
     word: (x, y) => {
       const r = wordAt(doc, x, y);
       return r && [caret(r.startContainer, r.startOffset), caret(r.endContainer, r.endOffset)];
