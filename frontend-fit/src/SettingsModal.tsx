@@ -148,6 +148,11 @@ export default function SettingsModal({ mode, palette, oura, onOura, onMode, onP
               </label>
             </div>
 
+            <label className="check">
+              <input type="checkbox" checked={s.weekly} onChange={(e) => patch({ weekly: e.target.checked })} />
+              {t("weekly_on")}
+            </label>
+
             <div className="stm-label">{t("profile")}</div>
             {profile.length === 0 ? <div className="stm-note">{t("profile_empty")}</div> : (
               <dl className="profile">
