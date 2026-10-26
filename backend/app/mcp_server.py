@@ -363,6 +363,19 @@ def projects_create(title: str, notes: str = "") -> dict:
     return {"id": tasks_store.create_project(title, notes=notes)}
 
 
+@mcp.tool()
+def projects_update(id: int, title: str | None = None, notes: str | None = None,
+                    status: str | None = None) -> dict:
+    """Изменить проект по id: title, notes (описание проекта), status (open|completed).
+    Передавай только меняемые поля."""
+    fields = {k: v for k, v in {"title": title, "notes": notes, "status": status}.items()
+              if v is not None}
+    res = tasks_store.update_project(id, **fields)
+    if res is None:
+        raise ValueError(f"Проект {id} не найден")
+    return res
+
+
 # ── Книги ──
 
 @mcp.tool()
