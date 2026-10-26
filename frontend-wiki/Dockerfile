@@ -1,8 +1,8 @@
 # Собирается из корня репозитория (context: .), чтобы был доступен общий design/tokens.css
 FROM node:20-alpine AS build
 WORKDIR /app/frontend-wiki
-COPY frontend-wiki/package.json ./
-RUN npm install
+COPY frontend-wiki/package.json frontend-wiki/package-lock.json ./
+RUN npm ci
 COPY design /app/design
 COPY frontend-wiki/ .
 RUN npm run build
