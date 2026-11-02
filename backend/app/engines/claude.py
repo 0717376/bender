@@ -4,9 +4,11 @@
 внутрипроцессными MCP-серверами, навыки — локальными плагинами, запреты — хуками SDK.
 """
 
+import json
 import logging
 import os
 import re
+import tempfile
 
 from claude_agent_sdk import (
     AgentDefinition,
@@ -96,6 +98,36 @@ async def _books_ro_hook(input_data, tool_use_id, context):  # noqa: ARG001 — 
     }
 
 
+OFFICE_PLUGIN = "document-skills@anthropic-agent-skills"
+OFFICE_SKILLS = ["docx", "xlsx", "pptx", "pdf"]
+
+
+def _office_plugin() -> str | None:
+    """Где лежит плагин офисных навыков. Он проприетарный, в репозиторий его класть нельзя:
+    ставится с маркетплейса при старте контейнера (entrypoint.sh). Не поставился — работаем
+    без него. setting_sources=None не подхватит плагин сам, поэтому путь передаём явно."""
+    try:
+        with open(os.path.expanduser("~/.claude/plugins/installed_plugins.json")) as f:
+            path = json.load(f)["plugins"][OFFICE_PLUGIN][0]["installPath"]
+    except (OSError, ValueError, KeyError, IndexError):
+        return None
+    if not all(os.path.isdir(os.path.join(path, "skills", s)) for s in OFFICE_SKILLS):
+        return None
+    # В том же репозитории лежат примеры (algorithmic-art и прочие), агенту они ни к чему:
+    # отдаём плагин-обёртку только с офисными навыками — симлинками, без копий.
+    wrap = os.path.join(tempfile.gettempdir(), "office-plugin")
+    os.makedirs(os.path.join(wrap, ".claude-plugin"), exist_ok=True)
+    os.makedirs(os.path.join(wrap, "skills"), exist_ok=True)
+    with open(os.path.join(wrap, ".claude-plugin", "plugin.json"), "w") as f:
+        json.dump({"name": "office", "version": "1.0.0"}, f)
+    for s in OFFICE_SKILLS:
+        link = os.path.join(wrap, "skills", s)
+        if os.path.islink(link):
+            os.remove(link)
+        os.symlink(os.path.join(path, "skills", s), link)
+    return wrap
+
+
 def build_options(resume: str | None, surface: str, instructions: str,
                   interactive: bool = True) -> ClaudeAgentOptions:
     groups = tool_registry.groups_for(interactive)
@@ -116,6 +148,9 @@ def build_options(resume: str | None, surface: str, instructions: str,
     # would expose all of those. An explicit allow-list keeps the assistant self-contained:
     # domain wiki/tasks + whatever the agent has learned.
     allowed_skills = ["wiki", "tasks", "books", "cards", "fit"] + [s["slug"] for s in skill_store.list_skills()]
+    office = _office_plugin()
+    if office:
+        allowed_skills += OFFICE_SKILLS
     return ClaudeAgentOptions(
         model=config.CLAUDE_MODEL,
         system_prompt={"type": "preset", "preset": "claude_code", "append": instructions},
@@ -125,6 +160,7 @@ def build_options(resume: str | None, surface: str, instructions: str,
         plugins=[
             {"type": "local", "path": config.SKILL_PLUGIN_DIR},      # domain skills (wiki/tasks)
             {"type": "local", "path": config.LEARNED_PLUGIN_DIR},    # agent-authored skills
+            *([{"type": "local", "path": office}] if office else []),  # Word, Excel, PowerPoint, PDF
         ],
         skills=allowed_skills,
         hooks=hooks,
