@@ -53,7 +53,8 @@ async def send_file(args):
         cap = "2 ГБ" if config.TG_LOCAL else "50 МБ"
         return _text({"error": f"файл больше лимита Telegram ({cap}): {size} байт"})
     sent = 0
-    async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
+    # Сервер отвечает, только когда сам дольёт файл в Telegram: большому нужны минуты.
+    async with httpx.AsyncClient(timeout=httpx.Timeout(1800.0, connect=30.0)) as client:
         for chat_id in targets:
             with open(abs_path, "rb") as f:
                 data = {"chat_id": str(chat_id)}

@@ -6,14 +6,21 @@ WORKDIR /app
 
 # Node.js for the Claude CLI (the Agent SDK drives it under the hood).
 # poppler-utils: pdftoppm/pdftotext — the Read tool renders PDF pages with it.
+# pandoc, qpdf, tesseract, LibreOffice, шрифты — окружение офисных навыков (docx, xlsx, pptx, pdf).
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl git tzdata poppler-utils && \
+    apt-get install -y --no-install-recommends curl git tzdata poppler-utils \
+        pandoc qpdf tesseract-ocr tesseract-ocr-rus \
+        libreoffice-writer libreoffice-calc libreoffice-impress fonts-liberation fonts-dejavu && \
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
 
 # Claude CLI
 RUN npm install -g @anthropic-ai/claude-code
+
+# npm-библиотеки офисных навыков: скрипты агента подключают их через require().
+RUN npm install -g docx pptxgenjs react react-dom react-icons sharp
+ENV NODE_PATH=/usr/lib/node_modules
 
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev || uv sync

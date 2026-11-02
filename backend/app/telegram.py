@@ -6,6 +6,7 @@ from datetime import datetime
 import logging
 import os
 import re
+import shutil
 import time
 
 import httpx
@@ -129,15 +130,20 @@ def split_md(text: str, limit: int = TG_LIMIT) -> list[str]:
     return chunks
 
 
-async def tg_api(client: httpx.AsyncClient, method: str, **params) -> dict:
+GET_FILE_TIMEOUT = 1800.0    # с запасом на гигабайтный файл по медленному каналу
+BIG_FILE = 20 * 1024 * 1024  # отсюда скачивание заметно: предупреждаем, что идёт работа
+
+
+async def tg_api(client: httpx.AsyncClient, method: str, _timeout: float | None = None, **params) -> dict:
     try:
-        r = await client.post(f"{config.TG_API}/{method}", json=params)
+        extra = {"timeout": _timeout} if _timeout else {}
+        r = await client.post(f"{config.TG_API}/{method}", json=params, **extra)
         data = r.json()
         if not data.get("ok"):
             logger.warning("tg %s failed: %s", method, data.get("description"))
         return data
     except Exception as e:
-        logger.warning("tg %s error: %s", method, e)
+        logger.warning("tg %s error: %r", method, e)    # у таймаута пустой str()
         return {"ok": False}
 
 
@@ -161,11 +167,14 @@ async def tg_typing(client: httpx.AsyncClient, chat_id: int, stop: asyncio.Event
             pass
 
 
+async def tg_file_path(client: httpx.AsyncClient, file_id: str) -> str | None:
+    # Локальный bot-api отвечает на getFile, только докачав файл из Telegram: 100 МБ — это минуты.
+    info = await tg_api(client, "getFile", _timeout=GET_FILE_TIMEOUT, file_id=file_id)
+    return (info.get("result") or {}).get("file_path") if info.get("ok") else None
+
+
 async def tg_download(client: httpx.AsyncClient, file_id: str) -> tuple[bytes, str] | None:
-    info = await tg_api(client, "getFile", file_id=file_id)
-    if not info.get("ok"):
-        return None
-    file_path = info["result"].get("file_path")
+    file_path = await tg_file_path(client, file_id)
     if not file_path:
         return None
     # Local bot-api server returns an absolute path on the shared volume.
@@ -200,23 +209,54 @@ async def tg_save_image(client: httpx.AsyncClient, file_id: str) -> str | None:
     return dest
 
 
+async def _store_file(client: httpx.AsyncClient, remote: str, dest: str) -> None:
+    """Файл кладётся на диск потоком: в памяти гигабайтному PDF делать нечего."""
+    if os.path.isabs(remote):
+        await asyncio.to_thread(shutil.copyfile, remote, dest)
+        return
+    async with client.stream("GET", f"{config.TG_FILE_API}/{remote}", timeout=GET_FILE_TIMEOUT) as r:
+        r.raise_for_status()
+        with open(dest, "wb") as f:
+            async for chunk in r.aiter_bytes():
+                f.write(chunk)
+
+
 async def tg_save_document(client: httpx.AsyncClient, doc: dict) -> str | None:
     """Save an incoming non-image document into the storage inbox, keeping its name."""
-    res = await tg_download(client, doc["file_id"])
-    if not res:
+    remote = await tg_file_path(client, doc["file_id"])
+    if not remote:
         return None
-    content, remote = res
     from .storage_api import clean_name
     name = clean_name(os.path.basename(doc.get("file_name") or remote) or "файл")
     inbox = os.path.join(config.FILES_DIR, config.FILES_INBOX)
     os.makedirs(inbox, exist_ok=True)
     dest = os.path.join(inbox, name)
     if os.path.exists(dest):
+        # Реплай на уже принятый файл не должен плодить копии.
+        if doc.get("file_size") and os.path.getsize(dest) == doc["file_size"]:
+            return dest
         stem, ext = os.path.splitext(name)
         dest = os.path.join(inbox, f"{stem}-{int(time.time())}{ext}")
-    with open(dest, "wb") as f:
-        f.write(content)
+    # Через .part: оборванная закачка не должна выглядеть готовым файлом.
+    part = dest + ".part"
+    try:
+        await _store_file(client, remote, part)
+        os.replace(part, dest)
+    except Exception as e:
+        logger.warning("tg save document error: %r", e)
+        if os.path.exists(part):
+            os.remove(part)
+        return None
     return dest
+
+
+def attachment(msg: dict) -> tuple[list | None, dict | None]:
+    """Фото и документ из сообщения, а если их нет — из того, на которое человек отвечает:
+    «ты видишь этот файл?» реплаем относится именно к нему."""
+    if msg.get("photo") or msg.get("document"):
+        return msg.get("photo"), msg.get("document")
+    src = msg.get("reply_to_message") or {}
+    return src.get("photo"), src.get("document")
 
 
 async def tg_transcribe(client: httpx.AsyncClient, file_id: str, mime: str | None) -> str | None:
@@ -313,35 +353,6 @@ async def tg_handle(client: httpx.AsyncClient, update: dict):
 
     text = (msg.get("text") or msg.get("caption") or "").strip()
 
-    image_path = None
-    photo = msg.get("photo")
-    doc = msg.get("document")
-    if photo:
-        await tg_api(client, "sendChatAction", chat_id=chat_id, action="typing")
-        image_path = await tg_save_image(client, photo[-1]["file_id"])
-    elif doc and (doc.get("mime_type") or "").startswith("image/"):
-        await tg_api(client, "sendChatAction", chat_id=chat_id, action="typing")
-        image_path = await tg_save_image(client, doc["file_id"])
-    if (photo or (doc and (doc.get("mime_type") or "").startswith("image/"))) and not image_path:
-        await tg_api(client, "sendMessage", chat_id=chat_id, text="Не удалось загрузить изображение — попробуй ещё раз.")
-        return
-    if image_path:
-        instr = f"[Пользователь прислал изображение. Посмотри его через Read: {image_path}]"
-        text = f"{instr}\n\n{text}" if text else instr
-    elif doc:
-        await tg_api(client, "sendChatAction", chat_id=chat_id, action="typing")
-        doc_path = await tg_save_document(client, doc)
-        if not doc_path:
-            hint = "" if config.TG_LOCAL else \
-                " Файлы больше 20 МБ (лимит облачного Telegram) загружай через веб — раздел «Файлы» в вики."
-            await tg_api(client, "sendMessage", chat_id=chat_id,
-                         text="Не удалось получить файл — попробуй ещё раз." + hint)
-            return
-        instr = (f"[Пользователь прислал файл «{os.path.basename(doc_path)}», он сохранён в {doc_path}. "
-                 f"Если из сообщения ясно, куда его положить или как назвать, — перенеси и переименуй; "
-                 f"иначе оставь во «{config.FILES_INBOX}» и скажи, что принял.]")
-        text = f"{instr}\n\n{text}" if text else instr
-
     media = msg.get("voice") or msg.get("audio") or msg.get("video_note")
     if not text and media:
         await tg_api(client, "sendChatAction", chat_id=chat_id, action="typing")
@@ -349,6 +360,41 @@ async def tg_handle(client: httpx.AsyncClient, update: dict):
         if not text:
             await tg_api(client, "sendMessage", chat_id=chat_id, text="Не удалось распознать голосовое — попробуй ещё раз.")
             return
+
+    photo, doc = (None, None) if text.startswith("/") else attachment(msg)
+    if doc and (doc.get("mime_type") or "").startswith("image/"):
+        photo, doc = [doc], None
+    if photo:
+        await tg_api(client, "sendChatAction", chat_id=chat_id, action="typing")
+        image_path = await tg_save_image(client, photo[-1]["file_id"])
+        if not image_path:
+            await tg_api(client, "sendMessage", chat_id=chat_id, text="Не удалось загрузить изображение — попробуй ещё раз.")
+            return
+        instr = f"[Пользователь прислал изображение. Посмотри его через Read: {image_path}]"
+        text = f"{instr}\n\n{text}" if text else instr
+    elif doc:
+        size = doc.get("file_size") or 0
+        if size > BIG_FILE:
+            await tg_api(client, "sendMessage", chat_id=chat_id,
+                         text=f"Принимаю файл, {size // (1024 * 1024)} МБ. Это может занять несколько минут.")
+        stop = asyncio.Event()
+        typing = asyncio.create_task(tg_typing(client, chat_id, stop))
+        try:
+            doc_path = await tg_save_document(client, doc)
+        finally:
+            stop.set()
+            await typing
+        if not doc_path:
+            await tg_api(client, "sendMessage", chat_id=chat_id, text=(
+                f"Не удалось получить файл «{doc.get('file_name') or 'без имени'}». "
+                "Ответь на него ещё раз или загрузи через раздел «Файлы» в вики."
+                + ("" if config.TG_LOCAL else " Лимит облачного Telegram для ботов — 20 МБ.")))
+            return
+        instr = (f"[Пользователь прислал файл «{os.path.basename(doc_path)}», "
+                 f"{os.path.getsize(doc_path) / (1024 * 1024):.1f} МБ, он сохранён в {doc_path}. "
+                 f"Если из сообщения ясно, что с ним сделать, — сделай; куда положить или как назвать — "
+                 f"перенеси и переименуй; иначе оставь во «{config.FILES_INBOX}» и скажи, что принял.]")
+        text = f"{instr}\n\n{text}" if text else instr
 
     if not text:
         return
